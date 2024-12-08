@@ -1,0 +1,12 @@
+nltk
+pytz
+tabulate
+
+langchain_experimental
+langchain_core
+
+
+
+import nltk
+nltk.download('punkt')
+nltk.download('stopwords')

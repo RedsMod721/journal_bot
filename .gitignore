@@ -1,0 +1,6 @@
+journal_bot/
+__pycache__/
+*.pyc
+.DS_Store
+data/journal.db
+backups/
