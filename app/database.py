@@ -4,6 +4,10 @@ from datetime import datetime
 import config  # Assumes DATABASE_URL is defined here
 from app.models import Base, JournalEntry
 
+import sys
+sys.path.insert(0,"/Users/sebastian/Python/journal_bot/journal_bot/lib/python3.10/site-packages")
+import pymysql
+pymysql.install_as_MySQLdb()
 
 # SQLAlchemy base and session setup
 DATABASE_URL = config.DATABASE_URL
@@ -38,12 +42,13 @@ def create_entry(db, content: str, categories: str, timestamp: datetime = None):
     :param timestamp: Optional datetime for the entry; defaults to now.
     :return: The created JournalEntry object.
     """
-    timestamp = timestamp or datetime.utcnow()
-    entry = JournalEntry(content=content, categories=categories, timestamp=timestamp)
-    db.add(entry)
+    if timestamp is None:
+        timestamp = datetime.utcnow()
+    db_entry = JournalEntry(content=content, categories=categories, timestamp=timestamp)
+    db.add(db_entry)
     db.commit()
-    db.refresh(entry)
-    return entry
+    db.refresh(db_entry)
+    return db_entry
 
 # READ
 def read_entry_by_date(db, date: datetime):

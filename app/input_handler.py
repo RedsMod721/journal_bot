@@ -1,6 +1,7 @@
 from datetime import datetime
 import sys
 from app.database import create_entry, get_db
+from app.categorization import get_categories
 
 
 def get_user_input() -> str:
@@ -38,6 +39,14 @@ def process_and_store_input(content: str, categories: str = "") -> None:
 
     # Sanitization
     sanitized_content = content.strip()
+
+    # Suggest categories if not provided
+    if not categories:
+        suggested_categories = get_categories(sanitized_content)
+        print(f"Suggested categories: {', '.join(suggested_categories)}")
+        categories = input("Please confirm categories (comma-separated) or press Enter to accept suggestions: ")
+        if not categories:
+            categories = ', '.join(suggested_categories)
 
     # Store the entry
     try:

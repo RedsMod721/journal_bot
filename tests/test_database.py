@@ -16,54 +16,73 @@ from app.database import (
 )
 
 # Test the database operations
-def test_database():
-    # Get a database session
+def test_create_entry():
     with next(get_db()) as db:
-        # CREATE
-        print("Testing CREATE...")
         new_entry = create_entry(
             db,
             content="This is a test entry about Python testing.",
             categories="test,example",
             timestamp=datetime.utcnow(),
         )
-        print("Created Entry:", new_entry)
+        assert new_entry is not None
+        assert new_entry.content == "This is a test entry about Python testing."
+        assert new_entry.categories == "test,example"
 
-        # READ BY DATE
-        print("\nTesting READ by Date...")
+def test_read_entry_by_date():
+    with next(get_db()) as db:
         entries_by_date = read_entry_by_date(db, datetime.now())
-        print("Entries by Date:", entries_by_date)
+        assert isinstance(entries_by_date, list)
 
-        # READ BY CATEGORY
-        print("\nTesting READ by Category...")
+def test_read_entry_by_category():
+    with next(get_db()) as db:
         entries_by_category = read_entry_by_category(db, "test")
-        print("Entries by Category:", entries_by_category)
+        assert isinstance(entries_by_category, list)
 
-        # SEARCH BY KEYWORD
-        print("\nTesting SEARCH by Keyword...")
+def test_search_entries():
+    with next(get_db()) as db:
         entries_by_keyword = search_entries(db, "Python")
-        print("Entries by Keyword:", entries_by_keyword)
+        assert isinstance(entries_by_keyword, list)
 
-        # UPDATE
-        print("\nTesting UPDATE...")
+def test_update_entry():
+    with next(get_db()) as db:
+        new_entry = create_entry(
+            db,
+            content="This is a test entry about Python testing.",
+            categories="test,example",
+            timestamp=datetime.utcnow(),
+        )
         updated_entry = update_entry(
             db,
             new_entry.id,
             content="Updated test entry content with more Python.",
             categories="test,updated",
         )
-        print("Updated Entry:", updated_entry)
+        assert updated_entry is not None
+        assert updated_entry.content == "Updated test entry content with more Python."
+        assert updated_entry.categories == "test,updated"
 
-        # DELETE
-        print("\nTesting DELETE...")
+def test_delete_entry():
+    with next(get_db()) as db:
+        new_entry = create_entry(
+            db,
+            content="This is a test entry about Python testing.",
+            categories="test,example",
+            timestamp=datetime.utcnow(),
+        )
         success = delete_entry(db, new_entry.id)
-        print("Entry Deleted:", success)
+        assert success is True
 
-        # READ AFTER DELETE
-        print("\nTesting READ after DELETE...")
+def test_read_after_delete():
+    with next(get_db()) as db:
         entries_after_delete = read_entry_by_date(db, datetime.now())
-        print("Entries after Delete:", entries_after_delete)
-
+        assert isinstance(entries_after_delete, list)
 
 if __name__ == "__main__":
-    test_database()
+    test_create_entry()
+    test_read_entry_by_date()
+    test_read_entry_by_category()
+    test_search_entries()
+    test_update_entry()
+    test_delete_entry()
+    test_read_after_delete()
+
