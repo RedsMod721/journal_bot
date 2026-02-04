@@ -5,4 +5,4 @@ tabulate
 langchain_experimental
 langchain_core
 
-requirements.txt
+psycopg2
