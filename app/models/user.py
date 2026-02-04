@@ -66,12 +66,13 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    skills = relationship(
+        "Skill",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
     # TODO: Uncomment after creating the corresponding models
-    # skills = relationship(
-    #     "Skill",
-    #     back_populates="user",
-    #     cascade="all, delete-orphan",
-    # )
 
     # journal_entries = relationship(
     #     "JournalEntry",
@@ -80,12 +81,11 @@ class User(Base):
     #     lazy="dynamic",
     # )
 
-    # user_titles = relationship(
-    #     "UserTitle",
-    #     back_populates="user",
-    #     cascade="all, delete-orphan",
-    #     lazy="dynamic",
-    # )
+    user_titles = relationship(
+        "UserTitle",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     # user_mq = relationship(
     #     "UserMissionQuest",

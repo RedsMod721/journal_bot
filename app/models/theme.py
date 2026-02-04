@@ -102,12 +102,11 @@ class Theme(Base):
     )
 
     # Skills under this theme
-    # TODO: Uncomment after creating Skill model
-    # skills = relationship(
-    #     "Skill",
-    #     back_populates="theme",
-    #     cascade="all, delete-orphan",
-    # )
+    skills = relationship(
+        "Skill",
+        back_populates="theme",
+        cascade="all, delete-orphan",
+    )
 
     # =========================================================================
     # XP AND LEVELING METHODS

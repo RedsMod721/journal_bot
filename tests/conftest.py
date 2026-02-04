@@ -4,12 +4,14 @@ Global pytest fixtures for Status Window API tests.
 This module provides shared fixtures used across all test modules:
 - Database fixtures (in-memory SQLite for fast, isolated tests)
 - Test data generators (Faker)
-- Sample model instances (commented out until models are created)
+- Sample model instances (User, Theme, Skill)
 
 Usage:
-    def test_something(db_session, fake):
-        user_data = {"username": fake.user_name(), "email": fake.email()}
-        # ... test code ...
+    def test_something(db_session, fake, sample_user):
+        # db_session: SQLAlchemy session for database operations
+        # fake: Faker instance for generating test data
+        # sample_user: Pre-created user instance
+        ...
 """
 import pytest
 from typing import Generator
@@ -24,6 +26,8 @@ from faker import Faker
 # This is necessary for create_all() to create all tables with proper foreign keys
 from app.models.user import User  # noqa: F401
 from app.models.theme import Theme  # noqa: F401
+from app.models.skill import Skill  # noqa: F401
+from app.models.title import TitleTemplate, UserTitle  # noqa: F401
 
 
 # Use in-memory SQLite for tests (fast, isolated, no cleanup needed)
@@ -156,34 +160,31 @@ def sample_theme(db_session, sample_user):
     return theme
 
 
-# TODO: Uncomment after creating Skill model
+@pytest.fixture
+def sample_skill(db_session, sample_user, sample_theme):
+    """
+    Create a sample skill for testing.
 
+    Provides a persisted Skill instance linked to a sample user and theme.
+    Useful for testing skill-related functionality including XP and leveling.
 
-# @pytest.fixture
-# def sample_skill(db_session, sample_user, sample_theme):
-#     """
-#     Create a sample skill for testing.
-#
-#     Provides a persisted Skill instance linked to a sample user and theme.
-#     Useful for testing skill-related functionality including XP and leveling.
-#
-#     Args:
-#         db_session: Database session fixture
-#         sample_user: Sample user fixture
-#         sample_theme: Sample theme fixture
-#
-#     Returns:
-#         Skill: A persisted Skill instance
-#     """
-#     from app.models.skill import Skill
-#
-#     skill = Skill(
-#         user_id=sample_user.id,
-#         theme_id=sample_theme.id,
-#         name="Python Programming",
-#         description="Learn Python"
-#     )
-#     db_session.add(skill)
-#     db_session.commit()
-#     db_session.refresh(skill)
-#     return skill
+    Args:
+        db_session: Database session fixture
+        sample_user: Sample user fixture
+        sample_theme: Sample theme fixture
+
+    Returns:
+        Skill: A persisted Skill instance
+    """
+    from app.models.skill import Skill
+
+    skill = Skill(
+        user_id=sample_user.id,
+        theme_id=sample_theme.id,
+        name="Python Programming",
+        description="Learn Python"
+    )
+    db_session.add(skill)
+    db_session.commit()
+    db_session.refresh(skill)
+    return skill
