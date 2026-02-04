@@ -17,8 +17,14 @@ ENV/
 *.sqlite
 *.sqlite3
 
-# Project-specific
-data/
+# Project-specific - ignore contents but keep structure
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/backups/*
+data/voice_uploads/*
+!data/backups/.gitkeep
+!data/voice_uploads/.gitkeep
 .DS_Store
 
 # IDE
