@@ -1,0 +1,11 @@
+{
+  "claude.contextFiles": [
+    "PROJECT_SPECIFICATION.md",
+    "DEVELOPMENT_GUIDE.md",
+    "CLAUDE_CODE_WORKFLOW.md",
+    "README.md"
+  ],
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.linting.enabled": true,
+  "python.formatting.provider": "black"
+}
