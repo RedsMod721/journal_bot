@@ -1,10 +1,26 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.Python
+*.so
+
+# Environment
 .env
+.venv/
+venv/
+ENV/
+
+# Database
 *.db
+*.sqlite
+*.sqlite3
+
+# Project-specific
 data/
-data/
-__pycache__/
-*.pyc
-.env
-*.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
