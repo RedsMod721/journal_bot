@@ -3,3 +3,8 @@ __pycache__/
 .env
 *.db
 data/
+data/
+__pycache__/
+*.pyc
+.env
+*.db
