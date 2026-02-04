@@ -20,6 +20,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.utils.database import Base
 from faker import Faker
 
+# Import all models to ensure SQLAlchemy registers them with Base.metadata
+# This is necessary for create_all() to create all tables with proper foreign keys
+from app.models.user import User  # noqa: F401
+from app.models.theme import Theme  # noqa: F401
+
 
 # Use in-memory SQLite for tests (fast, isolated, no cleanup needed)
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -122,36 +127,36 @@ def sample_user(db_session, fake):
     return user
 
 
-# TODO: Uncomment after creating Theme/Skill models
+@pytest.fixture
+def sample_theme(db_session, sample_user):
+    """
+    Create a sample theme for testing.
+
+    Provides a persisted Theme instance linked to a sample user.
+    Useful for testing theme-related functionality and as a dependency
+    for skill fixtures.
+
+    Args:
+        db_session: Database session fixture
+        sample_user: Sample user fixture
+
+    Returns:
+        Theme: A persisted Theme instance
+    """
+    from app.models.theme import Theme
+
+    theme = Theme(
+        user_id=sample_user.id,
+        name="Education",
+        description="Learning and growing"
+    )
+    db_session.add(theme)
+    db_session.commit()
+    db_session.refresh(theme)
+    return theme
 
 
-# @pytest.fixture
-# def sample_theme(db_session, sample_user):
-#     """
-#     Create a sample theme for testing.
-#
-#     Provides a persisted Theme instance linked to a sample user.
-#     Useful for testing theme-related functionality and as a dependency
-#     for skill fixtures.
-#
-#     Args:
-#         db_session: Database session fixture
-#         sample_user: Sample user fixture
-#
-#     Returns:
-#         Theme: A persisted Theme instance
-#     """
-#     from app.models.theme import Theme
-#
-#     theme = Theme(
-#         user_id=sample_user.id,
-#         name="Education",
-#         description="Learning and growing"
-#     )
-#     db_session.add(theme)
-#     db_session.commit()
-#     db_session.refresh(theme)
-#     return theme
+# TODO: Uncomment after creating Skill model
 
 
 # @pytest.fixture

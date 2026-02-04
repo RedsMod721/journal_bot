@@ -27,7 +27,7 @@
 ### Install Testing Dependencies
 
 ```bash
-pip install pytest pytest-cov pytest-mock faker freezegun
+pip install pytest pytest-cov pytest-mock faker freezegun types-pytest
 pip freeze > requirements.txt
 ```
 
@@ -37,6 +37,7 @@ pip freeze > requirements.txt
 - `pytest-mock`: Mocking support
 - `faker`: Generate realistic test data
 - `freezegun`: Freeze time for time-dependent tests
+- `types-pytest`: Type stubs for pytest (for IDE type checking support)
 
 ---
 

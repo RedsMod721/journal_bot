@@ -56,23 +56,21 @@ class User(Base):
 
     # =========================================================================
     # RELATIONSHIPS
-    # TODO: Uncomment after creating the corresponding models
     # All relationships use back_populates for bidirectional access
     # cascade="all, delete-orphan" ensures related records are deleted with user
     # =========================================================================
 
-    # themes = relationship(
-    #     "Theme",
-    #     back_populates="user",
-    #     cascade="all, delete-orphan",
-    #     lazy="dynamic",
-    # )
+    themes = relationship(
+        "Theme",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
+    # TODO: Uncomment after creating the corresponding models
     # skills = relationship(
     #     "Skill",
     #     back_populates="user",
     #     cascade="all, delete-orphan",
-    #     lazy="dynamic",
     # )
 
     # journal_entries = relationship(

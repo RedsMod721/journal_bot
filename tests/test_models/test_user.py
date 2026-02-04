@@ -10,8 +10,8 @@ Tests cover:
 
 Follows the AAA pattern: Arrange, Act, Assert
 """
-import pytest
-from sqlalchemy.exc import IntegrityError
+import pytest  # type: ignore
+from sqlalchemy.exc import IntegrityError  # type: ignore
 
 from app.models.user import User
 
@@ -160,3 +160,162 @@ class TestUserModel:
         # Assert
         ids = {user1.id, user2.id, user3.id}
         assert len(ids) == 3  # All unique
+
+    # =========================================================================
+    # DEFAULT VALUES COMPREHENSIVE TEST
+    # =========================================================================
+
+    def test_user_all_default_values(self, db_session, fake):
+        """Should have correct default values for all fields."""
+        # Arrange & Act
+        user = User(username=fake.user_name(), email=fake.email())
+        db_session.add(user)
+        db_session.commit()
+
+        # Assert
+        assert user.is_active is True
+        assert user.created_at is not None
+        assert user.id is not None
+
+    # =========================================================================
+    # EDGE CASES & VALIDATION
+    # =========================================================================
+
+    def test_user_username_whitespace_allowed(self, db_session, fake):
+        """Username with spaces should be allowed."""
+        # Arrange & Act
+        username = "test user"
+        user = User(username=username, email=fake.email())
+        db_session.add(user)
+        db_session.commit()
+
+        # Assert
+        assert user.username == username
+
+    def test_user_email_formats_accepted(self, db_session, fake):
+        """Should accept various valid email formats."""
+        # Arrange
+        emails = [
+            "user@example.com",
+            "user.name@example.co.uk",
+            "user+tag@example.com",
+            "user_123@sub.example.com",
+        ]
+
+        # Act & Assert
+        for email in emails:
+            user = User(username=fake.user_name(), email=email)
+            db_session.add(user)
+            db_session.commit()
+            assert user.email == email
+
+    # =========================================================================
+    # RELATIONSHIP TESTS
+    # =========================================================================
+
+    def test_user_theme_relationship_bidirectional(self, db_session, sample_user):
+        """User should have bidirectional relationship with themes."""
+        # Arrange
+        from app.models.theme import Theme
+
+        theme = Theme(user_id=sample_user.id, name="Test Theme")
+        db_session.add(theme)
+        db_session.commit()
+        db_session.refresh(sample_user)
+
+        # Act & Assert - bidirectional access
+        assert len(sample_user.themes) == 1
+        assert sample_user.themes[0].id == theme.id
+        assert theme.user.id == sample_user.id
+
+    def test_user_multiple_themes(self, db_session, sample_user):
+        """User should be able to have multiple themes."""
+        # Arrange
+        from app.models.theme import Theme
+
+        themes = [
+            Theme(user_id=sample_user.id, name="Health"),
+            Theme(user_id=sample_user.id, name="Work"),
+            Theme(user_id=sample_user.id, name="Learning"),
+        ]
+
+        # Act
+        db_session.add_all(themes)
+        db_session.commit()
+        db_session.refresh(sample_user)
+
+        # Assert
+        assert len(sample_user.themes) == 3
+        theme_names = {t.name for t in sample_user.themes}
+        assert theme_names == {"Health", "Work", "Learning"}
+
+    def test_user_deletion_cascades_to_themes(self, db_session, sample_user):
+        """Deleting user should cascade delete all related themes."""
+        # Arrange
+        from app.models.theme import Theme
+
+        theme1 = Theme(user_id=sample_user.id, name="Theme 1")
+        theme2 = Theme(user_id=sample_user.id, name="Theme 2")
+        db_session.add_all([theme1, theme2])
+        db_session.commit()
+        user_id = sample_user.id
+
+        # Act
+        db_session.delete(sample_user)
+        db_session.commit()
+
+        # Assert
+        from app.models.theme import Theme
+
+        remaining_themes = db_session.query(Theme).filter(
+            Theme.user_id == user_id
+        ).all()
+        assert len(remaining_themes) == 0
+
+    # =========================================================================
+    # UUID EDGE CASES
+    # =========================================================================
+
+    def test_user_uuid_is_different_each_time(self, db_session, fake):
+        """Each user should get a different UUID on creation."""
+        # Arrange & Act
+        user1 = User(username=fake.user_name(), email=fake.email())
+        user2 = User(username=fake.user_name(), email=fake.email())
+
+        db_session.add_all([user1, user2])
+        db_session.commit()
+
+        # Assert
+        assert user1.id != user2.id
+        assert len(user1.id) == 36
+        assert len(user2.id) == 36
+
+    # =========================================================================
+    # IMMUTABILITY TESTS
+    # =========================================================================
+
+    def test_user_is_active_can_be_set_to_false(self, db_session, sample_user):
+        """is_active should be modifiable."""
+        # Arrange
+        sample_user.is_active = False
+
+        # Act
+        db_session.commit()
+        db_session.refresh(sample_user)
+
+        # Assert
+        assert sample_user.is_active is False
+
+    def test_user_can_be_reactivated(self, db_session, sample_user):
+        """User can be deactivated and reactivated."""
+        # Arrange
+        sample_user.is_active = False
+        db_session.commit()
+
+        # Act
+        sample_user.is_active = True
+        db_session.commit()
+        db_session.refresh(sample_user)
+
+        # Assert
+        assert sample_user.is_active is True
