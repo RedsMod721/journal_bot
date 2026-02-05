@@ -29,6 +29,7 @@ from app.models.theme import Theme  # noqa: F401
 from app.models.skill import Skill  # noqa: F401
 from app.models.title import TitleTemplate, UserTitle  # noqa: F401
 from app.models.mission_quest import MissionQuestTemplate, UserMissionQuest  # noqa: F401
+from app.models.journal_entry import JournalEntry  # noqa: F401
 
 
 # Use in-memory SQLite for tests (fast, isolated, no cleanup needed)

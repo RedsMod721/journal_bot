@@ -72,14 +72,11 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
-    # TODO: Uncomment after creating the corresponding models
-
-    # journal_entries = relationship(
-    #     "JournalEntry",
-    #     back_populates="user",
-    #     cascade="all, delete-orphan",
-    #     lazy="dynamic",
-    # )
+    journal_entries = relationship(
+        "JournalEntry",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     user_titles = relationship(
         "UserTitle",
