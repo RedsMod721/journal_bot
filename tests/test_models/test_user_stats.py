@@ -220,6 +220,47 @@ class TestUserStatsModel:
         assert stats.relationship_quality == 45
         assert stats.socialization_level == 55
 
+    def test_user_stats_updated_at_not_auto_updated(self, db_session, sample_user):
+        """updated_at should not change automatically on updates (no onupdate)."""
+        # Arrange
+        stats = UserStats(user_id=sample_user.id, hp=100)
+        db_session.add(stats)
+        db_session.commit()
+        db_session.refresh(stats)
+        initial_updated_at = stats.updated_at
+
+        # Act
+        stats.hp = 90
+        db_session.commit()
+        db_session.refresh(stats)
+
+        # Assert
+        assert stats.updated_at == initial_updated_at
+
+    def test_user_stats_allows_out_of_range_values(self, db_session, sample_user):
+        """Stats should allow out-of-range values (no validation enforced)."""
+        # Arrange & Act
+        stats = UserStats(
+            user_id=sample_user.id,
+            hp=-5,
+            mp=200,
+            mental_health=-1,
+            physical_health=101,
+            relationship_quality=-10,
+            socialization_level=999,
+        )
+        db_session.add(stats)
+        db_session.commit()
+        db_session.refresh(stats)
+
+        # Assert
+        assert stats.hp == -5
+        assert stats.mp == 200
+        assert stats.mental_health == -1
+        assert stats.physical_health == 101
+        assert stats.relationship_quality == -10
+        assert stats.socialization_level == 999
+
     # =========================================================================
     # BOUNDARY VALUE TESTS
     # =========================================================================

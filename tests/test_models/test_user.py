@@ -209,6 +209,69 @@ class TestUserModel:
             db_session.commit()
             assert user.email == email
 
+    def test_user_username_max_length(self, db_session, fake):
+        """Username at max length should be accepted."""
+        # Arrange
+        username = "u" * 50
+
+        # Act
+        user = User(username=username, email=fake.email())
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+        # Assert
+        assert user.username == username
+
+    def test_user_email_max_length(self, db_session):
+        """Email at max length should be accepted."""
+        # Arrange
+        local_part = "a" * 240
+        email = f"{local_part}@x.com"  # 240 + 5 = 245, under 255
+
+        # Act
+        user = User(username="max_email_user", email=email)
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+        # Assert
+        assert user.email == email
+
+    def test_user_username_preserves_whitespace(self, db_session, fake):
+        """Leading/trailing whitespace should be preserved (no normalization)."""
+        # Arrange
+        username = "  spaced user  "
+
+        # Act
+        user = User(username=username, email=fake.email())
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+        # Assert
+        assert user.username == username
+
+    def test_user_requires_username(self, db_session, fake):
+        """Username is required (nullable False)."""
+        # Arrange
+        user = User(username=None, email=fake.email())
+        db_session.add(user)
+
+        # Act & Assert
+        with pytest.raises(IntegrityError):
+            db_session.commit()
+
+    def test_user_requires_email(self, db_session, fake):
+        """Email is required (nullable False)."""
+        # Arrange
+        user = User(username=fake.user_name(), email=None)
+        db_session.add(user)
+
+        # Act & Assert
+        with pytest.raises(IntegrityError):
+            db_session.commit()
+
     # =========================================================================
     # RELATIONSHIP TESTS
     # =========================================================================

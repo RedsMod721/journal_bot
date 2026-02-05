@@ -27,6 +27,10 @@ data/voice_uploads/*
 !data/voice_uploads/.gitkeep
 .DS_Store
 
+# Claude cert bundle
+certs/*.pem
+certs/*.cer
+
 # Testing
 .coverage
 htmlcov/

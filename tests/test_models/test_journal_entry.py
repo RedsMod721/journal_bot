@@ -353,3 +353,136 @@ class TestJournalEntryModel:
         # Assert
         assert "..." in repr_str
         assert len(repr_str) < len(long_content) + 50  # Much shorter than full content
+
+    # =========================================================================
+    # DEFAULT MUTABILITY AND EDGE CASES
+    # =========================================================================
+
+    def test_journal_entry_default_fields_are_not_shared(self, db_session, sample_user):
+        """Default JSON/list fields should not be shared across instances"""
+        # Arrange
+        entry1 = JournalEntry(user_id=sample_user.id, content="Entry 1")
+        entry2 = JournalEntry(user_id=sample_user.id, content="Entry 2")
+        db_session.add_all([entry1, entry2])
+        db_session.commit()
+        db_session.refresh(entry1)
+        db_session.refresh(entry2)
+
+        # Act - mutate entry1 defaults
+        entry1.ai_categories["mood"] = "focused"
+        entry1.ai_suggested_quests.append({"name": "Test Quest"})
+        entry1.manual_theme_ids.append("theme-1")
+        entry1.manual_skill_ids.append("skill-1")
+
+        # Assert - entry2 remains default
+        assert entry2.ai_categories == {}
+        assert entry2.ai_suggested_quests == []
+        assert entry2.manual_theme_ids == []
+        assert entry2.manual_skill_ids == []
+
+    def test_journal_entry_repr_boundary_lengths(self, db_session, sample_user):
+        """__repr__ should only truncate when content exceeds 30 chars"""
+        # Arrange
+        content_30 = "A" * 30
+        content_31 = "B" * 31
+
+        entry_30 = JournalEntry(user_id=sample_user.id, content=content_30)
+        entry_31 = JournalEntry(user_id=sample_user.id, content=content_31)
+        db_session.add_all([entry_30, entry_31])
+        db_session.commit()
+
+        # Act
+        repr_30 = repr(entry_30)
+        repr_31 = repr(entry_31)
+
+        # Assert
+        assert "..." not in repr_30
+        assert "..." in repr_31
+
+    def test_journal_entry_ai_processed_false_with_ai_data(self, db_session, sample_user):
+        """AI data should persist even when ai_processed is False"""
+        # Arrange
+        ai_categories = {"themes": ["Work"], "score": 0.7}
+        suggested = [{"name": "Follow up"}]
+
+        # Act
+        entry = JournalEntry(
+            user_id=sample_user.id,
+            content="Test content",
+            ai_categories=ai_categories,
+            ai_suggested_quests=suggested,
+            ai_processed=False,
+        )
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.ai_processed is False
+        assert entry.ai_categories == ai_categories
+        assert entry.ai_suggested_quests == suggested
+
+    def test_journal_entry_entry_type_allows_custom_value(self, db_session, sample_user):
+        """entry_type should accept custom string values"""
+        # Arrange & Act
+        entry = JournalEntry(
+            user_id=sample_user.id,
+            content="Custom type entry",
+            entry_type="custom_type",
+        )
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.entry_type == "custom_type"
+
+    def test_journal_entry_empty_content_allowed(self, db_session, sample_user):
+        """Empty content should be stored (no validation enforced)"""
+        # Arrange & Act
+        entry = JournalEntry(user_id=sample_user.id, content="")
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.content == ""
+
+    def test_journal_entry_ai_categories_non_string_values(self, db_session, sample_user):
+        """AI categories should store non-string JSON values"""
+        # Arrange
+        ai_categories = {"score": 0.85, "count": 2, "nested": {"ok": True}}
+
+        # Act
+        entry = JournalEntry(
+            user_id=sample_user.id,
+            content="Test content",
+            ai_categories=ai_categories,
+        )
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.ai_categories == ai_categories
+
+    def test_journal_entry_manual_ids_mixed_values(self, db_session, sample_user):
+        """Manual IDs should accept mixed string values"""
+        # Arrange
+        theme_ids = ["theme-uuid-1", "theme-uuid-2"]
+        skill_ids = ["skill-uuid-1", "skill-uuid-2", "skill-uuid-3"]
+
+        # Act
+        entry = JournalEntry(
+            user_id=sample_user.id,
+            content="Test content",
+            manual_theme_ids=theme_ids,
+            manual_skill_ids=skill_ids,
+        )
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.manual_theme_ids == theme_ids
+        assert entry.manual_skill_ids == skill_ids

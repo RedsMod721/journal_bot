@@ -361,6 +361,68 @@ class TestUserMissionQuestModel:
 
         # Assert
         assert user_mq.status == "failed"
+        assert user_mq.completed_at is None
+
+    def test_user_mq_start_after_failed_does_not_change(self, db_session, sample_user):
+        """start() should not change status if already failed."""
+        # Arrange
+        user_mq = UserMissionQuest(
+            user_id=sample_user.id,
+            name="Failed Quest",
+            status="failed",
+        )
+        db_session.add(user_mq)
+        db_session.commit()
+
+        # Act
+        user_mq.start()
+        db_session.commit()
+        db_session.refresh(user_mq)
+
+        # Assert
+        assert user_mq.status == "failed"
+
+    def test_user_mq_complete_after_failed_sets_completed(self, db_session, sample_user):
+        """complete() should set completed status even if previously failed."""
+        # Arrange
+        user_mq = UserMissionQuest(
+            user_id=sample_user.id,
+            name="Failed Then Completed Quest",
+            status="failed",
+            completion_target=10,
+            completion_progress=3,
+        )
+        db_session.add(user_mq)
+        db_session.commit()
+
+        # Act
+        user_mq.complete()
+        db_session.commit()
+        db_session.refresh(user_mq)
+
+        # Assert
+        assert user_mq.status == "completed"
+        assert user_mq.completed_at is not None
+        assert user_mq.completion_progress == 10
+
+    def test_user_mq_start_idempotent(self, db_session, sample_user):
+        """start() should be idempotent when already in_progress."""
+        # Arrange
+        user_mq = UserMissionQuest(
+            user_id=sample_user.id,
+            name="Idempotent Start Quest",
+        )
+        db_session.add(user_mq)
+        db_session.commit()
+
+        # Act
+        user_mq.start()
+        user_mq.start()
+        db_session.commit()
+        db_session.refresh(user_mq)
+
+        # Assert
+        assert user_mq.status == "in_progress"
 
     def test_user_mq_start_only_changes_not_started(self, db_session, sample_user):
         """Should only change status if currently not_started."""
@@ -537,6 +599,68 @@ class TestUserMissionQuestModel:
         # Assert
         assert user_mq.status == "in_progress"
 
+    def test_user_mq_update_progress_negative(self, db_session, sample_user):
+        """Negative progress should reduce completion_progress (no validation enforced)."""
+        # Arrange
+        user_mq = UserMissionQuest(
+            user_id=sample_user.id,
+            name="Negative Progress Quest",
+            completion_target=10,
+        )
+        db_session.add(user_mq)
+        db_session.commit()
+
+        # Act
+        completed = user_mq.update_progress(-5)
+        db_session.commit()
+        db_session.refresh(user_mq)
+
+        # Assert
+        assert user_mq.completion_progress == -5
+        assert user_mq.status == "in_progress"
+        assert completed is False
+        assert user_mq.completed_at is None
+
+    def test_user_mq_update_progress_zero(self, db_session, sample_user):
+        """Zero progress should still auto-start when not started."""
+        # Arrange
+        user_mq = UserMissionQuest(
+            user_id=sample_user.id,
+            name="Zero Progress Quest",
+            completion_target=10,
+        )
+        db_session.add(user_mq)
+        db_session.commit()
+
+        # Act
+        completed = user_mq.update_progress(0)
+        db_session.commit()
+        db_session.refresh(user_mq)
+
+        # Assert
+        assert user_mq.completion_progress == 0
+        assert user_mq.status == "in_progress"
+        assert completed is False
+        assert user_mq.completed_at is None
+
+    def test_user_mq_deadline_in_past_allowed(self, db_session, sample_user):
+        """Past deadlines should be stored (no validation enforced)."""
+        # Arrange
+        past_deadline = datetime.utcnow() - timedelta(days=1)
+
+        # Act
+        user_mq = UserMissionQuest(
+            user_id=sample_user.id,
+            name="Past Deadline Quest",
+            deadline=past_deadline,
+        )
+        db_session.add(user_mq)
+        db_session.commit()
+        db_session.refresh(user_mq)
+
+        # Assert
+        assert user_mq.deadline == past_deadline
+
     def test_user_mq_completion_percentage_calculation(self, db_session, sample_user):
         """Should correctly calculate completion percentage."""
         # Arrange
@@ -551,6 +675,21 @@ class TestUserMissionQuestModel:
 
         # Assert
         assert user_mq.completion_percentage == 50.0
+
+    def test_user_mq_completion_percentage_fractional(self, db_session, sample_user):
+        """Should handle fractional completion percentages."""
+        # Arrange
+        user_mq = UserMissionQuest(
+            user_id=sample_user.id,
+            name="Fractional Percentage Quest",
+            completion_progress=1,
+            completion_target=3,
+        )
+        db_session.add(user_mq)
+        db_session.commit()
+
+        # Assert
+        assert user_mq.completion_percentage == pytest.approx(33.333333, rel=1e-6)
 
     def test_user_mq_completion_percentage_zero_target(self, db_session, sample_user):
         """Should handle zero target gracefully in percentage calculation."""

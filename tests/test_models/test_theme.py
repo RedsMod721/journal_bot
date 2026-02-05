@@ -315,6 +315,74 @@ class TestThemeModel:
         # Assert
         assert abs(theme.xp - 30.8) < 0.001
 
+    def test_theme_level_up_manual_overflow(self, db_session, sample_user):
+        """Manual level_up should keep XP overflow."""
+        # Arrange
+        theme = Theme(
+            user_id=sample_user.id,
+            name="Test Theme",
+            xp=120,
+            level=0,
+            xp_to_next_level=100,
+        )
+        db_session.add(theme)
+        db_session.commit()
+
+        # Act
+        theme.level_up()
+        db_session.commit()
+
+        # Assert
+        assert theme.level == 1
+        assert theme.xp == 20
+        assert theme.xp_to_next_level > 100
+
+    def test_theme_calculate_next_level_xp_specific_level(self, db_session, sample_user):
+        """calculate_next_level_xp should follow expected formula."""
+        # Arrange
+        theme = Theme(user_id=sample_user.id, name="Test Theme", level=5)
+        db_session.add(theme)
+        db_session.commit()
+
+        # Act
+        xp_required = theme.calculate_next_level_xp()
+
+        # Assert
+        assert abs(xp_required - 100 * (1.15 ** 5)) < 0.01
+
+    def test_theme_corrosion_level_allows_custom_value(self, db_session, sample_user):
+        """corrosion_level should accept custom values (no validation enforced)."""
+        # Arrange & Act
+        theme = Theme(
+            user_id=sample_user.id,
+            name="Test Theme",
+            corrosion_level="Experimental",
+        )
+        db_session.add(theme)
+        db_session.commit()
+        db_session.refresh(theme)
+
+        # Assert
+        assert theme.corrosion_level == "Experimental"
+
+    def test_theme_metadata_persists(self, db_session, sample_user):
+        """theme_metadata should store JSON values correctly."""
+        # Arrange
+        metadata = {"tags": ["focus", "health"], "priority": 2}
+
+        # Act
+        theme = Theme(
+            user_id=sample_user.id,
+            name="Test Theme",
+            theme_metadata=metadata,
+        )
+        db_session.add(theme)
+        db_session.commit()
+        db_session.refresh(theme)
+
+        # Assert
+        assert theme.theme_metadata == metadata
+
     def test_theme_uuid_generation(self, db_session, sample_user):
         """Theme should auto-generate UUID for primary key"""
         # Arrange & Act

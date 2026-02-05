@@ -58,6 +58,20 @@ class TestTitleTemplateModel:
         assert template.category == category
         assert template.is_hidden is False
 
+    def test_title_template_description_length_over_limit_allowed(self, db_session):
+        """Long description_template should be stored (SQLite does not enforce length)."""
+        # Arrange
+        long_description = "A" * 600
+
+        # Act
+        template = TitleTemplate(name="Long Description Title", description_template=long_description)
+        db_session.add(template)
+        db_session.commit()
+        db_session.refresh(template)
+
+        # Assert
+        assert template.description_template == long_description
+
     def test_title_template_creation_generates_uuid(self, db_session):
         """Should auto-generate a valid UUID string for primary key."""
         # Arrange & Act
@@ -288,6 +302,28 @@ class TestUserTitleModel:
         assert user_title.expires_at is not None
         assert user_title.expires_at > datetime.utcnow()
 
+    def test_user_title_creation_with_past_expiration(self, db_session, sample_user):
+        """Past expiration dates should be stored (no validation enforced)."""
+        # Arrange
+        template = TitleTemplate(name="Expired Title")
+        db_session.add(template)
+        db_session.commit()
+
+        expires = datetime.utcnow() - timedelta(days=1)
+
+        # Act
+        user_title = UserTitle(
+            user_id=sample_user.id,
+            title_template_id=template.id,
+            expires_at=expires,
+        )
+        db_session.add(user_title)
+        db_session.commit()
+        db_session.refresh(user_title)
+
+        # Assert
+        assert user_title.expires_at == expires
+
     # =========================================================================
     # DEFAULT VALUE TESTS
     # =========================================================================
@@ -404,6 +440,38 @@ class TestUserTitleModel:
         assert len(sample_user.user_titles) == 3
         title_names = {ut.title_template.name for ut in sample_user.user_titles}
         assert title_names == {"Title 1", "Title 2", "Title 3"}
+
+    def test_user_can_have_duplicate_title_templates(self, db_session, sample_user):
+        """User can have multiple UserTitle entries for the same template."""
+        # Arrange
+        template = TitleTemplate(name="Repeatable Title")
+        db_session.add(template)
+        db_session.commit()
+
+        # Act
+        user_title1 = UserTitle(user_id=sample_user.id, title_template_id=template.id)
+        user_title2 = UserTitle(user_id=sample_user.id, title_template_id=template.id)
+        db_session.add_all([user_title1, user_title2])
+        db_session.commit()
+        db_session.refresh(sample_user)
+
+        # Assert
+        assert len(sample_user.user_titles) == 2
+
+    def test_user_title_repr_without_template_loaded(self, db_session, sample_user):
+        """__repr__ should handle missing template relationship gracefully."""
+        # Arrange
+        user_title = UserTitle(
+            user_id=sample_user.id,
+            title_template_id="missing-template",
+            is_equipped=False,
+        )
+
+        # Act
+        repr_string = repr(user_title)
+
+        # Assert
+        assert repr_string == "<UserTitle Unknown (Unequipped)>"
 
     def test_multiple_users_can_have_same_title_template(self, db_session, fake):
         """Multiple users should be able to earn the same title."""

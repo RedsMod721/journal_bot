@@ -479,6 +479,96 @@ class TestSkillModel:
         assert skill.practice_time_minutes == 60  # Total 60 minutes
         assert skill.xp == 30.0  # Total 30 XP
 
+    def test_skill_add_practice_time_with_zero_multiplier(self, db_session, sample_user):
+        """Zero multiplier should add time but not XP."""
+        # Arrange
+        skill = Skill(user_id=sample_user.id, name="Test Skill", xp=10)
+        db_session.add(skill)
+        db_session.commit()
+
+        # Act
+        skill.add_practice_time(20, xp_multiplier=0.0)
+        db_session.commit()
+
+        # Assert
+        assert skill.practice_time_minutes == 20
+        assert skill.xp == 10
+
+    def test_skill_add_practice_time_negative_multiplier(self, db_session, sample_user):
+        """Negative multiplier should raise ValueError via add_xp validation."""
+        # Arrange
+        skill = Skill(user_id=sample_user.id, name="Test Skill", xp=10)
+        db_session.add(skill)
+        db_session.commit()
+
+        # Act & Assert
+        with pytest.raises(ValueError) as exc_info:
+            skill.add_practice_time(10, xp_multiplier=-1.0)
+
+        assert "cannot be negative" in str(exc_info.value)
+
+    def test_skill_add_xp_fractional_amount(self, db_session, sample_user):
+        """Fractional XP should be supported."""
+        # Arrange
+        skill = Skill(user_id=sample_user.id, name="Test Skill", xp=0)
+        db_session.add(skill)
+        db_session.commit()
+
+        # Act
+        skill.add_xp(12.75)
+        db_session.commit()
+
+        # Assert
+        assert skill.xp == 12.75
+
+    def test_skill_level_up_manual_overflow(self, db_session, sample_user):
+        """Manual level_up should keep XP overflow."""
+        # Arrange
+        skill = Skill(
+            user_id=sample_user.id,
+            name="Test Skill",
+            xp=60,
+            level=0,
+            xp_to_next_level=50,
+        )
+        db_session.add(skill)
+        db_session.commit()
+
+        # Act
+        skill.level_up()
+        db_session.commit()
+
+        # Assert
+        assert skill.level == 1
+        assert skill.xp == 10
+        assert skill.xp_to_next_level > 50
+
+    def test_skill_calculate_next_level_xp_negative_level(self, db_session, sample_user):
+        """Negative level should still calculate XP (no validation enforced)."""
+        # Arrange
+        skill = Skill(user_id=sample_user.id, name="Test Skill", level=-1)
+        db_session.add(skill)
+        db_session.commit()
+
+        # Act
+        xp_required = skill.calculate_next_level_xp()
+
+        # Assert
+        assert xp_required == 50.0 * (1.2 ** -1)
+
+    def test_skill_update_rank_with_manual_level(self, db_session, sample_user):
+        """update_rank should map ranks correctly for manual level changes."""
+        # Arrange
+        skill = Skill(user_id=sample_user.id, name="Test Skill", level=30)
+        db_session.add(skill)
+        db_session.commit()
+
+        # Act
+        skill.update_rank()
+
+        # Assert
+        assert skill.rank == "Advanced"
+
     # =========================================================================
     # REPR TEST
     # =========================================================================
