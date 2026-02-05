@@ -90,12 +90,12 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
-    # stats = relationship(
-    #     "UserStats",
-    #     back_populates="user",
-    #     uselist=False,  # One-to-one relationship
-    #     cascade="all, delete-orphan",
-    # )
+    stats = relationship(
+        "UserStats",
+        back_populates="user",
+        uselist=False,  # One-to-one relationship
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         """String representation for debugging."""
