@@ -87,12 +87,11 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
-    # user_mq = relationship(
-    #     "UserMissionQuest",
-    #     back_populates="user",
-    #     cascade="all, delete-orphan",
-    #     lazy="dynamic",
-    # )
+    user_mq = relationship(
+        "UserMissionQuest",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     # stats = relationship(
     #     "UserStats",
