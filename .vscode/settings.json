@@ -9,6 +9,15 @@
   "python.linting.enabled": true,
   "python.formatting.provider": "black",
   "chat.tools.terminal.autoApprove": {
-    "git commit": true
+    "git commit": true,
+    "git add": true,
+    "/^python -m pytest tests/test_crud/test_title_crud\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_crud/test_journal_crud\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }
