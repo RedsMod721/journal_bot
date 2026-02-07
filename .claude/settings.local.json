@@ -5,7 +5,9 @@
       "Bash(alembic upgrade:*)",
       "Bash(sqlite3:*)",
       "Bash(python -c:*)",
-      "Bash(python -m pytest:*)"
+      "Bash(python -m pytest:*)",
+      "Bash(source:*)",
+      "Bash(/Users/sebastian/Python/projects/journal_bot/.venv/bin/python:*)"
     ]
   }
 }

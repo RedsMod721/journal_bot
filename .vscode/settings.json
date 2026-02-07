@@ -7,5 +7,8 @@
   ],
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.linting.enabled": true,
-  "python.formatting.provider": "black"
+  "python.formatting.provider": "black",
+  "chat.tools.terminal.autoApprove": {
+    "git commit": true
+  }
 }
