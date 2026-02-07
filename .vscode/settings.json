@@ -18,6 +18,10 @@
     "/^python -m pytest tests/test_crud/test_journal_crud\\.py -v$/": {
       "approve": true,
       "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_crud/test_user_stats_crud\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
     }
   }
 }
