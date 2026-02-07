@@ -77,6 +77,67 @@ class TestJournalCRUD:
         # Assert
         assert result.entry_type == "text"
 
+    def test_create_journal_entry_strips_whitespace(self, db_session, sample_user):
+        """Should strip whitespace from content."""
+        # Arrange
+        entry_data = JournalEntryCreate(
+            content="  Trim me  ",
+            user_id=sample_user.id,
+        )
+
+        # Act
+        result = create_journal_entry(db_session, entry_data)
+
+        # Assert
+        assert result.content == "Trim me"
+
+    def test_create_journal_entry_entry_type_variants(self, db_session, sample_user):
+        """Should allow supported entry_type values."""
+        # Arrange
+        voice = JournalEntryCreate(
+            content="Voice entry",
+            entry_type="voice_transcription",
+            user_id=sample_user.id,
+        )
+        upload = JournalEntryCreate(
+            content="Upload entry",
+            entry_type="file_upload",
+            user_id=sample_user.id,
+        )
+
+        # Act
+        voice_result = create_journal_entry(db_session, voice)
+        upload_result = create_journal_entry(db_session, upload)
+
+        # Assert
+        assert voice_result.entry_type == "voice_transcription"
+        assert upload_result.entry_type == "file_upload"
+
+    def test_create_journal_entry_long_content(self, db_session, sample_user):
+        """Should support very long content."""
+        # Arrange
+        long_content = "a" * 10000
+        entry_data = JournalEntryCreate(
+            content=long_content,
+            user_id=sample_user.id,
+        )
+
+        # Act
+        result = create_journal_entry(db_session, entry_data)
+
+        # Assert
+        assert result.content == long_content
+
+    def test_create_journal_entry_entry_type_max_length_raises_validation_error(self, sample_user):
+        """Should raise ValidationError when entry_type exceeds max length."""
+        # Act & Assert
+        with pytest.raises(ValidationError):
+            JournalEntryCreate(
+                content="Too long entry type",
+                entry_type="x" * 51,
+                user_id=sample_user.id,
+            )
+
     def test_create_journal_entry_invalid_content_raises_validation_error(self, sample_user):
         """Should raise ValidationError for empty content."""
         # Act & Assert
@@ -139,6 +200,65 @@ class TestJournalCRUD:
         # Assert
         assert len(page1) == 3
         assert len(page2) == 2
+
+    def test_get_user_journal_entries_limit_only(self, db_session, sample_user):
+        """Should respect limit parameter when skip is default."""
+        # Arrange
+        for i in range(4):
+            create_journal_entry(
+                db_session,
+                JournalEntryCreate(content=f"Entry {i}", user_id=sample_user.id),
+            )
+
+        # Act
+        result = get_user_journal_entries(db_session, sample_user.id, limit=2)
+
+        # Assert
+        assert len(result) == 2
+
+    def test_get_user_journal_entries_skip_only(self, db_session, sample_user):
+        """Should respect skip parameter when limit is default."""
+        # Arrange
+        for i in range(4):
+            create_journal_entry(
+                db_session,
+                JournalEntryCreate(content=f"Entry {i}", user_id=sample_user.id),
+            )
+
+        # Act
+        result = get_user_journal_entries(db_session, sample_user.id, skip=2)
+
+        # Assert
+        assert len(result) == 2
+
+    def test_get_user_journal_entries_skip_beyond_range(self, db_session, sample_user):
+        """Should return empty list when skip exceeds total entries."""
+        # Arrange
+        for i in range(2):
+            create_journal_entry(
+                db_session,
+                JournalEntryCreate(content=f"Entry {i}", user_id=sample_user.id),
+            )
+
+        # Act
+        result = get_user_journal_entries(db_session, sample_user.id, skip=5, limit=2)
+
+        # Assert
+        assert result == []
+
+    def test_get_user_journal_entries_limit_zero(self, db_session, sample_user):
+        """Should return empty list when limit is zero."""
+        # Arrange
+        create_journal_entry(
+            db_session,
+            JournalEntryCreate(content="Entry", user_id=sample_user.id),
+        )
+
+        # Act
+        result = get_user_journal_entries(db_session, sample_user.id, limit=0)
+
+        # Assert
+        assert result == []
 
     def test_get_user_journal_entries_ordered_by_newest(self, db_session, sample_user):
         """Should return entries ordered by created_at descending."""
@@ -208,6 +328,42 @@ class TestJournalCRUD:
         assert now.id in ids
         assert len(ids) == 2
 
+    def test_get_recent_entries_includes_cutoff_boundary(self, db_session, sample_user):
+        """Should include entries exactly at the cutoff boundary."""
+        # Arrange
+        entry = create_journal_entry(
+            db_session,
+            JournalEntryCreate(content="Cutoff", user_id=sample_user.id),
+        )
+        entry.created_at = datetime(2026, 2, 1, 12, 0, 0)
+        db_session.commit()
+
+        # Act
+        with freeze_time("2026-02-08 12:00:00"):
+            result = get_recent_entries(db_session, sample_user.id, days=7)
+
+        # Assert
+        assert len(result) == 1
+        assert result[0].id == entry.id
+
+    def test_get_recent_entries_days_zero(self, db_session, sample_user):
+        """Should return entries from the last 0 days (same timestamp only)."""
+        # Arrange
+        entry = create_journal_entry(
+            db_session,
+            JournalEntryCreate(content="Now", user_id=sample_user.id),
+        )
+        entry.created_at = datetime(2026, 2, 8, 12, 0, 0)
+        db_session.commit()
+
+        # Act
+        with freeze_time("2026-02-08 12:00:00"):
+            result = get_recent_entries(db_session, sample_user.id, days=0)
+
+        # Assert
+        assert len(result) == 1
+        assert result[0].id == entry.id
+
     def test_get_recent_entries_empty(self, db_session, sample_user):
         """Should return empty list when no recent entries exist."""
         # Arrange
@@ -245,6 +401,22 @@ class TestJournalCRUD:
         assert result is not None
         assert result.content == "Updated"
 
+    def test_update_journal_entry_content_strips_whitespace(self, db_session, sample_user):
+        """Should strip whitespace on content update."""
+        # Arrange
+        entry = create_journal_entry(
+            db_session,
+            JournalEntryCreate(content="Original", user_id=sample_user.id),
+        )
+
+        # Act
+        update = JournalEntryUpdate(content="  Updated  ")
+        result = update_journal_entry(db_session, entry.id, update)
+
+        # Assert
+        assert result is not None
+        assert result.content == "Updated"
+
     def test_update_journal_entry_ai_fields(self, db_session, sample_user):
         """Should update AI and manual fields."""
         # Arrange
@@ -270,6 +442,26 @@ class TestJournalCRUD:
         assert result.ai_processed is True
         assert result.manual_theme_ids == ["theme1"]
         assert result.manual_skill_ids == ["skill1"]
+
+    def test_update_journal_entry_invalid_ai_categories_type_raises_validation_error(self):
+        """Should raise ValidationError for invalid ai_categories type."""
+        # Act & Assert
+        with pytest.raises(ValidationError):
+            JournalEntryUpdate(ai_categories=["not", "a", "dict"])
+
+    def test_update_journal_entry_invalid_ai_suggested_quests_type_raises_validation_error(self):
+        """Should raise ValidationError for invalid ai_suggested_quests type."""
+        # Act & Assert
+        with pytest.raises(ValidationError):
+            JournalEntryUpdate(ai_suggested_quests={"not": "a list"})
+
+    def test_update_journal_entry_invalid_manual_ids_type_raises_validation_error(self):
+        """Should raise ValidationError for invalid manual IDs types."""
+        # Act & Assert
+        with pytest.raises(ValidationError):
+            JournalEntryUpdate(manual_theme_ids="not-a-list")
+        with pytest.raises(ValidationError):
+            JournalEntryUpdate(manual_skill_ids="not-a-list")
 
     def test_update_journal_entry_invalid_content_raises_validation_error(self):
         """Should raise ValidationError for empty content."""
@@ -310,6 +502,30 @@ class TestJournalCRUD:
         assert result.ai_processed is True
         assert result.ai_categories == categories
 
+    def test_mark_as_ai_processed_preserves_other_fields(self, db_session, sample_user):
+        """Should not alter other fields when marking as processed."""
+        # Arrange
+        entry = create_journal_entry(
+            db_session,
+            JournalEntryCreate(content="Process me", user_id=sample_user.id),
+        )
+        update = JournalEntryUpdate(
+            ai_suggested_quests=[{"name": "Quest"}],
+            manual_theme_ids=["theme1"],
+            manual_skill_ids=["skill1"],
+        )
+        update_journal_entry(db_session, entry.id, update)
+
+        # Act
+        categories = {"themes": ["health"], "sentiment": "neutral"}
+        result = mark_as_ai_processed(db_session, entry.id, categories)
+
+        # Assert
+        assert result is not None
+        assert result.ai_suggested_quests == [{"name": "Quest"}]
+        assert result.manual_theme_ids == ["theme1"]
+        assert result.manual_skill_ids == ["skill1"]
+
     def test_mark_as_ai_processed_not_found(self, db_session):
         """Should return None when entry ID does not exist."""
         # Arrange
@@ -339,6 +555,26 @@ class TestJournalCRUD:
         # Assert
         assert result is True
         assert get_journal_entry(db_session, entry.id) is None
+
+    def test_delete_journal_entry_does_not_affect_others(self, db_session, sample_user):
+        """Deleting one entry should not remove others."""
+        # Arrange
+        entry1 = create_journal_entry(
+            db_session,
+            JournalEntryCreate(content="Keep", user_id=sample_user.id),
+        )
+        entry2 = create_journal_entry(
+            db_session,
+            JournalEntryCreate(content="Delete", user_id=sample_user.id),
+        )
+
+        # Act
+        result = delete_journal_entry(db_session, entry2.id)
+
+        # Assert
+        assert result is True
+        assert get_journal_entry(db_session, entry2.id) is None
+        assert get_journal_entry(db_session, entry1.id) is not None
 
     def test_delete_journal_entry_not_found(self, db_session):
         """Should return False when entry ID does not exist."""
