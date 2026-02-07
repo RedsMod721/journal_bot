@@ -3,6 +3,10 @@ CRUD tests for UserStats.
 """
 from datetime import datetime
 
+import pytest
+from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
+
 from app.crud.user_stats import (
     adjust_stat,
     create_user_stats,
@@ -28,6 +32,35 @@ class TestUserStatsCRUD:
         assert stats.relationship_quality == 50
         assert stats.socialization_level == 50
 
+    def test_create_user_stats_with_custom_values(self, db_session, sample_user):
+        stats = create_user_stats(
+            db_session,
+            UserStatsCreate(
+                user_id=sample_user.id,
+                hp=90,
+                mp=80,
+                mental_health=60,
+                physical_health=65,
+                relationship_quality=55,
+                socialization_level=45,
+            ),
+        )
+
+        assert stats.hp == 90
+        assert stats.mp == 80
+        assert stats.mental_health == 60
+        assert stats.physical_health == 65
+        assert stats.relationship_quality == 55
+        assert stats.socialization_level == 45
+
+    def test_create_user_stats_duplicate_user_raises_integrity_error(
+        self, db_session, sample_user
+    ):
+        create_user_stats(db_session, UserStatsCreate(user_id=sample_user.id))
+
+        with pytest.raises(IntegrityError):
+            create_user_stats(db_session, UserStatsCreate(user_id=sample_user.id))
+
     def test_get_user_stats_by_user_id(self, db_session, sample_user):
         created = create_user_stats(
             db_session,
@@ -38,6 +71,9 @@ class TestUserStatsCRUD:
 
         assert fetched is not None
         assert fetched.id == created.id
+
+    def test_get_user_stats_missing_returns_none(self, db_session):
+        assert get_user_stats(db_session, "missing-user") is None
 
     def test_update_user_stats_partial(self, db_session, sample_user):
         created = create_user_stats(
@@ -58,6 +94,27 @@ class TestUserStatsCRUD:
         assert updated.mental_health == 60
         assert updated.mp == 100
         assert updated.updated_at > datetime(2000, 1, 1)
+
+    def test_update_user_stats_empty_payload_updates_timestamp(
+        self, db_session, sample_user
+    ):
+        created = create_user_stats(db_session, UserStatsCreate(user_id=sample_user.id))
+        created.updated_at = datetime(2000, 1, 1)
+        db_session.commit()
+
+        updated = update_user_stats(
+            db_session,
+            sample_user.id,
+            UserStatsUpdate(),
+        )
+
+        assert updated is not None
+        assert updated.updated_at > datetime(2000, 1, 1)
+
+    def test_update_user_stats_not_found_returns_none(self, db_session):
+        updated = update_user_stats(db_session, "missing-user", UserStatsUpdate(hp=50))
+
+        assert updated is None
 
     def test_adjust_stat_increases_value(self, db_session, sample_user):
         create_user_stats(
@@ -103,6 +160,18 @@ class TestUserStatsCRUD:
         assert updated is not None
         assert updated.relationship_quality == 0
 
+    def test_adjust_stat_invalid_name_returns_none(self, db_session, sample_user):
+        create_user_stats(db_session, UserStatsCreate(user_id=sample_user.id))
+
+        updated = adjust_stat(db_session, sample_user.id, "invalid_stat", 5)
+
+        assert updated is None
+
+    def test_adjust_stat_missing_stats_returns_none(self, db_session, sample_user):
+        updated = adjust_stat(db_session, sample_user.id, "hp", 5)
+
+        assert updated is None
+
     def test_reset_user_stats_to_defaults(self, db_session, sample_user):
         create_user_stats(
             db_session,
@@ -120,3 +189,16 @@ class TestUserStatsCRUD:
         assert reset.physical_health == 70
         assert reset.relationship_quality == 50
         assert reset.socialization_level == 50
+
+    def test_reset_user_stats_missing_returns_none(self, db_session, sample_user):
+        reset = reset_user_stats(db_session, sample_user.id)
+
+        assert reset is None
+
+    def test_user_stats_update_rejects_extra_fields(self):
+        with pytest.raises(ValidationError):
+            UserStatsUpdate(extra_field=1)
+
+    def test_user_stats_update_rejects_non_int_types(self):
+        with pytest.raises(ValidationError):
+            UserStatsUpdate(hp="bad")
