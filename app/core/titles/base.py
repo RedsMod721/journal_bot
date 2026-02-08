@@ -31,29 +31,27 @@ class ConditionType(Enum):
     Each type corresponds to a specific evaluator implementation.
     """
 
-    # Streak-based conditions
+    # Streak and activity conditions
     JOURNAL_STREAK = "journal_streak"
+    JOURNAL_COUNT = "journal_count"
+    TIME_BASED = "time_based"
 
     # Level-based conditions
     THEME_LEVEL = "theme_level"
     SKILL_LEVEL = "skill_level"
+    SKILL_RANK = "skill_rank"
 
-    # Entry count conditions
-    ENTRY_COUNT = "entry_count"
-    MORNING_ENTRIES = "morning_entries"
-    NIGHT_ENTRIES = "night_entries"
+    # XP conditions
+    TOTAL_XP = "total_xp"
+    THEME_XP = "theme_xp"
 
     # Quest/Mission conditions
-    QUEST_COMPLETE = "quest_complete"
-    QUESTS_COMPLETED = "quests_completed"
-    STORY_ARC_COMPLETE = "story_arc_complete"
+    QUEST_COMPLETION_COUNT = "quest_completion_count"
+    SPECIFIC_QUEST_COMPLETED = "specific_quest_completed"
 
-    # Resource conditions
-    COINS_EARNED = "coins_earned"
-    ITEMS_COLLECTED = "items_collected"
-
-    # Social conditions
-    SOCIAL_INTERACTIONS = "social_interactions"
+    # Entry time conditions
+    MORNING_ENTRIES = "morning_entries"
+    NIGHT_ENTRIES = "night_entries"
 
     # Logical combination
     COMPOUND = "compound"

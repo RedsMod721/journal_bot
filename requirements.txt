@@ -28,6 +28,7 @@ defusedxml @ file:///tmp/build/80754af9/defusedxml_1615228127516/work
 et_xmlfile==2.0.0
 executing @ file:///opt/conda/conda-bld/executing_1646925071911/work
 Faker==40.1.2
+freezegun==1.5.1
 fastjsonschema @ file:///private/var/folders/k1/30mswbxs7r1g6zwn8y4fyt500000gp/T/abs_d1wgyi4enb/croot/python-fastjsonschema_1731939426145/work
 fief-client==0.20.0
 filelock @ file:///Users/builder/cbouss/perseverance-python-buildout/croot/filelock_1701804468261/work

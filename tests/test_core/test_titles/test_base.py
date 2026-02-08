@@ -25,17 +25,17 @@ class TestConditionTypeEnum:
     def test_condition_type_enum_has_all_types(self) -> None:
         expected = {
             "journal_streak",
+            "journal_count",
+            "time_based",
             "theme_level",
             "skill_level",
-            "entry_count",
+            "skill_rank",
+            "total_xp",
+            "theme_xp",
+            "quest_completion_count",
+            "specific_quest_completed",
             "morning_entries",
             "night_entries",
-            "quest_complete",
-            "quests_completed",
-            "story_arc_complete",
-            "coins_earned",
-            "items_collected",
-            "social_interactions",
             "compound",
         }
 
