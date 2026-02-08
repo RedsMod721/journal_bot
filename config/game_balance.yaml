@@ -1,0 +1,35 @@
+xp:
+  base_journal_xp: 50
+  practice_time_multiplier: 0.5
+
+levels:
+  theme:
+    base_xp: 100
+    scaling_factor: 1.15
+  skill:
+    base_xp: 50
+    scaling_factor: 1.20
+
+titles:
+  effect_multipliers:
+    S_rank: 1.50
+    A_rank: 1.30
+    B_rank: 1.15
+    C_rank: 1.10
+    D_rank: 1.05
+    E_rank: 1.02
+    F_rank: 1.00
+
+quests:
+  daily_xp_reward: 100
+  weekly_xp_reward: 500
+  monthly_xp_reward: 2000
+
+karma:
+  lecture_listen_karma: 10
+  good_deed_karma: 5
+  negative_action_penalty: -3
+
+items:
+  knowledge_capsule_duration_days: 30
+  consumable_effects_duration_minutes: 60
