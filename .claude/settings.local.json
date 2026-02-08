@@ -13,10 +13,13 @@
       "Bash(pip freeze:*)",
       "Bash(alembic current:*)",
       "Bash(alembic heads:*)",
-      "Bash(alembic stamp:*)"
+      "Bash(alembic stamp:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(ruff check:*)"
     ],
     "additionalDirectories": [
-      "/Users/sebastian/Python/projects/journal_bot"
+      "/Users/sebastian/Python/projects/journal_bot",
+      "/Users/sebastian/Python/projects/journal_bot/app/core"
     ]
   }
 }

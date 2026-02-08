@@ -56,6 +56,34 @@
       "approve": true,
       "matchCommandLine": true
     },
-    "sqlite3": true
+    "sqlite3": true,
+    "/^python -m pytest tests/test_core/test_xp/test_base\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_core/test_xp/test_weighted_distributor\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_core/test_xp/test_proportional_distributor\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_core/test_xp/test_calculator\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_integration/test_xp_system_integration\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_core/test_titles/test_base\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_core/test_titles/test_conditions\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
   }
 }
