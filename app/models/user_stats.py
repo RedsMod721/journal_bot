@@ -16,8 +16,9 @@ Features:
 """
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
@@ -83,6 +84,10 @@ class UserStats(Base):
 
     # Socialization - Recent social activity level
     socialization_level: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
+
+    # Karma system
+    karma: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    karma_breakdown: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     # Timestamp for tracking updates
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

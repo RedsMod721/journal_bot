@@ -7,7 +7,16 @@
       "Bash(python -c:*)",
       "Bash(python -m pytest:*)",
       "Bash(source:*)",
-      "Bash(/Users/sebastian/Python/projects/journal_bot/.venv/bin/python:*)"
+      "Bash(/Users/sebastian/Python/projects/journal_bot/.venv/bin/python:*)",
+      "Bash(pip install:*)",
+      "Bash(pip show:*)",
+      "Bash(pip freeze:*)",
+      "Bash(alembic current:*)",
+      "Bash(alembic heads:*)",
+      "Bash(alembic stamp:*)"
+    ],
+    "additionalDirectories": [
+      "/Users/sebastian/Python/projects/journal_bot"
     ]
   }
 }

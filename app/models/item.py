@@ -265,7 +265,7 @@ class UserItem(Base):
 
     user: Mapped["User"] = relationship(
         "User",
-        back_populates="user_items",
+        back_populates="items",
     )
 
     template: Mapped["ItemTemplate"] = relationship(

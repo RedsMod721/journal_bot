@@ -352,3 +352,97 @@ class TestUserStatsModel:
         assert stats1.id != stats2.id
         assert len(stats1.id) == 36
         assert len(stats2.id) == 36
+
+    # =========================================================================
+    # KARMA FIELD TESTS
+    # =========================================================================
+
+    def test_user_stats_karma_default_value(self, db_session, sample_user):
+        """Karma should default to 0"""
+        # Arrange & Act
+        stats = UserStats(user_id=sample_user.id)
+        db_session.add(stats)
+        db_session.commit()
+        db_session.refresh(stats)
+
+        # Assert
+        assert stats.karma == 0
+
+    def test_user_stats_karma_breakdown_default_value(self, db_session, sample_user):
+        """karma_breakdown should default to empty dict"""
+        # Arrange & Act
+        stats = UserStats(user_id=sample_user.id)
+        db_session.add(stats)
+        db_session.commit()
+        db_session.refresh(stats)
+
+        # Assert
+        assert stats.karma_breakdown == {}
+
+    def test_user_stats_karma_can_be_set(self, db_session, sample_user):
+        """Karma should be modifiable"""
+        # Arrange
+        stats = UserStats(user_id=sample_user.id, karma=100)
+        db_session.add(stats)
+        db_session.commit()
+
+        # Act
+        stats.karma = 250
+        db_session.commit()
+        db_session.refresh(stats)
+
+        # Assert
+        assert stats.karma == 250
+
+    def test_user_stats_karma_can_be_negative(self, db_session, sample_user):
+        """Karma should allow negative values"""
+        # Arrange & Act
+        stats = UserStats(user_id=sample_user.id, karma=-50)
+        db_session.add(stats)
+        db_session.commit()
+        db_session.refresh(stats)
+
+        # Assert
+        assert stats.karma == -50
+
+    def test_user_stats_karma_breakdown_stores_data(self, db_session, sample_user):
+        """karma_breakdown should store breakdown data"""
+        # Arrange
+        breakdown = {
+            "quests_completed": 50,
+            "journal_entries": 30,
+            "skills_leveled": 20,
+        }
+
+        # Act
+        stats = UserStats(user_id=sample_user.id, karma_breakdown=breakdown)
+        db_session.add(stats)
+        db_session.commit()
+        db_session.refresh(stats)
+
+        # Assert
+        assert stats.karma_breakdown == breakdown
+        assert stats.karma_breakdown["quests_completed"] == 50
+
+    def test_user_stats_karma_breakdown_not_shared_across_instances(self, db_session, fake):
+        """karma_breakdown should not be shared across instances"""
+        # Arrange
+        from app.models.user import User
+
+        user1 = User(username=fake.user_name(), email=fake.email())
+        user2 = User(username=fake.user_name(), email=fake.email())
+        db_session.add_all([user1, user2])
+        db_session.commit()
+
+        stats1 = UserStats(user_id=user1.id)
+        stats2 = UserStats(user_id=user2.id)
+        db_session.add_all([stats1, stats2])
+        db_session.commit()
+        db_session.refresh(stats1)
+        db_session.refresh(stats2)
+
+        # Act
+        stats1.karma_breakdown["test"] = "value"
+
+        # Assert
+        assert stats2.karma_breakdown == {}

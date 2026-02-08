@@ -25,6 +25,8 @@ from app.models.title import TitleTemplate, UserTitle
 from app.models.mission_quest import MissionQuestTemplate, UserMissionQuest
 from app.models.journal_entry import JournalEntry
 from app.models.user_stats import UserStats
+from app.models.event_log import EventLog
+from app.models.item import ItemTemplate, UserItem
 
 target_metadata = Base.metadata
 

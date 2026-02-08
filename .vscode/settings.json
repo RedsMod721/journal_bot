@@ -42,6 +42,20 @@
     "/^python -m pytest tests/ -v --tb=short 2>&1 \\| tail -50$/": {
       "approve": true,
       "matchCommandLine": true
-    }
+    },
+    "conda": true,
+    "/^python -m pytest tests/test_core/test_events\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_core/test_config_loader\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_models/test_event_log\\.py tests/test_models/test_item\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "sqlite3": true
   }
 }

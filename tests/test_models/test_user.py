@@ -382,3 +382,99 @@ class TestUserModel:
 
         # Assert
         assert sample_user.is_active is True
+
+    # =========================================================================
+    # EVENT_LOGS AND ITEMS RELATIONSHIP TESTS
+    # =========================================================================
+
+    def test_user_event_logs_relationship(self, db_session, sample_user):
+        """User should have bidirectional relationship with event_logs."""
+        # Arrange
+        from app.models.event_log import EventLog
+
+        event_log = EventLog(
+            user_id=sample_user.id,
+            event_type="test_event",
+            event_payload={"action": "test"},
+        )
+        db_session.add(event_log)
+        db_session.commit()
+        db_session.refresh(sample_user)
+
+        # Assert
+        assert len(sample_user.event_logs) == 1
+        assert sample_user.event_logs[0].id == event_log.id
+        assert event_log.user.id == sample_user.id
+
+    def test_user_items_relationship(self, db_session, sample_user):
+        """User should have bidirectional relationship with items."""
+        # Arrange
+        from app.models.item import ItemTemplate, UserItem
+
+        template = ItemTemplate(name="Test Item", item_type="consumable")
+        db_session.add(template)
+        db_session.commit()
+
+        user_item = UserItem(
+            user_id=sample_user.id,
+            template_id=template.id,
+        )
+        db_session.add(user_item)
+        db_session.commit()
+        db_session.refresh(sample_user)
+
+        # Assert
+        assert len(sample_user.items) == 1
+        assert sample_user.items[0].id == user_item.id
+        assert user_item.user.id == sample_user.id
+
+    def test_user_deletion_cascades_to_event_logs(self, db_session, sample_user):
+        """Deleting user should cascade delete all event_logs."""
+        # Arrange
+        from app.models.event_log import EventLog
+
+        event_log = EventLog(
+            user_id=sample_user.id,
+            event_type="test_event",
+            event_payload={},
+        )
+        db_session.add(event_log)
+        db_session.commit()
+        user_id = sample_user.id
+
+        # Act
+        db_session.delete(sample_user)
+        db_session.commit()
+
+        # Assert
+        remaining = db_session.query(EventLog).filter(
+            EventLog.user_id == user_id
+        ).all()
+        assert len(remaining) == 0
+
+    def test_user_deletion_cascades_to_items(self, db_session, sample_user):
+        """Deleting user should cascade delete all items."""
+        # Arrange
+        from app.models.item import ItemTemplate, UserItem
+
+        template = ItemTemplate(name="Test Item Cascade", item_type="consumable")
+        db_session.add(template)
+        db_session.commit()
+
+        user_item = UserItem(
+            user_id=sample_user.id,
+            template_id=template.id,
+        )
+        db_session.add(user_item)
+        db_session.commit()
+        user_id = sample_user.id
+
+        # Act
+        db_session.delete(sample_user)
+        db_session.commit()
+
+        # Assert
+        remaining = db_session.query(UserItem).filter(
+            UserItem.user_id == user_id
+        ).all()
+        assert len(remaining) == 0

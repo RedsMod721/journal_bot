@@ -486,3 +486,167 @@ class TestJournalEntryModel:
         # Assert
         assert entry.manual_theme_ids == theme_ids
         assert entry.manual_skill_ids == skill_ids
+
+    # =========================================================================
+    # PROCESSING FIELD TESTS
+    # =========================================================================
+
+    def test_journal_entry_processing_status_default(self, db_session, sample_user):
+        """processing_status should default to 'pending'"""
+        # Arrange & Act
+        entry = JournalEntry(user_id=sample_user.id, content="Test content")
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.processing_status == "pending"
+
+    def test_journal_entry_processing_error_default(self, db_session, sample_user):
+        """processing_error should default to None"""
+        # Arrange & Act
+        entry = JournalEntry(user_id=sample_user.id, content="Test content")
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.processing_error is None
+
+    def test_journal_entry_retry_count_default(self, db_session, sample_user):
+        """retry_count should default to 0"""
+        # Arrange & Act
+        entry = JournalEntry(user_id=sample_user.id, content="Test content")
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.retry_count == 0
+
+    def test_journal_entry_last_retry_at_default(self, db_session, sample_user):
+        """last_retry_at should default to None"""
+        # Arrange & Act
+        entry = JournalEntry(user_id=sample_user.id, content="Test content")
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.last_retry_at is None
+
+    def test_journal_entry_processing_status_values(self, db_session, sample_user):
+        """processing_status should accept valid status values"""
+        # Arrange
+        statuses = ["pending", "processing", "completed", "failed"]
+
+        for status in statuses:
+            # Act
+            entry = JournalEntry(
+                user_id=sample_user.id,
+                content=f"Entry with status {status}",
+                processing_status=status,
+            )
+            db_session.add(entry)
+            db_session.commit()
+            db_session.refresh(entry)
+
+            # Assert
+            assert entry.processing_status == status
+
+    def test_journal_entry_processing_error_stores_message(self, db_session, sample_user):
+        """processing_error should store error message"""
+        # Arrange
+        error_msg = "AI processing timeout after 30 seconds"
+
+        # Act
+        entry = JournalEntry(
+            user_id=sample_user.id,
+            content="Test content",
+            processing_status="failed",
+            processing_error=error_msg,
+        )
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.processing_error == error_msg
+
+    def test_journal_entry_retry_count_increments(self, db_session, sample_user):
+        """retry_count should be modifiable"""
+        # Arrange
+        entry = JournalEntry(user_id=sample_user.id, content="Test content")
+        db_session.add(entry)
+        db_session.commit()
+
+        # Act
+        entry.retry_count = 1
+        db_session.commit()
+
+        entry.retry_count = 2
+        db_session.commit()
+
+        entry.retry_count = 3
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.retry_count == 3
+
+    def test_journal_entry_last_retry_at_stores_datetime(self, db_session, sample_user):
+        """last_retry_at should store datetime"""
+        # Arrange
+        from datetime import datetime
+
+        retry_time = datetime(2024, 1, 15, 10, 30, 0)
+
+        # Act
+        entry = JournalEntry(
+            user_id=sample_user.id,
+            content="Test content",
+            last_retry_at=retry_time,
+        )
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert
+        assert entry.last_retry_at == retry_time
+
+    def test_journal_entry_processing_workflow(self, db_session, sample_user):
+        """Should support full processing workflow"""
+        # Arrange
+        from datetime import datetime
+
+        entry = JournalEntry(user_id=sample_user.id, content="Test content")
+        db_session.add(entry)
+        db_session.commit()
+
+        # Assert initial state
+        assert entry.processing_status == "pending"
+        assert entry.retry_count == 0
+
+        # Act - simulate processing start
+        entry.processing_status = "processing"
+        db_session.commit()
+
+        # Act - simulate failure and retry
+        entry.processing_status = "failed"
+        entry.processing_error = "Timeout error"
+        entry.retry_count = 1
+        entry.last_retry_at = datetime.utcnow()
+        db_session.commit()
+
+        # Act - simulate successful retry
+        entry.processing_status = "completed"
+        entry.processing_error = None
+        entry.retry_count = 2
+        db_session.commit()
+        db_session.refresh(entry)
+
+        # Assert final state
+        assert entry.processing_status == "completed"
+        assert entry.processing_error is None
+        assert entry.retry_count == 2
+        assert entry.last_retry_at is not None

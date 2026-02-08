@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
@@ -87,6 +87,12 @@ class JournalEntry(Base):
     # Manual categorization (user override)
     manual_theme_ids: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     manual_skill_ids: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+
+    # Processing status tracking
+    processing_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    processing_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # =========================================================================
     # RELATIONSHIPS

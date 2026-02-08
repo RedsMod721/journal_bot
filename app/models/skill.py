@@ -16,7 +16,7 @@ Features:
 import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Float, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, Float, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
@@ -114,6 +114,11 @@ class Skill(Base):
 
     # Extensibility field for future attributes
     skill_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+    # Limit break system
+    limit_break_progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    limit_break_unlocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    limit_break_condition: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     # =========================================================================
     # RELATIONSHIPS

@@ -620,3 +620,99 @@ class TestSkillModel:
         # Assert
         assert level3.parent_skill.name == "Python"
         assert level3.parent_skill.parent_skill.name == "Programming"
+
+    # =========================================================================
+    # LIMIT BREAK FIELD TESTS
+    # =========================================================================
+
+    def test_skill_limit_break_default_values(self, db_session, sample_user):
+        """Should have correct default values for limit break fields."""
+        # Arrange & Act
+        skill = Skill(user_id=sample_user.id, name="Test Skill")
+        db_session.add(skill)
+        db_session.commit()
+        db_session.refresh(skill)
+
+        # Assert
+        assert skill.limit_break_progress == 0
+        assert skill.limit_break_unlocked is False
+        assert skill.limit_break_condition is None
+
+    def test_skill_limit_break_progress_can_be_set(self, db_session, sample_user):
+        """limit_break_progress should be modifiable."""
+        # Arrange
+        skill = Skill(user_id=sample_user.id, name="Test Skill")
+        db_session.add(skill)
+        db_session.commit()
+
+        # Act
+        skill.limit_break_progress = 75
+        db_session.commit()
+        db_session.refresh(skill)
+
+        # Assert
+        assert skill.limit_break_progress == 75
+
+    def test_skill_limit_break_unlocked_can_be_set(self, db_session, sample_user):
+        """limit_break_unlocked should be modifiable."""
+        # Arrange
+        skill = Skill(user_id=sample_user.id, name="Test Skill")
+        db_session.add(skill)
+        db_session.commit()
+
+        # Act
+        skill.limit_break_unlocked = True
+        db_session.commit()
+        db_session.refresh(skill)
+
+        # Assert
+        assert skill.limit_break_unlocked is True
+
+    def test_skill_limit_break_condition_stores_json(self, db_session, sample_user):
+        """limit_break_condition should store JSON condition data."""
+        # Arrange
+        condition = {
+            "type": "consecutive_days",
+            "target": 30,
+            "current": 15,
+            "description": "Practice for 30 consecutive days",
+        }
+
+        # Act
+        skill = Skill(
+            user_id=sample_user.id,
+            name="Test Skill",
+            limit_break_condition=condition,
+        )
+        db_session.add(skill)
+        db_session.commit()
+        db_session.refresh(skill)
+
+        # Assert
+        assert skill.limit_break_condition == condition
+        assert skill.limit_break_condition["type"] == "consecutive_days"
+        assert skill.limit_break_condition["target"] == 30
+
+    def test_skill_limit_break_full_workflow(self, db_session, sample_user):
+        """Should support full limit break workflow."""
+        # Arrange
+        skill = Skill(
+            user_id=sample_user.id,
+            name="Test Skill",
+            limit_break_condition={"type": "xp_threshold", "target": 1000},
+        )
+        db_session.add(skill)
+        db_session.commit()
+
+        # Act - simulate progress
+        skill.limit_break_progress = 50
+        db_session.commit()
+
+        skill.limit_break_progress = 100
+        skill.limit_break_unlocked = True
+        db_session.commit()
+        db_session.refresh(skill)
+
+        # Assert
+        assert skill.limit_break_progress == 100
+        assert skill.limit_break_unlocked is True

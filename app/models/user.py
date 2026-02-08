@@ -104,7 +104,7 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
-    user_items: Mapped[list["UserItem"]] = relationship(
+    items: Mapped[list["UserItem"]] = relationship(
         "UserItem",
         back_populates="user",
         cascade="all, delete-orphan",
