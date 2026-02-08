@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Generator
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker, declarative_base
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 # Database file path - relative to project root
 DATABASE_DIR = Path(__file__).parent.parent.parent / "data"
@@ -55,7 +55,8 @@ SessionLocal = sessionmaker(
 
 # Base class for all ORM models
 # All models should inherit from this class
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 
 def get_db() -> Generator[Session, None, None]:

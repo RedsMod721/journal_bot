@@ -18,12 +18,15 @@ Features:
 """
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class MissionQuestTemplate(Base):
@@ -55,20 +58,8 @@ class MissionQuestTemplate(Base):
 
     __tablename__ = "mq_templates"
 
-    # Type annotations for all attributes (helps Pylance understand types)
-    id: str
-    name: str
-    description_template: Optional[str]
-    type: Optional[str]
-    structure: Optional[str]
-    completion_condition: dict[str, Any]
-    reward_xp: int
-    reward_coins: int
-    difficulty: Optional[str]
-    category: Optional[str]
-
     # Primary key - UUID stored as string for SQLite compatibility
-    id = Column(
+    id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -76,38 +67,38 @@ class MissionQuestTemplate(Base):
     )
 
     # Quest identity
-    name = Column(String(200), nullable=False, index=True)
-    description_template = Column(String(1000), nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    description_template: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
     # Quest type and structure
     # type: daily, timed, periodic, repeatable, story_arc, side_quest, etc.
-    type = Column(String(50), nullable=True)
+    type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     # structure: single_action, multi_action, multi_part
-    structure = Column(String(50), nullable=True)
+    structure: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     # Completion condition - JSON for flexibility
     # Examples:
     # {"type": "yes_no"} - Simple yes/no completion
     # {"type": "accumulation", "target": 50} - Accumulate 50 units
     # {"type": "quality", "threshold": 0.8} - Quality threshold
-    completion_condition = Column(JSON, default=dict, nullable=False)
+    completion_condition: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     # Rewards
-    reward_xp = Column(Integer, default=0, nullable=False)
-    reward_coins = Column(Integer, default=0, nullable=False)
+    reward_xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reward_coins: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Difficulty: easy, medium, hard, extreme, etc.
-    difficulty = Column(String(20), default="medium", nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(20), default="medium", nullable=False)
 
     # Organization
-    category = Column(String(50), nullable=True, index=True)
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
 
     # =========================================================================
     # RELATIONSHIPS
     # =========================================================================
 
-    user_mq = relationship(
+    user_mq: Mapped[list["UserMissionQuest"]] = relationship(
         "UserMissionQuest",
         back_populates="template",
         cascade="all, delete-orphan",
@@ -153,7 +144,7 @@ class UserMissionQuest(Base):
     __tablename__ = "user_mq"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id = Column(
+    id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -161,14 +152,14 @@ class UserMissionQuest(Base):
     )
 
     # Foreign keys
-    user_id = Column(
+    user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id"),
         nullable=False,
         index=True,
     )
 
-    template_id = Column(
+    template_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("mq_templates.id"),
         nullable=True,  # Nullable for custom quests not based on templates
@@ -176,7 +167,7 @@ class UserMissionQuest(Base):
     )
 
     # Self-referential foreign key for quest hierarchy
-    parent_mq_id = Column(
+    parent_mq_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("user_mq.id"),
         nullable=True,
@@ -184,42 +175,47 @@ class UserMissionQuest(Base):
     )
 
     # Quest identity
-    name = Column(String(200), nullable=False)
-    personalized_description = Column(String(1000), nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    personalized_description: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
 
     # Status tracking
     # Valid statuses: not_started, in_progress, completed, failed
-    status = Column(String(20), default="not_started", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="not_started", nullable=False)
 
     # Progress tracking (for accumulation-type quests)
-    completion_progress = Column(Integer, default=0, nullable=False)
-    completion_target = Column(Integer, default=100, nullable=False)
+    completion_progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_target: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    deadline = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    deadline: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # =========================================================================
     # RELATIONSHIPS
     # =========================================================================
 
-    user = relationship(
+    user: Mapped["User"] = relationship(
         "User",
         back_populates="user_mq",
     )
 
-    template = relationship(
+    template: Mapped[Optional["MissionQuestTemplate"]] = relationship(
         "MissionQuestTemplate",
         back_populates="user_mq",
     )
 
     # Self-referential relationship for quest hierarchy
-    parent_mq = relationship(
+    parent_mq: Mapped[Optional["UserMissionQuest"]] = relationship(
         "UserMissionQuest",
-        remote_side=[id],
-        backref="child_mq",
-        foreign_keys=[parent_mq_id],
+        remote_side="UserMissionQuest.id",
+        back_populates="child_mq",
+        foreign_keys="UserMissionQuest.parent_mq_id",
+    )
+
+    child_mq: Mapped[list["UserMissionQuest"]] = relationship(
+        "UserMissionQuest",
+        back_populates="parent_mq",
     )
 
     def __repr__(self) -> str:

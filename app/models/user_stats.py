@@ -17,8 +17,8 @@ Features:
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
 
@@ -44,19 +44,8 @@ class UserStats(Base):
 
     __tablename__ = "user_stats"
 
-    # Type annotations for all attributes (helps Pylance understand types)
-    id: str
-    user_id: str
-    hp: int
-    mp: int
-    mental_health: int
-    physical_health: int
-    relationship_quality: int
-    socialization_level: int
-    updated_at: datetime
-
     # Primary key - UUID stored as string for SQLite compatibility
-    id = Column(
+    id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -64,7 +53,7 @@ class UserStats(Base):
     )
 
     # Foreign key to user - unique constraint for one-to-one relationship
-    user_id = Column(
+    user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id"),
         nullable=False,
@@ -78,31 +67,31 @@ class UserStats(Base):
     # =========================================================================
 
     # HP (Hit Points) - Physical energy/health
-    hp = Column(Integer, default=100, nullable=False)
+    hp: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 
     # MP (Mana Points) - Mental energy/focus capacity
-    mp = Column(Integer, default=100, nullable=False)
+    mp: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 
     # Mental Health - Mood/anxiety/depression level
-    mental_health = Column(Integer, default=70, nullable=False)
+    mental_health: Mapped[int] = mapped_column(Integer, default=70, nullable=False)
 
     # Physical Health - Fitness/nutrition/sleep quality
-    physical_health = Column(Integer, default=70, nullable=False)
+    physical_health: Mapped[int] = mapped_column(Integer, default=70, nullable=False)
 
     # Relationship - Social connection quality
-    relationship_quality = Column(Integer, default=50, nullable=False)
+    relationship_quality: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
 
     # Socialization - Recent social activity level
-    socialization_level = Column(Integer, default=50, nullable=False)
+    socialization_level: Mapped[int] = mapped_column(Integer, default=50, nullable=False)
 
     # Timestamp for tracking updates
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # =========================================================================
     # RELATIONSHIPS
     # =========================================================================
 
-    user = relationship(
+    user: Mapped["User"] = relationship(
         "User",
         back_populates="stats",
     )

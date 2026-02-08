@@ -10,7 +10,7 @@ Tests cover:
 
 Follows the AAA pattern: Arrange, Act, Assert
 """
-import pytest  # type: ignore
+import pytest
 
 from app.models.skill import Skill
 

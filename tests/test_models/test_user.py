@@ -10,8 +10,8 @@ Tests cover:
 
 Follows the AAA pattern: Arrange, Act, Assert
 """
-import pytest  # type: ignore
-from sqlalchemy.exc import IntegrityError  # type: ignore
+import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.models.user import User
 

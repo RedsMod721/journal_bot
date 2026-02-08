@@ -19,8 +19,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, JSON, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
 
@@ -50,7 +50,7 @@ class TitleTemplate(Base):
     __tablename__ = "title_templates"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id: str = Column(  # type: ignore
+    id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -58,31 +58,31 @@ class TitleTemplate(Base):
     )
 
     # Title identity
-    name: str = Column(String(100), unique=True, nullable=False, index=True)  # type: ignore
-    description_template: Optional[str] = Column(String(500), nullable=True)  # type: ignore
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    description_template: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # Effect system - JSON for flexibility
     # Example: {"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 1.10}
-    effect: dict[str, Any] = Column(JSON, default=dict, nullable=False)  # type: ignore
+    effect: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     # Rank system (F to S, like Korean RPG novels)
-    rank = Column(String(1), default="D", nullable=False)
+    rank: Mapped[str] = mapped_column(String(1), default="D", nullable=False)
 
     # Unlock condition - JSON for flexibility
     # Example: {"type": "journal_streak", "value": 7}
-    unlock_condition = Column(JSON, default=dict, nullable=False)
+    unlock_condition: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     # Organization
-    category = Column(String(50), nullable=True, index=True)
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
 
     # Hidden titles - conditions teased but not fully revealed
-    is_hidden = Column(Boolean, default=False, nullable=False)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # =========================================================================
     # RELATIONSHIPS
     # =========================================================================
 
-    user_titles = relationship(
+    user_titles: Mapped[list["UserTitle"]] = relationship(
         "UserTitle",
         back_populates="title_template",
         cascade="all, delete-orphan",
@@ -118,7 +118,7 @@ class UserTitle(Base):
     __tablename__ = "user_titles"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id = Column(
+    id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -126,14 +126,14 @@ class UserTitle(Base):
     )
 
     # Foreign keys
-    user_id = Column(
+    user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id"),
         nullable=False,
         index=True,
     )
 
-    title_template_id = Column(
+    title_template_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("title_templates.id"),
         nullable=False,
@@ -141,27 +141,27 @@ class UserTitle(Base):
     )
 
     # Acquisition metadata
-    acquired_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Equipped status - titles can be equipped/unequipped for passive effects
-    is_equipped = Column(Boolean, default=True, nullable=False)
+    is_equipped: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Personalized description - AI-generated for this specific user
-    personalized_description = Column(String(500), nullable=True)
+    personalized_description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # Expiration for temporary titles (None = permanent)
-    expires_at = Column(DateTime, nullable=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # =========================================================================
     # RELATIONSHIPS
     # =========================================================================
 
-    user = relationship(
+    user: Mapped["User"] = relationship(
         "User",
         back_populates="user_titles",
     )
 
-    title_template = relationship(
+    title_template: Mapped["TitleTemplate"] = relationship(
         "TitleTemplate",
         back_populates="user_titles",
     )

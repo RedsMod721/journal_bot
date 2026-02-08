@@ -36,16 +36,15 @@ Week 6: Polish, Testing, Voice Input (Stretch)
 **Deliverables:**
 ```bash
 # File: requirements.txt
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-sqlalchemy==2.0.25
-alembic==1.13.1
-pydantic==2.5.3
-python-dotenv==1.0.0
+fastapi==0.128.0
+uvicorn[standard]==0.40.0
+sqlalchemy==2.0.46  # Using SQLAlchemy 2.0 typed ORM with Mapped/mapped_column
+alembic==1.18.3
+pydantic==2.12.5
+python-dotenv==1.2.1
 ollama==0.1.6  # Python client for Ollama
-sentence-transformers==2.3.1
-faster-whisper==0.10.0  # For voice input (stretch goal)
 pytest==7.4.4
+pytest-cov==3.0.0
 ```
 
 ```python
@@ -107,68 +106,80 @@ if __name__ == "__main__":
 
 ```python
 # File: app/models/user.py
-from sqlalchemy import Column, String, Integer, DateTime, Boolean
-from sqlalchemy.orm import relationship
-from datetime import datetime
+# Using SQLAlchemy 2.0 Typed ORM with Mapped and mapped_column
 import uuid
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
 
 class User(Base):
     __tablename__ = "users"
     
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    username = Column(String, unique=True, nullable=False)
-    email = Column(String, unique=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    is_active = Column(Boolean, default=True)
+    # Primary key with typed annotation
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     
-    # Relationships
-    themes = relationship("Theme", back_populates="user", cascade="all, delete-orphan")
-    skills = relationship("Skill", back_populates="user", cascade="all, delete-orphan")
-    journal_entries = relationship("JournalEntry", back_populates="user", cascade="all, delete-orphan")
-    user_titles = relationship("UserTitle", back_populates="user", cascade="all, delete-orphan")
-    user_mq = relationship("UserMissionQuest", back_populates="user", cascade="all, delete-orphan")
-    stats = relationship("UserStats", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    # Typed relationships - full static type checking support
+    themes: Mapped[list["Theme"]] = relationship("Theme", back_populates="user", cascade="all, delete-orphan")
+    skills: Mapped[list["Skill"]] = relationship("Skill", back_populates="user", cascade="all, delete-orphan")
+    journal_entries: Mapped[list["JournalEntry"]] = relationship("JournalEntry", back_populates="user", cascade="all, delete-orphan")
+    user_titles: Mapped[list["UserTitle"]] = relationship("UserTitle", back_populates="user", cascade="all, delete-orphan")
+    user_mq: Mapped[list["UserMissionQuest"]] = relationship("UserMissionQuest", back_populates="user", cascade="all, delete-orphan")
+    stats: Mapped[Optional["UserStats"]] = relationship("UserStats", back_populates="user", uselist=False, cascade="all, delete-orphan")
     
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<User {self.username}>"
 ```
 
 ```python
 # File: app/models/theme.py
-from sqlalchemy import Column, String, Integer, Float, ForeignKey, JSON
-from sqlalchemy.orm import relationship
+# Using SQLAlchemy 2.0 Typed ORM
 import uuid
+from typing import TYPE_CHECKING, Any, Optional
+
+from sqlalchemy import Float, ForeignKey, Integer, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
+
+if TYPE_CHECKING:
+    from app.models.skill import Skill
+    from app.models.user import User
 
 class Theme(Base):
     __tablename__ = "themes"
     
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    name = Column(String, nullable=False)  # e.g., "Physical Health"
-    description = Column(String)
-    level = Column(Integer, default=0)
-    xp = Column(Float, default=0.0)
-    xp_to_next_level = Column(Float, default=100.0)
-    corrosion_level = Column(String, default="Fresh")  # Fresh, Old, Patterned, etc.
-    parent_theme_id = Column(String, ForeignKey("themes.id"), nullable=True)
-    metadata = Column(JSON, default={})  # For extensibility
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    xp: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    xp_to_next_level: Mapped[float] = mapped_column(Float, default=100.0, nullable=False)
+    corrosion_level: Mapped[str] = mapped_column(String(20), default="Fresh", nullable=False)
+    parent_theme_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("themes.id"), nullable=True)
+    theme_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     
-    # Relationships
-    user = relationship("User", back_populates="themes")
-    parent_theme = relationship("Theme", remote_side=[id], backref="sub_themes")
-    skills = relationship("Skill", back_populates="theme")
+    # Typed relationships with proper back_populates
+    user: Mapped["User"] = relationship("User", back_populates="themes")
+    parent_theme: Mapped[Optional["Theme"]] = relationship("Theme", remote_side="Theme.id", back_populates="sub_themes")
+    sub_themes: Mapped[list["Theme"]] = relationship("Theme", back_populates="parent_theme")
+    skills: Mapped[list["Skill"]] = relationship("Skill", back_populates="theme")
     
-    def add_xp(self, amount: float):
+    def add_xp(self, amount: float) -> None:
         """Add XP and handle level-ups"""
         self.xp += amount
         while self.xp >= self.xp_to_next_level:
             self.level_up()
     
-    def level_up(self):
+    def level_up(self) -> None:
         self.xp -= self.xp_to_next_level
         self.level += 1
         self.xp_to_next_level = self.calculate_next_level_xp()
@@ -180,53 +191,61 @@ class Theme(Base):
 
 ```python
 # File: app/models/skill.py
-from sqlalchemy import Column, String, Integer, Float, ForeignKey, JSON
-from sqlalchemy.orm import relationship
+# Using SQLAlchemy 2.0 Typed ORM
 import uuid
+from typing import TYPE_CHECKING, Any, Optional
+
+from sqlalchemy import Float, ForeignKey, Integer, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
+
+if TYPE_CHECKING:
+    from app.models.theme import Theme
+    from app.models.user import User
 
 class Skill(Base):
     __tablename__ = "skills"
     
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    theme_id = Column(String, ForeignKey("themes.id"), nullable=True)
-    parent_skill_id = Column(String, ForeignKey("skills.id"), nullable=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), nullable=False)
+    theme_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("themes.id"), nullable=True)
+    parent_skill_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("skills.id"), nullable=True)
     
-    name = Column(String, nullable=False)
-    description = Column(String)
-    level = Column(Integer, default=0)
-    xp = Column(Float, default=0.0)
-    xp_to_next_level = Column(Float, default=50.0)
-    rank = Column(String, default="Beginner")  # Beginner, Amateur, Intermediate, etc.
-    practice_time_minutes = Column(Integer, default=0)
-    difficulty = Column(String, default="Medium")
-    metadata = Column(JSON, default={})
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    xp: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    xp_to_next_level: Mapped[float] = mapped_column(Float, default=50.0, nullable=False)
+    rank: Mapped[str] = mapped_column(String(20), default="Beginner", nullable=False)
+    practice_time_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    difficulty: Mapped[str] = mapped_column(String(20), default="Medium", nullable=False)
+    skill_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     
-    # Relationships
-    user = relationship("User", back_populates="skills")
-    theme = relationship("Theme", back_populates="skills")
-    parent_skill = relationship("Skill", remote_side=[id], backref="child_skills")
+    # Typed relationships
+    user: Mapped["User"] = relationship("User", back_populates="skills")
+    theme: Mapped[Optional["Theme"]] = relationship("Theme", back_populates="skills")
+    parent_skill: Mapped[Optional["Skill"]] = relationship("Skill", remote_side="Skill.id", back_populates="child_skills")
+    child_skills: Mapped[list["Skill"]] = relationship("Skill", back_populates="parent_skill")
     
-    def add_practice_time(self, minutes: int, xp_multiplier: float = 1.0):
+    def add_practice_time(self, minutes: int, xp_multiplier: float = 1.0) -> None:
         """Log practice time and award XP"""
         self.practice_time_minutes += minutes
         xp_gained = minutes * 0.5 * xp_multiplier  # Base: 0.5 XP per minute
         self.add_xp(xp_gained)
     
-    def add_xp(self, amount: float):
+    def add_xp(self, amount: float) -> None:
         self.xp += amount
         while self.xp >= self.xp_to_next_level:
             self.level_up()
     
-    def level_up(self):
+    def level_up(self) -> None:
         self.xp -= self.xp_to_next_level
         self.level += 1
         self.xp_to_next_level = 50 * (1.2 ** self.level)
         self.update_rank()
     
-    def update_rank(self):
+    def update_rank(self) -> None:
         """Update rank based on level"""
         if self.level < 5:
             self.rank = "Beginner"

@@ -9,7 +9,7 @@ Tests cover:
 
 Following AAA pattern (Arrange, Act, Assert) as per TESTING_GUIDE.md
 """
-import pytest  # type: ignore
+import pytest
 
 from app.models.theme import Theme
 
@@ -188,7 +188,9 @@ class TestThemeModel:
         db_session.commit()
 
         # Assert
+        assert level3.parent_theme is not None
         assert level3.parent_theme.name == "Programming"
+        assert level3.parent_theme.parent_theme is not None
         assert level3.parent_theme.parent_theme.name == "Education"
 
     def test_theme_multiple_sub_themes(self, db_session, sample_user):

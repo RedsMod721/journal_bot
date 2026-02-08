@@ -13,7 +13,7 @@ This module tests all CRUD functions in app/crud/theme.py:
 Uses db_session and sample_user fixtures from conftest.py.
 """
 import pytest
-from pydantic import ValidationError  # type: ignore
+from pydantic import ValidationError  # type: ignore[import-not-found]
 
 from app.crud.theme import (
     add_xp_to_theme,
@@ -84,6 +84,7 @@ class TestThemeCRUD:
         # Assert
         assert result is not None
         assert result.parent_theme_id == parent.id
+        assert result.parent_theme is not None
         assert result.parent_theme.name == "Education"
 
     def test_create_theme_minimal_data(self, db_session, sample_user):

@@ -9,7 +9,7 @@ Tests cover:
 
 Following AAA pattern (Arrange, Act, Assert) as per TESTING_GUIDE.md
 """
-import pytest  # type: ignore
+import pytest
 
 from app.models.journal_entry import JournalEntry
 

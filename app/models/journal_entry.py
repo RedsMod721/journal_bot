@@ -18,8 +18,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, JSON, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
 
@@ -47,7 +47,7 @@ class JournalEntry(Base):
     __tablename__ = "journal_entries"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id: str = Column(  # type: ignore
+    id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -55,7 +55,7 @@ class JournalEntry(Base):
     )
 
     # Foreign key to user
-    user_id: str = Column(  # type: ignore
+    user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id"),
         nullable=False,
@@ -63,33 +63,33 @@ class JournalEntry(Base):
     )
 
     # Journal content - using Text for long content support
-    content: str = Column(Text, nullable=False)  # type: ignore
+    content: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Entry type: text, voice_transcription, file_upload
-    entry_type: str = Column(String(50), default="text", nullable=False)  # type: ignore
+    entry_type: Mapped[str] = mapped_column(String(50), default="text", nullable=False)
 
     # Timestamp
-    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)  # type: ignore
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # AI-generated fields
     # Stores: {"themes": [...], "skills": [...], "sentiment": "..."}
-    ai_categories: dict[str, Any] = Column(JSON, default=dict, nullable=False)  # type: ignore
+    ai_categories: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     # AI-suggested quests based on entry content
-    ai_suggested_quests: dict[str, Any] = Column(JSON, default=list, nullable=False)  # type: ignore
+    ai_suggested_quests: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list, nullable=False)
 
     # Flag indicating AI has processed this entry
-    ai_processed: bool = Column(Boolean, default=False, nullable=False)  # type: ignore
+    ai_processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Manual categorization (user override)
-    manual_theme_ids: list[str] = Column(JSON, default=list, nullable=False)  # type: ignore
-    manual_skill_ids: list[str] = Column(JSON, default=list, nullable=False)  # type: ignore
+    manual_theme_ids: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    manual_skill_ids: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
 
     # =========================================================================
     # RELATIONSHIPS
     # =========================================================================
 
-    user = relationship("User", back_populates="journal_entries")
+    user: Mapped["User"] = relationship("User", back_populates="journal_entries")
 
     def __repr__(self) -> str:
         """String representation for debugging."""

@@ -14,12 +14,16 @@ Features:
 - Optional association with themes
 """
 import uuid
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Column, Float, ForeignKey, Integer, JSON, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import Float, ForeignKey, Integer, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
+
+if TYPE_CHECKING:
+    from app.models.theme import Theme
+    from app.models.user import User
 
 
 class Skill(Base):
@@ -59,7 +63,7 @@ class Skill(Base):
     __tablename__ = "skills"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id: str = Column(  # type: ignore
+    id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -67,7 +71,7 @@ class Skill(Base):
     )
 
     # Foreign key to user (required)
-    user_id: str = Column(  # type: ignore
+    user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id"),
         nullable=False,
@@ -75,7 +79,7 @@ class Skill(Base):
     )
 
     # Foreign key to theme (optional - skill can exist without theme)
-    theme_id: Optional[str] = Column(  # type: ignore
+    theme_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("themes.id"),
         nullable=True,
@@ -83,7 +87,7 @@ class Skill(Base):
     )
 
     # Self-referential hierarchy for skill trees
-    parent_skill_id: Optional[str] = Column(  # type: ignore
+    parent_skill_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("skills.id"),
         nullable=True,
@@ -91,46 +95,51 @@ class Skill(Base):
     )
 
     # Skill identity
-    name: str = Column(String(100), nullable=False)  # type: ignore
-    description: Optional[str] = Column(String(500), nullable=True)  # type: ignore
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # XP and leveling system
-    level: int = Column(Integer, default=0, nullable=False)  # type: ignore
-    xp: float = Column(Float, default=0.0, nullable=False)  # type: ignore
-    xp_to_next_level: float = Column(Float, default=50.0, nullable=False)  # type: ignore
+    level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    xp: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    xp_to_next_level: Mapped[float] = mapped_column(Float, default=50.0, nullable=False)
 
     # Rank system (Beginner -> Amateur -> Intermediate -> Advanced -> Expert -> Master)
-    rank: str = Column(String(20), default="Beginner", nullable=False)  # type: ignore
+    rank: Mapped[str] = mapped_column(String(20), default="Beginner", nullable=False)
 
     # Practice tracking
-    practice_time_minutes: int = Column(Integer, default=0, nullable=False)  # type: ignore
+    practice_time_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     # Difficulty rating
-    difficulty: str = Column(String(20), default="Medium", nullable=False)  # type: ignore
+    difficulty: Mapped[str] = mapped_column(String(20), default="Medium", nullable=False)
 
     # Extensibility field for future attributes
-    skill_metadata: dict[str, Any] = Column(JSON, default=dict, nullable=False)  # type: ignore
+    skill_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     # =========================================================================
     # RELATIONSHIPS
     # =========================================================================
 
-    user = relationship(
+    user: Mapped["User"] = relationship(
         "User",
         back_populates="skills",
     )
 
-    theme = relationship(
+    theme: Mapped[Optional["Theme"]] = relationship(
         "Theme",
         back_populates="skills",
     )
 
     # Self-referential relationship for skill trees
-    parent_skill = relationship(
+    parent_skill: Mapped[Optional["Skill"]] = relationship(
         "Skill",
         remote_side="Skill.id",
-        backref="child_skills",
+        back_populates="child_skills",
         foreign_keys="Skill.parent_skill_id",
+    )
+
+    child_skills: Mapped[list["Skill"]] = relationship(
+        "Skill",
+        back_populates="parent_skill",
     )
 
     # =========================================================================

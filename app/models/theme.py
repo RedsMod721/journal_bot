@@ -14,13 +14,14 @@ Features:
 import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Column, Float, ForeignKey, Integer, JSON, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import Float, ForeignKey, Integer, JSON, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
 
 if TYPE_CHECKING:
-    from sqlalchemy.orm import Mapped
+    from app.models.skill import Skill
+    from app.models.user import User
 
 
 class Theme(Base):
@@ -49,7 +50,7 @@ class Theme(Base):
     __tablename__ = "themes"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id: str = Column(  # type: ignore
+    id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -57,7 +58,7 @@ class Theme(Base):
     )
 
     # Foreign key to user
-    user_id: str = Column(  # type: ignore
+    user_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("users.id"),
         nullable=False,
@@ -65,20 +66,20 @@ class Theme(Base):
     )
 
     # Theme identity
-    name: str = Column(String(100), nullable=False)  # type: ignore
-    description: Optional[str] = Column(String(500), nullable=True)  # type: ignore
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # XP and leveling system
-    level: int = Column(Integer, default=0, nullable=False)  # type: ignore
-    xp: float = Column(Float, default=0.0, nullable=False)  # type: ignore
-    xp_to_next_level: float = Column(Float, default=100.0, nullable=False)  # type: ignore
+    level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    xp: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    xp_to_next_level: Mapped[float] = mapped_column(Float, default=100.0, nullable=False)
 
     # Corrosion system - tracks neglect
     # Values: "Fresh", "Old", "Patterned", "Unrecovered"
-    corrosion_level: str = Column(String(20), default="Fresh", nullable=False)  # type: ignore
+    corrosion_level: Mapped[str] = mapped_column(String(20), default="Fresh", nullable=False)
 
     # Self-referential hierarchy for sub-themes
-    parent_theme_id: Optional[str] = Column(  # type: ignore
+    parent_theme_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("themes.id"),
         nullable=True,
@@ -86,27 +87,32 @@ class Theme(Base):
     )
 
     # Extensibility field for future attributes
-    theme_metadata: dict[str, Any] = Column(JSON, default=dict, nullable=False)  # type: ignore
+    theme_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 
     # =========================================================================
     # RELATIONSHIPS
     # =========================================================================
 
-    user = relationship(
+    user: Mapped["User"] = relationship(
         "User",
         back_populates="themes",
     )
 
     # Self-referential relationship for theme hierarchy
-    parent_theme = relationship(
+    parent_theme: Mapped[Optional["Theme"]] = relationship(
         "Theme",
         remote_side="Theme.id",
-        backref="sub_themes",
+        back_populates="sub_themes",
         foreign_keys="Theme.parent_theme_id",
     )
 
+    sub_themes: Mapped[list["Theme"]] = relationship(
+        "Theme",
+        back_populates="parent_theme",
+    )
+
     # Skills under this theme
-    skills = relationship(
+    skills: Mapped[list["Skill"]] = relationship(
         "Skill",
         back_populates="theme",
         cascade="all, delete-orphan",

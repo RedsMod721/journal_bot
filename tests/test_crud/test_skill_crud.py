@@ -15,7 +15,7 @@ This module tests all CRUD functions in app/crud/skill.py:
 Uses db_session, sample_user, and sample_theme fixtures from conftest.py.
 """
 import pytest
-from pydantic import ValidationError  # type: ignore
+from pydantic import ValidationError  # type: ignore[import-not-found]
 
 from app.crud.skill import (
     add_practice_time,
@@ -89,6 +89,7 @@ class TestSkillCRUD:
         # Assert
         assert result is not None
         assert result.parent_skill_id == parent.id
+        assert result.parent_skill is not None
         assert result.parent_skill.name == "Programming"
 
     def test_create_skill_with_theme(self, db_session, sample_user, sample_theme):
@@ -106,6 +107,7 @@ class TestSkillCRUD:
         # Assert
         assert result is not None
         assert result.theme_id == sample_theme.id
+        assert result.theme is not None
         assert result.theme.name == sample_theme.name
 
     def test_create_skill_minimal_data(self, db_session, sample_user):

@@ -9,15 +9,12 @@ when a user is deleted.
 """
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
-
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Mapped
 
 
 class User(Base):
@@ -43,7 +40,7 @@ class User(Base):
     __tablename__ = "users"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id: str = Column(  # type: ignore
+    id: Mapped[str] = mapped_column(
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -51,12 +48,12 @@ class User(Base):
     )
 
     # User identity fields
-    username: str = Column(String(50), unique=True, nullable=False, index=True)  # type: ignore
-    email: str = Column(String(255), unique=True, nullable=False, index=True)  # type: ignore
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
 
     # Account metadata
-    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)  # type: ignore
-    is_active: bool = Column(Boolean, default=True, nullable=False)  # type: ignore
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # =========================================================================
     # RELATIONSHIPS
@@ -64,37 +61,37 @@ class User(Base):
     # cascade="all, delete-orphan" ensures related records are deleted with user
     # =========================================================================
 
-    themes = relationship(
+    themes: Mapped[list["Theme"]] = relationship(
         "Theme",
         back_populates="user",
         cascade="all, delete-orphan",
     )
 
-    skills = relationship(
+    skills: Mapped[list["Skill"]] = relationship(
         "Skill",
         back_populates="user",
         cascade="all, delete-orphan",
     )
 
-    journal_entries = relationship(
+    journal_entries: Mapped[list["JournalEntry"]] = relationship(
         "JournalEntry",
         back_populates="user",
         cascade="all, delete-orphan",
     )
 
-    user_titles = relationship(
+    user_titles: Mapped[list["UserTitle"]] = relationship(
         "UserTitle",
         back_populates="user",
         cascade="all, delete-orphan",
     )
 
-    user_mq = relationship(
+    user_mq: Mapped[list["UserMissionQuest"]] = relationship(
         "UserMissionQuest",
         back_populates="user",
         cascade="all, delete-orphan",
     )
 
-    stats = relationship(
+    stats: Mapped[Optional["UserStats"]] = relationship(
         "UserStats",
         back_populates="user",
         uselist=False,  # One-to-one relationship
