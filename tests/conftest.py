@@ -31,6 +31,8 @@ from app.models.title import TitleTemplate, UserTitle  # noqa: F401
 from app.models.mission_quest import MissionQuestTemplate, UserMissionQuest  # noqa: F401
 from app.models.journal_entry import JournalEntry  # noqa: F401
 from app.models.user_stats import UserStats  # noqa: F401
+from app.models.event_log import EventLog  # noqa: F401
+from app.models.item import ItemTemplate, UserItem  # noqa: F401
 
 
 # Use in-memory SQLite for tests (fast, isolated, no cleanup needed)

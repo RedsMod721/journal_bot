@@ -98,6 +98,18 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    event_logs: Mapped[list["EventLog"]] = relationship(
+        "EventLog",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    user_items: Mapped[list["UserItem"]] = relationship(
+        "UserItem",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         """String representation for debugging."""
         return f"<User {self.username}>"
