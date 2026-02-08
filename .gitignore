@@ -23,8 +23,10 @@ data/*.sqlite
 data/*.sqlite3
 data/backups/*
 data/voice_uploads/*
+logs/*
 !data/backups/.gitkeep
 !data/voice_uploads/.gitkeep
+!logs/.gitkeep
 .DS_Store
 
 # Claude cert bundle
