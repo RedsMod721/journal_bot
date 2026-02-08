@@ -43,8 +43,11 @@ class EqualDistributor(XPDistributionStrategy):
         Returns:
             Dict mapping "theme:{id}" and "skill:{id}" keys to equal XP amounts
         """
-        themes = categories.get("themes", [])
-        skills = categories.get("skills", [])
+        if categories is None:
+            categories = {}
+
+        themes = categories.get("themes") or []
+        skills = categories.get("skills") or []
 
         total_targets = len(themes) + len(skills)
 

@@ -210,6 +210,18 @@ class TestThemeLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
+    def test_theme_level_does_not_mutate_condition(self, db_session, sample_user, sample_theme) -> None:
+        evaluator = ThemeLevelCondition()
+        sample_theme.level = 2
+        db_session.commit()
+
+        condition = {"type": "theme_level", "theme": sample_theme.name, "value": 1}
+        original = condition.copy()
+
+        evaluator.evaluate(db_session, sample_user.id, condition)
+
+        assert condition == original
+
 
 class TestSkillLevelCondition:
     def test_skill_level_met(self, db_session, sample_user, sample_skill) -> None:
@@ -642,6 +654,15 @@ class TestSkillRankCondition:
         db_session.commit()
 
         condition = {"type": "skill_rank", "rank": "Expert"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_skill_rank_invalid_rank_returns_false(self, db_session, sample_user, sample_skill) -> None:
+        evaluator = SkillRankCondition()
+        sample_skill.rank = "Expert"
+        db_session.commit()
+
+        condition = {"type": "skill_rank", "rank": "Legend"}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 

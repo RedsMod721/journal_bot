@@ -41,6 +41,21 @@ class TestEqualDistributor:
 
         assert result == {}
 
+    def test_equal_distribution_none_categories_returns_empty(self) -> None:
+        strategy = EqualDistributor()
+
+        result = strategy.distribute(entry=None, categories=None, base_xp=100.0)
+
+        assert result == {}
+
+    def test_equal_distribution_none_lists_returns_empty(self) -> None:
+        strategy = EqualDistributor()
+        categories = {"themes": None, "skills": None}
+
+        result = strategy.distribute(entry=None, categories=categories, base_xp=50.0)
+
+        assert result == {}
+
     def test_equal_distribution_single_target_gets_all_xp(self) -> None:
         strategy = EqualDistributor()
         categories = {"themes": [{"id": "t1"}], "skills": []}
