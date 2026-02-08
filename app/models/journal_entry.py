@@ -16,12 +16,15 @@ Manual categorization fields allow user override:
 """
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class JournalEntry(Base):
