@@ -14,6 +14,7 @@ Features:
 - Optional association with themes
 """
 import uuid
+from typing import Any, Optional
 
 from sqlalchemy import Column, Float, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import relationship
@@ -58,7 +59,7 @@ class Skill(Base):
     __tablename__ = "skills"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id = Column(
+    id: str = Column(  # type: ignore
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -66,7 +67,7 @@ class Skill(Base):
     )
 
     # Foreign key to user (required)
-    user_id = Column(
+    user_id: str = Column(  # type: ignore
         String(36),
         ForeignKey("users.id"),
         nullable=False,
@@ -74,7 +75,7 @@ class Skill(Base):
     )
 
     # Foreign key to theme (optional - skill can exist without theme)
-    theme_id = Column(
+    theme_id: Optional[str] = Column(  # type: ignore
         String(36),
         ForeignKey("themes.id"),
         nullable=True,
@@ -82,7 +83,7 @@ class Skill(Base):
     )
 
     # Self-referential hierarchy for skill trees
-    parent_skill_id = Column(
+    parent_skill_id: Optional[str] = Column(  # type: ignore
         String(36),
         ForeignKey("skills.id"),
         nullable=True,
@@ -90,25 +91,25 @@ class Skill(Base):
     )
 
     # Skill identity
-    name = Column(String(100), nullable=False)
-    description = Column(String(500), nullable=True)
+    name: str = Column(String(100), nullable=False)  # type: ignore
+    description: Optional[str] = Column(String(500), nullable=True)  # type: ignore
 
     # XP and leveling system
-    level = Column(Integer, default=0, nullable=False)
-    xp = Column(Float, default=0.0, nullable=False)
-    xp_to_next_level = Column(Float, default=50.0, nullable=False)
+    level: int = Column(Integer, default=0, nullable=False)  # type: ignore
+    xp: float = Column(Float, default=0.0, nullable=False)  # type: ignore
+    xp_to_next_level: float = Column(Float, default=50.0, nullable=False)  # type: ignore
 
     # Rank system (Beginner -> Amateur -> Intermediate -> Advanced -> Expert -> Master)
-    rank = Column(String(20), default="Beginner", nullable=False)
+    rank: str = Column(String(20), default="Beginner", nullable=False)  # type: ignore
 
     # Practice tracking
-    practice_time_minutes = Column(Integer, default=0, nullable=False)
+    practice_time_minutes: int = Column(Integer, default=0, nullable=False)  # type: ignore
 
     # Difficulty rating
-    difficulty = Column(String(20), default="Medium", nullable=False)
+    difficulty: str = Column(String(20), default="Medium", nullable=False)  # type: ignore
 
     # Extensibility field for future attributes
-    skill_metadata = Column(JSON, default=dict, nullable=False)
+    skill_metadata: dict[str, Any] = Column(JSON, default=dict, nullable=False)  # type: ignore
 
     # =========================================================================
     # RELATIONSHIPS
@@ -127,9 +128,9 @@ class Skill(Base):
     # Self-referential relationship for skill trees
     parent_skill = relationship(
         "Skill",
-        remote_side=[id],
+        remote_side="Skill.id",
         backref="child_skills",
-        foreign_keys=[parent_skill_id],
+        foreign_keys="Skill.parent_skill_id",
     )
 
     # =========================================================================

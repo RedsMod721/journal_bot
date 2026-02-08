@@ -16,6 +16,7 @@ Manual categorization fields allow user override:
 """
 import uuid
 from datetime import datetime
+from typing import Any, Optional
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import relationship
@@ -46,7 +47,7 @@ class JournalEntry(Base):
     __tablename__ = "journal_entries"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id = Column(
+    id: str = Column(  # type: ignore
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -54,7 +55,7 @@ class JournalEntry(Base):
     )
 
     # Foreign key to user
-    user_id = Column(
+    user_id: str = Column(  # type: ignore
         String(36),
         ForeignKey("users.id"),
         nullable=False,
@@ -62,27 +63,27 @@ class JournalEntry(Base):
     )
 
     # Journal content - using Text for long content support
-    content = Column(Text, nullable=False)
+    content: str = Column(Text, nullable=False)  # type: ignore
 
     # Entry type: text, voice_transcription, file_upload
-    entry_type = Column(String(50), default="text", nullable=False)
+    entry_type: str = Column(String(50), default="text", nullable=False)  # type: ignore
 
     # Timestamp
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)  # type: ignore
 
     # AI-generated fields
     # Stores: {"themes": [...], "skills": [...], "sentiment": "..."}
-    ai_categories = Column(JSON, default=dict, nullable=False)
+    ai_categories: dict[str, Any] = Column(JSON, default=dict, nullable=False)  # type: ignore
 
     # AI-suggested quests based on entry content
-    ai_suggested_quests = Column(JSON, default=list, nullable=False)
+    ai_suggested_quests: dict[str, Any] = Column(JSON, default=list, nullable=False)  # type: ignore
 
     # Flag indicating AI has processed this entry
-    ai_processed = Column(Boolean, default=False, nullable=False)
+    ai_processed: bool = Column(Boolean, default=False, nullable=False)  # type: ignore
 
     # Manual categorization (user override)
-    manual_theme_ids = Column(JSON, default=list, nullable=False)
-    manual_skill_ids = Column(JSON, default=list, nullable=False)
+    manual_theme_ids: list[str] = Column(JSON, default=list, nullable=False)  # type: ignore
+    manual_skill_ids: list[str] = Column(JSON, default=list, nullable=False)  # type: ignore
 
     # =========================================================================
     # RELATIONSHIPS

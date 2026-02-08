@@ -15,7 +15,7 @@ This module tests all CRUD functions in app/crud/skill.py:
 Uses db_session, sample_user, and sample_theme fixtures from conftest.py.
 """
 import pytest
-from pydantic import ValidationError
+from pydantic import ValidationError  # type: ignore
 
 from app.crud.skill import (
     add_practice_time,

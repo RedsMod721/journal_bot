@@ -13,7 +13,7 @@ This module tests all CRUD functions in app/crud/theme.py:
 Uses db_session and sample_user fixtures from conftest.py.
 """
 import pytest
-from pydantic import ValidationError
+from pydantic import ValidationError  # type: ignore
 
 from app.crud.theme import (
     add_xp_to_theme,

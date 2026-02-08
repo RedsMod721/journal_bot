@@ -8,9 +8,10 @@ This module tests the complete CRUD layer end-to-end, verifying:
 - Cascade delete properly removes all related records via CRUD layer
 """
 from datetime import datetime, timedelta
+from typing import cast
 
 import pytest
-from pydantic import ValidationError
+from pydantic import ValidationError  # type: ignore
 from sqlalchemy.exc import IntegrityError
 
 # Import all CRUD modules
@@ -195,7 +196,7 @@ class TestFullCRUDIntegration:
 
         assert title_template is not None
         assert title_template.name == "Code Warrior"
-        assert title_template.rank == "B"
+        assert title_template.rank == "B"  # type: ignore
 
         # Verify we can retrieve the template
         retrieved_template = title_crud.get_title_template(db_session, title_template.id)
@@ -213,15 +214,15 @@ class TestFullCRUDIntegration:
         user_title = title_crud.award_title_to_user(db_session, user_title_data)
 
         assert user_title is not None
-        assert user_title.user_id == user.id
-        assert user_title.title_template_id == title_template.id
+        assert user_title.user_id == user.id  # type: ignore
+        assert user_title.title_template_id == title_template.id  # type: ignore
         assert user_title.is_equipped is False
         assert user_title.acquired_at is not None
 
         # =================================================================
         # STEP 7: Equip the Title via CRUD
         # =================================================================
-        equipped_title = title_crud.equip_title(db_session, user_title.id)
+        equipped_title = title_crud.equip_title(db_session, user_title.id)  # type: ignore
 
         assert equipped_title is not None
         assert equipped_title.is_equipped is True
@@ -268,10 +269,10 @@ class TestFullCRUDIntegration:
         user_mq = mq_crud.create_user_mq(db_session, user_mq_data)
 
         assert user_mq is not None
-        assert user_mq.user_id == user.id
-        assert user_mq.template_id == mq_template.id
-        assert user_mq.status == "in_progress"
-        assert user_mq.completion_progress == 0
+        assert user_mq.user_id == user.id  # type: ignore
+        assert user_mq.template_id == mq_template.id  # type: ignore
+        assert user_mq.status == "in_progress"  # type: ignore
+        assert user_mq.completion_progress == 0  # type: ignore
 
         # =================================================================
         # STEP 10: Create Journal Entry via CRUD
@@ -324,14 +325,15 @@ class TestFullCRUDIntegration:
         # STEP 13: Update MQ Progress to 50 via CRUD
         # =================================================================
         mq_update = UserMQUpdate(completion_progress=50)
-        updated_mq = mq_crud.update_user_mq(db_session, user_mq.id, mq_update)
+        updated_mq = mq_crud.update_user_mq(db_session, user_mq.id, mq_update)  # type: ignore
 
         assert updated_mq is not None
-        assert updated_mq.completion_progress == 50
+        assert updated_mq.completion_progress == 50  # type: ignore
 
         # Also test update_mq_progress function
-        updated_mq2 = mq_crud.update_mq_progress(db_session, user_mq.id, 75)
-        assert updated_mq2.completion_progress == 75
+        updated_mq2 = mq_crud.update_mq_progress(db_session, user_mq.id, 75)  # type: ignore
+        assert updated_mq2 is not None  # type: ignore
+        assert updated_mq2.completion_progress == 75  # type: ignore
 
         # =================================================================
         # STEP 14: Mark Journal Entry as AI Processed via CRUD
@@ -430,161 +432,161 @@ class TestFullCRUDIntegration:
         assert len(remaining_mq_template.user_mq) == 0
 
     def test_multi_user_isolation_across_crud(self, db_session, fake):
-        user1 = user_crud.create_user(
+        user1 = cast(User, user_crud.create_user(
             db_session,
             UserCreate(username=fake.user_name(), email=fake.email()),
-        )
-        user2 = user_crud.create_user(
+        ))
+        user2 = cast(User, user_crud.create_user(
             db_session,
             UserCreate(username=fake.user_name(), email=fake.email()),
-        )
+        ))
 
-        stats_crud.create_user_stats(db_session, UserStatsCreate(user_id=user1.id))
-        stats_crud.create_user_stats(db_session, UserStatsCreate(user_id=user2.id))
+        stats_crud.create_user_stats(db_session, UserStatsCreate(user_id=user1.id))  # type: ignore
+        stats_crud.create_user_stats(db_session, UserStatsCreate(user_id=user2.id))  # type: ignore
 
-        theme1 = theme_crud.create_theme(
+        theme1 = cast(Theme, theme_crud.create_theme(
             db_session,
-            ThemeCreate(user_id=user1.id, name="Focus", description="User1"),
-        )
-        theme2 = theme_crud.create_theme(
+            ThemeCreate(user_id=user1.id, name="Focus", description="User1"),  # type: ignore
+        ))
+        theme2 = cast(Theme, theme_crud.create_theme(
             db_session,
-            ThemeCreate(user_id=user2.id, name="Focus", description="User2"),
-        )
+            ThemeCreate(user_id=user2.id, name="Focus", description="User2"),  # type: ignore
+        ))
 
-        skill1 = skill_crud.create_skill(
+        skill1 = cast(Skill, skill_crud.create_skill(
             db_session,
-            SkillCreate(user_id=user1.id, theme_id=theme1.id, name="Python"),
-        )
-        skill2 = skill_crud.create_skill(
+            SkillCreate(user_id=user1.id, theme_id=theme1.id, name="Python"),  # type: ignore
+        ))
+        skill2 = cast(Skill, skill_crud.create_skill(
             db_session,
-            SkillCreate(user_id=user2.id, theme_id=theme2.id, name="Python"),
-        )
+            SkillCreate(user_id=user2.id, theme_id=theme2.id, name="Python"),  # type: ignore
+        ))
 
         journal_crud.create_journal_entry(
             db_session,
-            JournalEntryCreate(user_id=user1.id, content="User1 entry"),
+            JournalEntryCreate(user_id=user1.id, content="User1 entry"),  # type: ignore
         )
         journal_crud.create_journal_entry(
             db_session,
-            JournalEntryCreate(user_id=user2.id, content="User2 entry"),
+            JournalEntryCreate(user_id=user2.id, content="User2 entry"),  # type: ignore
         )
 
-        assert len(theme_crud.get_user_themes(db_session, user1.id)) == 1
-        assert len(theme_crud.get_user_themes(db_session, user2.id)) == 1
-        assert theme_crud.get_user_themes(db_session, user1.id)[0].id == theme1.id
-        assert theme_crud.get_user_themes(db_session, user2.id)[0].id == theme2.id
+        assert len(theme_crud.get_user_themes(db_session, user1.id)) == 1  # type: ignore
+        assert len(theme_crud.get_user_themes(db_session, user2.id)) == 1  # type: ignore
+        assert theme_crud.get_user_themes(db_session, user1.id)[0].id == theme1.id  # type: ignore
+        assert theme_crud.get_user_themes(db_session, user2.id)[0].id == theme2.id  # type: ignore
 
-        assert len(skill_crud.get_user_skills(db_session, user1.id)) == 1
-        assert len(skill_crud.get_user_skills(db_session, user2.id)) == 1
-        assert skill_crud.get_user_skills(db_session, user1.id)[0].id == skill1.id
-        assert skill_crud.get_user_skills(db_session, user2.id)[0].id == skill2.id
+        assert len(skill_crud.get_user_skills(db_session, user1.id)) == 1  # type: ignore
+        assert len(skill_crud.get_user_skills(db_session, user2.id)) == 1  # type: ignore
+        assert skill_crud.get_user_skills(db_session, user1.id)[0].id == skill1.id  # type: ignore
+        assert skill_crud.get_user_skills(db_session, user2.id)[0].id == skill2.id  # type: ignore
 
-        assert len(journal_crud.get_user_journal_entries(db_session, user1.id)) == 1
-        assert len(journal_crud.get_user_journal_entries(db_session, user2.id)) == 1
+        assert len(journal_crud.get_user_journal_entries(db_session, user1.id)) == 1  # type: ignore
+        assert len(journal_crud.get_user_journal_entries(db_session, user2.id)) == 1  # type: ignore
 
     def test_theme_and_skill_hierarchy_fetch(self, db_session, fake):
-        user = user_crud.create_user(
+        user = cast(User, user_crud.create_user(
             db_session,
             UserCreate(username=fake.user_name(), email=fake.email()),
-        )
+        ))
 
-        parent_theme = theme_crud.create_theme(
+        parent_theme = cast(Theme, theme_crud.create_theme(
             db_session,
-            ThemeCreate(user_id=user.id, name="Parent", description=""),
-        )
-        child_theme = theme_crud.create_theme(
+            ThemeCreate(user_id=user.id, name="Parent", description=""),  # type: ignore
+        ))
+        child_theme = cast(Theme, theme_crud.create_theme(
             db_session,
             ThemeCreate(
-                user_id=user.id,
+                user_id=user.id,  # type: ignore
                 name="Child",
                 description="",
-                parent_theme_id=parent_theme.id,
+                parent_theme_id=parent_theme.id,  # type: ignore
             ),
-        )
+        ))
 
-        parent_skill = skill_crud.create_skill(
+        parent_skill = cast(Skill, skill_crud.create_skill(
             db_session,
-            SkillCreate(user_id=user.id, theme_id=parent_theme.id, name="Parent Skill"),
-        )
-        child_skill = skill_crud.create_skill(
+            SkillCreate(user_id=user.id, theme_id=parent_theme.id, name="Parent Skill"),  # type: ignore
+        ))
+        child_skill = cast(Skill, skill_crud.create_skill(
             db_session,
             SkillCreate(
-                user_id=user.id,
-                theme_id=parent_theme.id,
+                user_id=user.id,  # type: ignore
+                theme_id=parent_theme.id,  # type: ignore
                 name="Child Skill",
-                parent_skill_id=parent_skill.id,
+                parent_skill_id=parent_skill.id,  # type: ignore
             ),
-        )
+        ))
 
-        fetched_theme = theme_crud.get_theme_with_subthemes(db_session, parent_theme.id)
+        fetched_theme = theme_crud.get_theme_with_subthemes(db_session, parent_theme.id)  # type: ignore
         assert fetched_theme is not None
         assert len(fetched_theme.sub_themes) == 1
-        assert fetched_theme.sub_themes[0].id == child_theme.id
+        assert fetched_theme.sub_themes[0].id == child_theme.id  # type: ignore
 
-        fetched_skill = skill_crud.get_skill_with_children(db_session, parent_skill.id)
+        fetched_skill = skill_crud.get_skill_with_children(db_session, parent_skill.id)  # type: ignore
         assert fetched_skill is not None
         assert len(fetched_skill.child_skills) == 1
-        assert fetched_skill.child_skills[0].id == child_skill.id
+        assert fetched_skill.child_skills[0].id == child_skill.id  # type: ignore
 
     def test_journal_pagination_and_ordering(self, db_session, fake):
-        user = user_crud.create_user(
+        user = cast(User, user_crud.create_user(
             db_session,
             UserCreate(username=fake.user_name(), email=fake.email()),
-        )
+        ))
 
-        entry_old = journal_crud.create_journal_entry(
+        entry_old = cast(JournalEntry, journal_crud.create_journal_entry(
             db_session,
-            JournalEntryCreate(user_id=user.id, content="Old"),
-        )
-        entry_mid = journal_crud.create_journal_entry(
+            JournalEntryCreate(user_id=user.id, content="Old"),  # type: ignore
+        ))
+        entry_mid = cast(JournalEntry, journal_crud.create_journal_entry(
             db_session,
-            JournalEntryCreate(user_id=user.id, content="Mid"),
-        )
-        entry_new = journal_crud.create_journal_entry(
+            JournalEntryCreate(user_id=user.id, content="Mid"),  # type: ignore
+        ))
+        entry_new = cast(JournalEntry, journal_crud.create_journal_entry(
             db_session,
-            JournalEntryCreate(user_id=user.id, content="New"),
-        )
+            JournalEntryCreate(user_id=user.id, content="New"),  # type: ignore
+        ))
 
         entry_old.created_at = datetime.utcnow() - timedelta(days=3)
         entry_mid.created_at = datetime.utcnow() - timedelta(days=2)
         entry_new.created_at = datetime.utcnow() - timedelta(days=1)
         db_session.commit()
 
-        all_entries = journal_crud.get_user_journal_entries(db_session, user.id)
-        assert [e.id for e in all_entries[:3]] == [entry_new.id, entry_mid.id, entry_old.id]
+        all_entries = journal_crud.get_user_journal_entries(db_session, user.id)  # type: ignore
+        assert [e.id for e in all_entries[:3]] == [entry_new.id, entry_mid.id, entry_old.id]  # type: ignore
 
-        page1 = journal_crud.get_user_journal_entries(db_session, user.id, limit=2)
-        page2 = journal_crud.get_user_journal_entries(db_session, user.id, skip=2, limit=2)
-        assert [e.id for e in page1] == [entry_new.id, entry_mid.id]
-        assert [e.id for e in page2] == [entry_old.id]
+        page1 = journal_crud.get_user_journal_entries(db_session, user.id, limit=2)  # type: ignore
+        page2 = journal_crud.get_user_journal_entries(db_session, user.id, skip=2, limit=2)  # type: ignore
+        assert [e.id for e in page1] == [entry_new.id, entry_mid.id]  # type: ignore
+        assert [e.id for e in page2] == [entry_old.id]  # type: ignore
 
     def test_recent_entries_filter(self, db_session, fake):
-        user = user_crud.create_user(
+        user = cast(User, user_crud.create_user(
             db_session,
             UserCreate(username=fake.user_name(), email=fake.email()),
-        )
-        recent_entry = journal_crud.create_journal_entry(
+        ))
+        recent_entry = cast(JournalEntry, journal_crud.create_journal_entry(
             db_session,
-            JournalEntryCreate(user_id=user.id, content="Recent"),
-        )
-        old_entry = journal_crud.create_journal_entry(
+            JournalEntryCreate(user_id=user.id, content="Recent"),  # type: ignore
+        ))
+        old_entry = cast(JournalEntry, journal_crud.create_journal_entry(
             db_session,
-            JournalEntryCreate(user_id=user.id, content="Old"),
-        )
+            JournalEntryCreate(user_id=user.id, content="Old"),  # type: ignore
+        ))
 
         recent_entry.created_at = datetime.utcnow() - timedelta(days=1)
         old_entry.created_at = datetime.utcnow() - timedelta(days=10)
         db_session.commit()
 
-        recent = journal_crud.get_recent_entries(db_session, user.id, days=7)
-        assert [e.id for e in recent] == [recent_entry.id]
+        recent = journal_crud.get_recent_entries(db_session, user.id, days=7)  # type: ignore
+        assert [e.id for e in recent] == [recent_entry.id]  # type: ignore
 
     def test_mq_update_progress_and_complete(self, db_session, fake):
-        user = user_crud.create_user(
+        user = cast(User, user_crud.create_user(
             db_session,
             UserCreate(username=fake.user_name(), email=fake.email()),
-        )
-        template = mq_crud.create_mq_template(
+        ))
+        template = cast(MissionQuestTemplate, mq_crud.create_mq_template(
             db_session,
             MQTemplateCreate(
                 name="Daily Task",
@@ -593,33 +595,33 @@ class TestFullCRUDIntegration:
                 structure="single_action",
                 completion_condition={"type": "yes_no"},
             ),
-        )
-        quest = mq_crud.create_user_mq(
+        ))
+        quest = cast(UserMissionQuest, mq_crud.create_user_mq(
             db_session,
             UserMQCreate(
-                user_id=user.id,
-                template_id=template.id,
+                user_id=user.id,  # type: ignore
+                template_id=template.id,  # type: ignore
                 name="Daily Task",
                 status="in_progress",
                 completion_target=100,
             ),
-        )
+        ))
 
-        updated = mq_crud.update_mq_progress(db_session, quest.id, 120)
+        updated = mq_crud.update_mq_progress(db_session, quest.id, 120)  # type: ignore
         assert updated is not None
-        assert updated.completion_progress == 120
+        assert updated.completion_progress == 120  # type: ignore
 
-        completed = mq_crud.complete_user_mq(db_session, quest.id)
+        completed = mq_crud.complete_user_mq(db_session, quest.id)  # type: ignore
         assert completed is not None
-        assert completed.status == "completed"
+        assert completed.status == "completed"  # type: ignore
         assert completed.completed_at is not None
 
     def test_user_title_equip_unequip_and_remove(self, db_session, fake):
-        user = user_crud.create_user(
+        user = cast(User, user_crud.create_user(
             db_session,
             UserCreate(username=fake.user_name(), email=fake.email()),
-        )
-        template = title_crud.create_title_template(
+        ))
+        template = cast(TitleTemplate, title_crud.create_title_template(
             db_session,
             TitleTemplateCreate(
                 name="Consistency",
@@ -629,23 +631,23 @@ class TestFullCRUDIntegration:
                 unlock_condition={"type": "journal_streak", "value": 3},
                 category="Habits",
             ),
-        )
-        awarded = title_crud.award_title_to_user(
+        ))
+        awarded = cast(UserTitle, title_crud.award_title_to_user(
             db_session,
-            UserTitleCreate(user_id=user.id, title_template_id=template.id),
-        )
+            UserTitleCreate(user_id=user.id, title_template_id=template.id),  # type: ignore
+        ))
 
-        unequipped = title_crud.unequip_title(db_session, awarded.id)
+        unequipped = title_crud.unequip_title(db_session, awarded.id)  # type: ignore
         assert unequipped is not None
         assert unequipped.is_equipped is False
 
-        equipped = title_crud.equip_title(db_session, awarded.id)
+        equipped = title_crud.equip_title(db_session, awarded.id)  # type: ignore
         assert equipped is not None
         assert equipped.is_equipped is True
 
-        assert len(title_crud.get_user_titles(db_session, user.id, equipped_only=True)) == 1
-        assert title_crud.remove_user_title(db_session, awarded.id) is True
-        assert title_crud.get_user_title(db_session, awarded.id) is None
+        assert len(title_crud.get_user_titles(db_session, user.id, equipped_only=True)) == 1  # type: ignore
+        assert title_crud.remove_user_title(db_session, awarded.id) is True  # type: ignore
+        assert title_crud.get_user_title(db_session, awarded.id) is None  # type: ignore
 
     def test_schema_validation_rejects_extra_fields(self):
         schemas = [
@@ -737,14 +739,14 @@ class TestFullCRUDIntegration:
         db_session.rollback()
 
     def test_duplicate_user_stats_raises_integrity_error(self, db_session, fake):
-        user = user_crud.create_user(
+        user = cast(User, user_crud.create_user(
             db_session,
             UserCreate(username=fake.user_name(), email=fake.email()),
-        )
-        stats_crud.create_user_stats(db_session, UserStatsCreate(user_id=user.id))
+        ))
+        stats_crud.create_user_stats(db_session, UserStatsCreate(user_id=user.id))  # type: ignore
 
         with pytest.raises(IntegrityError):
-            stats_crud.create_user_stats(db_session, UserStatsCreate(user_id=user.id))
+            stats_crud.create_user_stats(db_session, UserStatsCreate(user_id=user.id))  # type: ignore
         db_session.rollback()
 
     def test_crud_returns_none_or_false_for_missing_ids(self, db_session):

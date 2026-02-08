@@ -12,11 +12,15 @@ Features:
 - Corrosion system for neglected themes
 """
 import uuid
+from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import Column, Float, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import relationship
 
 from app.utils.database import Base
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Mapped
 
 
 class Theme(Base):
@@ -45,7 +49,7 @@ class Theme(Base):
     __tablename__ = "themes"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id = Column(
+    id: str = Column(  # type: ignore
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -53,7 +57,7 @@ class Theme(Base):
     )
 
     # Foreign key to user
-    user_id = Column(
+    user_id: str = Column(  # type: ignore
         String(36),
         ForeignKey("users.id"),
         nullable=False,
@@ -61,20 +65,20 @@ class Theme(Base):
     )
 
     # Theme identity
-    name = Column(String(100), nullable=False)
-    description = Column(String(500), nullable=True)
+    name: str = Column(String(100), nullable=False)  # type: ignore
+    description: Optional[str] = Column(String(500), nullable=True)  # type: ignore
 
     # XP and leveling system
-    level = Column(Integer, default=0, nullable=False)
-    xp = Column(Float, default=0.0, nullable=False)
-    xp_to_next_level = Column(Float, default=100.0, nullable=False)
+    level: int = Column(Integer, default=0, nullable=False)  # type: ignore
+    xp: float = Column(Float, default=0.0, nullable=False)  # type: ignore
+    xp_to_next_level: float = Column(Float, default=100.0, nullable=False)  # type: ignore
 
     # Corrosion system - tracks neglect
     # Values: "Fresh", "Old", "Patterned", "Unrecovered"
-    corrosion_level = Column(String(20), default="Fresh", nullable=False)
+    corrosion_level: str = Column(String(20), default="Fresh", nullable=False)  # type: ignore
 
     # Self-referential hierarchy for sub-themes
-    parent_theme_id = Column(
+    parent_theme_id: Optional[str] = Column(  # type: ignore
         String(36),
         ForeignKey("themes.id"),
         nullable=True,
@@ -82,7 +86,7 @@ class Theme(Base):
     )
 
     # Extensibility field for future attributes
-    theme_metadata = Column(JSON, default=dict, nullable=False)
+    theme_metadata: dict[str, Any] = Column(JSON, default=dict, nullable=False)  # type: ignore
 
     # =========================================================================
     # RELATIONSHIPS
@@ -96,9 +100,9 @@ class Theme(Base):
     # Self-referential relationship for theme hierarchy
     parent_theme = relationship(
         "Theme",
-        remote_side=[id],
+        remote_side="Theme.id",
         backref="sub_themes",
-        foreign_keys=[parent_theme_id],
+        foreign_keys="Theme.parent_theme_id",
     )
 
     # Skills under this theme

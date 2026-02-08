@@ -9,11 +9,15 @@ when a user is deleted.
 """
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, Column, DateTime, String
 from sqlalchemy.orm import relationship
 
 from app.utils.database import Base
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Mapped
 
 
 class User(Base):
@@ -39,7 +43,7 @@ class User(Base):
     __tablename__ = "users"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id = Column(
+    id: str = Column(  # type: ignore
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -47,12 +51,12 @@ class User(Base):
     )
 
     # User identity fields
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(255), unique=True, nullable=False, index=True)
+    username: str = Column(String(50), unique=True, nullable=False, index=True)  # type: ignore
+    email: str = Column(String(255), unique=True, nullable=False, index=True)  # type: ignore
 
     # Account metadata
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
+    created_at: datetime = Column(DateTime, default=datetime.utcnow, nullable=False)  # type: ignore
+    is_active: bool = Column(Boolean, default=True, nullable=False)  # type: ignore
 
     # =========================================================================
     # RELATIONSHIPS

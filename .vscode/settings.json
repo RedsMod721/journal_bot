@@ -26,6 +26,22 @@
     "/^python -m pytest tests/test_integration/test_crud_integration\\.py -v$/": {
       "approve": true,
       "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_integration/test_crud_integration\\.py::TestFullCRUDIntegration::test_full_crud_flow_create_character_and_journal -xvs 2>&1 \\| head -100$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_integration/test_crud_integration\\.py::TestFullCRUDIntegration::test_full_crud_flow_create_character_and_journal -xvs 2>&1 \\| head -150$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/ -x 2>&1 \\| head -100$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/ -v --tb=short 2>&1 \\| tail -50$/": {
+      "approve": true,
+      "matchCommandLine": true
     }
   }
 }

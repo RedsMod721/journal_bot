@@ -17,6 +17,7 @@ Features:
 """
 import uuid
 from datetime import datetime
+from typing import Any, Optional
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, JSON, String
 from sqlalchemy.orm import relationship
@@ -49,7 +50,7 @@ class TitleTemplate(Base):
     __tablename__ = "title_templates"
 
     # Primary key - UUID stored as string for SQLite compatibility
-    id = Column(
+    id: str = Column(  # type: ignore
         String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
@@ -57,12 +58,12 @@ class TitleTemplate(Base):
     )
 
     # Title identity
-    name = Column(String(100), unique=True, nullable=False, index=True)
-    description_template = Column(String(500), nullable=True)
+    name: str = Column(String(100), unique=True, nullable=False, index=True)  # type: ignore
+    description_template: Optional[str] = Column(String(500), nullable=True)  # type: ignore
 
     # Effect system - JSON for flexibility
     # Example: {"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 1.10}
-    effect = Column(JSON, default=dict, nullable=False)
+    effect: dict[str, Any] = Column(JSON, default=dict, nullable=False)  # type: ignore
 
     # Rank system (F to S, like Korean RPG novels)
     rank = Column(String(1), default="D", nullable=False)

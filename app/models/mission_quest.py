@@ -18,6 +18,7 @@ Features:
 """
 import uuid
 from datetime import datetime
+from typing import Any, Optional
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import relationship
@@ -53,6 +54,18 @@ class MissionQuestTemplate(Base):
     """
 
     __tablename__ = "mq_templates"
+
+    # Type annotations for all attributes (helps Pylance understand types)
+    id: str
+    name: str
+    description_template: Optional[str]
+    type: Optional[str]
+    structure: Optional[str]
+    completion_condition: dict[str, Any]
+    reward_xp: int
+    reward_coins: int
+    difficulty: Optional[str]
+    category: Optional[str]
 
     # Primary key - UUID stored as string for SQLite compatibility
     id = Column(

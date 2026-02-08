@@ -44,6 +44,17 @@ class UserStats(Base):
 
     __tablename__ = "user_stats"
 
+    # Type annotations for all attributes (helps Pylance understand types)
+    id: str
+    user_id: str
+    hp: int
+    mp: int
+    mental_health: int
+    physical_health: int
+    relationship_quality: int
+    socialization_level: int
+    updated_at: datetime
+
     # Primary key - UUID stored as string for SQLite compatibility
     id = Column(
         String(36),
