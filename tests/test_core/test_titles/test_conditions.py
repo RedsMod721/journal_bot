@@ -10,8 +10,11 @@ import pytest
 from freezegun import freeze_time
 
 from app.core.titles.conditions import (
+    CorrosionLevelCondition,
+    ItemEquippedCondition,
     JournalCountCondition,
     JournalStreakCondition,
+    QuestFailedCondition,
     QuestCompletionCountCondition,
     SkillLevelCondition,
     SkillRankCondition,
@@ -22,6 +25,7 @@ from app.core.titles.conditions import (
     TotalXPCondition,
 )
 from app.models.journal_entry import JournalEntry
+from app.models.item import ItemTemplate, UserItem
 from app.models.mission_quest import UserMissionQuest
 from app.models.skill import Skill
 from app.models.theme import Theme
@@ -60,6 +64,35 @@ def _create_quest(db_session, user_id: str, status: str = "completed") -> UserMi
     db_session.commit()
     db_session.refresh(quest)
     return quest
+
+
+def _create_item_template(db_session, item_type: str) -> ItemTemplate:
+    template = ItemTemplate(
+        name=f"Item {uuid4().hex[:6]}",
+        item_type=item_type,
+        rarity="common",
+    )
+    db_session.add(template)
+    db_session.commit()
+    db_session.refresh(template)
+    return template
+
+
+def _create_user_item(
+    db_session,
+    user_id: str,
+    template_id: str,
+    is_equipped: bool = False,
+) -> UserItem:
+    user_item = UserItem(
+        user_id=user_id,
+        template_id=template_id,
+        is_equipped=is_equipped,
+    )
+    db_session.add(user_item)
+    db_session.commit()
+    db_session.refresh(user_item)
+    return user_item
 
 
 class TestJournalStreakCondition:
@@ -815,5 +848,211 @@ class TestTimeBasedCondition:
             _create_journal_entry(db_session, other_user.id)
 
         condition = {"type": "time_based", "days_active": 1}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+
+class TestCorrosionLevelCondition:
+    def test_corrosion_level_met(self, db_session, sample_user) -> None:
+        evaluator = CorrosionLevelCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", corrosion_level="Rusty")
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Rusty"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_corrosion_level_not_met(self, db_session, sample_user) -> None:
+        evaluator = CorrosionLevelCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", corrosion_level="Fresh")
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Dusty"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_corrosion_level_exact_threshold(self, db_session, sample_user) -> None:
+        evaluator = CorrosionLevelCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", corrosion_level="Dusty")
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Dusty"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_corrosion_level_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+        evaluator = CorrosionLevelCondition()
+        condition = {"type": "corrosion_level", "theme": "Missing", "min_level": "Rusty"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_corrosion_level_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+        evaluator = CorrosionLevelCondition()
+        with pytest.raises(KeyError):
+            evaluator.evaluate(db_session, sample_user.id, {"type": "corrosion_level", "theme": "Education"})
+
+    def test_corrosion_level_edge_case_1(self, db_session, sample_user) -> None:
+        evaluator = CorrosionLevelCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", corrosion_level="Rusty")
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Unknown"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_corrosion_level_edge_case_2(self, db_session, sample_user) -> None:
+        evaluator = CorrosionLevelCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", corrosion_level="Broken")
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Familiar"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_corrosion_level_with_multiple_users(self, db_session, sample_user) -> None:
+        evaluator = CorrosionLevelCondition()
+        other_user = _create_user(db_session)
+        other_theme = Theme(user_id=other_user.id, name="Education", corrosion_level="Forgotten")
+        db_session.add(other_theme)
+        db_session.commit()
+
+        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Rusty"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+
+class TestQuestFailedCondition:
+    def test_quest_failed_met(self, db_session, sample_user) -> None:
+        evaluator = QuestFailedCondition()
+        quest = _create_quest(db_session, sample_user.id, status="failed")
+
+        condition = {"type": "quest_failed", "quest_id": quest.id}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_quest_failed_not_met(self, db_session, sample_user) -> None:
+        evaluator = QuestFailedCondition()
+        quest = _create_quest(db_session, sample_user.id, status="completed")
+
+        condition = {"type": "quest_failed", "quest_id": quest.id}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_quest_failed_exact_threshold(self, db_session, sample_user) -> None:
+        evaluator = QuestFailedCondition()
+        quest = _create_quest(db_session, sample_user.id, status="failed")
+
+        condition = {"type": "quest_failed", "quest_id": quest.id}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_quest_failed_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+        evaluator = QuestFailedCondition()
+        condition = {"type": "quest_failed", "quest_id": "missing"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_quest_failed_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+        evaluator = QuestFailedCondition()
+        with pytest.raises(KeyError):
+            evaluator.evaluate(db_session, sample_user.id, {"type": "quest_failed"})
+
+    def test_quest_failed_edge_case_1(self, db_session, sample_user) -> None:
+        evaluator = QuestFailedCondition()
+        quest = _create_quest(db_session, sample_user.id, status="FAILED")
+
+        condition = {"type": "quest_failed", "quest_id": quest.id}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_quest_failed_edge_case_2(self, db_session, sample_user) -> None:
+        evaluator = QuestFailedCondition()
+        other_user = _create_user(db_session)
+        quest = _create_quest(db_session, other_user.id, status="failed")
+
+        condition = {"type": "quest_failed", "quest_id": quest.id}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_quest_failed_with_multiple_users(self, db_session, sample_user) -> None:
+        evaluator = QuestFailedCondition()
+        quest = _create_quest(db_session, sample_user.id, status="failed")
+        other_user = _create_user(db_session)
+        _create_quest(db_session, other_user.id, status="failed")
+
+        condition = {"type": "quest_failed", "quest_id": quest.id}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+
+class TestItemEquippedCondition:
+    def test_item_equipped_met(self, db_session, sample_user) -> None:
+        evaluator = ItemEquippedCondition()
+        template = _create_item_template(db_session, "cursed_item")
+        _create_user_item(db_session, sample_user.id, template.id, is_equipped=True)
+
+        condition = {"type": "item_equipped", "item_type": "cursed_item"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_item_equipped_not_met(self, db_session, sample_user) -> None:
+        evaluator = ItemEquippedCondition()
+        template = _create_item_template(db_session, "cursed_item")
+        _create_user_item(db_session, sample_user.id, template.id, is_equipped=False)
+
+        condition = {"type": "item_equipped", "item_type": "cursed_item"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_item_equipped_exact_threshold(self, db_session, sample_user) -> None:
+        evaluator = ItemEquippedCondition()
+        template = _create_item_template(db_session, "cursed_item")
+        _create_user_item(db_session, sample_user.id, template.id, is_equipped=True)
+
+        condition = {"type": "item_equipped", "item_type": "cursed_item"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_item_equipped_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+        evaluator = ItemEquippedCondition()
+        condition = {"type": "item_equipped", "item_type": "cursed_item"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_item_equipped_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+        evaluator = ItemEquippedCondition()
+        with pytest.raises(KeyError):
+            evaluator.evaluate(db_session, sample_user.id, {"type": "item_equipped"})
+
+    def test_item_equipped_edge_case_1(self, db_session, sample_user) -> None:
+        evaluator = ItemEquippedCondition()
+        template = _create_item_template(db_session, "blessed_item")
+        _create_user_item(db_session, sample_user.id, template.id, is_equipped=True)
+
+        condition = {"type": "item_equipped", "item_type": "cursed_item"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_item_equipped_edge_case_2(self, db_session, sample_user) -> None:
+        evaluator = ItemEquippedCondition()
+        template = _create_item_template(db_session, "cursed_item")
+        _create_user_item(db_session, sample_user.id, template.id, is_equipped=False)
+
+        condition = {"type": "item_equipped", "item_type": "cursed_item"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_item_equipped_with_multiple_users(self, db_session, sample_user) -> None:
+        evaluator = ItemEquippedCondition()
+        template = _create_item_template(db_session, "cursed_item")
+        other_user = _create_user(db_session)
+        _create_user_item(db_session, other_user.id, template.id, is_equipped=True)
+
+        condition = {"type": "item_equipped", "item_type": "cursed_item"}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False

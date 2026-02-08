@@ -48,10 +48,15 @@ class ConditionType(Enum):
     # Quest/Mission conditions
     QUEST_COMPLETION_COUNT = "quest_completion_count"
     SPECIFIC_QUEST_COMPLETED = "specific_quest_completed"
+    QUEST_FAILED = "quest_failed"
 
     # Entry time conditions
     MORNING_ENTRIES = "morning_entries"
     NIGHT_ENTRIES = "night_entries"
+
+    # Negative conditions
+    CORROSION_LEVEL = "corrosion_level"
+    ITEM_EQUIPPED = "item_equipped"
 
     # Logical combination
     COMPOUND = "compound"

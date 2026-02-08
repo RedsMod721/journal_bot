@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Iterable
 from sqlalchemy import func
 
 from app.core.titles.base import ConditionEvaluator
+from app.models.item import ItemTemplate, UserItem
 from app.models.journal_entry import JournalEntry
 from app.models.mission_quest import UserMissionQuest
 from app.models.skill import Skill
@@ -53,6 +54,18 @@ def _max_consecutive_streak(dates: list[date]) -> int:
         max_streak = max(max_streak, current_streak)
 
     return max_streak
+
+
+# Corrosion levels from best to worst
+CORROSION_LEVELS = ["Fresh", "Familiar", "Dusty", "Rusty", "Forgotten"]
+
+
+def _get_corrosion_index(level: str) -> int:
+    """Get numeric index for corrosion level. Returns -1 if invalid."""
+    try:
+        return CORROSION_LEVELS.index(level)
+    except ValueError:
+        return -1
 
 
 class JournalStreakCondition(ConditionEvaluator):
@@ -437,3 +450,139 @@ class TimeBasedCondition(ConditionEvaluator):
         unique_days = _get_distinct_entry_dates(entries)
 
         return len(unique_days) >= condition["days_active"]
+
+
+# =============================================================================
+# NEGATIVE CONDITION EVALUATORS
+# =============================================================================
+
+
+class CorrosionLevelCondition(ConditionEvaluator):
+    """
+    Evaluates theme corrosion level conditions.
+
+    Checks if a theme's corrosion has reached or exceeded a minimum level.
+    Used for negative titles that reflect neglect.
+
+    Corrosion levels (from best to worst):
+        Fresh → Familiar → Dusty → Rusty → Forgotten
+
+    Condition format:
+        {"type": "corrosion_level", "theme": "Education", "min_level": "Rusty"}
+    """
+
+    def evaluate(self, db: "Session", user_id: str, condition: dict) -> bool:
+        """
+        Check if user's theme has reached the minimum corrosion level.
+
+        Args:
+            db: Database session
+            user_id: User's UUID
+            condition: Must contain "theme" (name) and "min_level" (corrosion level)
+
+        Returns:
+            True if theme exists and corrosion >= min_level
+        """
+        _require_field(condition, "theme")
+        _require_field(condition, "min_level")
+
+        min_level = condition["min_level"]
+        min_index = _get_corrosion_index(min_level)
+
+        if min_index == -1:
+            return False
+
+        theme = (
+            db.query(Theme)
+            .filter(Theme.user_id == user_id, Theme.name == condition["theme"])
+            .first()
+        )
+
+        if not theme:
+            return False
+
+        current_index = _get_corrosion_index(theme.corrosion_level)
+
+        if current_index == -1:
+            return False
+
+        return current_index >= min_index
+
+
+class QuestFailedCondition(ConditionEvaluator):
+    """
+    Evaluates quest failure conditions.
+
+    Checks if a specific quest has been failed by the user.
+    Used for negative titles that reflect setbacks.
+
+    Condition format:
+        {"type": "quest_failed", "quest_id": "quest-uuid"}
+    """
+
+    def evaluate(self, db: "Session", user_id: str, condition: dict) -> bool:
+        """
+        Check if user has failed a specific quest.
+
+        Args:
+            db: Database session
+            user_id: User's UUID
+            condition: Must contain "quest_id" (the quest's UUID)
+
+        Returns:
+            True if the specific quest has status="failed"
+        """
+        _require_field(condition, "quest_id")
+
+        quest = (
+            db.query(UserMissionQuest)
+            .filter(
+                UserMissionQuest.id == condition["quest_id"],
+                UserMissionQuest.user_id == user_id,
+            )
+            .one_or_none()
+        )
+
+        if quest is None:
+            return False
+
+        return quest.status == "failed"
+
+
+class ItemEquippedCondition(ConditionEvaluator):
+    """
+    Evaluates item equipped conditions.
+
+    Checks if the user has any equipped item of a specific type.
+    Can be used for both positive and negative titles.
+
+    Condition format:
+        {"type": "item_equipped", "item_type": "cursed_item"}
+    """
+
+    def evaluate(self, db: "Session", user_id: str, condition: dict) -> bool:
+        """
+        Check if user has any equipped item of the specified type.
+
+        Args:
+            db: Database session
+            user_id: User's UUID
+            condition: Must contain "item_type" (the item type to check)
+
+        Returns:
+            True if user has at least one equipped item of the specified type
+        """
+        _require_field(condition, "item_type")
+
+        equipped_item = (
+            db.query(UserItem)
+            .join(ItemTemplate, UserItem.template_id == ItemTemplate.id)
+            .filter(
+                UserItem.user_id == user_id,
+                UserItem.is_equipped == True,  # noqa: E712
+                ItemTemplate.item_type == condition["item_type"],
+            )
+            .first()
+        )
+
+        return equipped_item is not None
