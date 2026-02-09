@@ -4,14 +4,18 @@ Concrete implementations of quest completion checkers.
 This module provides checkers for various quest completion types:
 - YesNoChecker: Binary completion (manual or context-based)
 - AccumulationChecker: Track progress toward a target total
+- FrequencyChecker: Complete action X times per period
 
 Each checker inherits from QuestCompletionChecker and implements
 the check_completion() method to evaluate quest progress.
 """
 
+from datetime import datetime, timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from app.core.quests.base import QuestCompletionChecker
+from app.models.journal_entry import JournalEntry
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -173,3 +177,135 @@ class AccumulationChecker(QuestCompletionChecker):
                 return 0.0
 
         return 0.0
+
+
+class FrequencyChecker(QuestCompletionChecker):
+    """
+    Evaluates frequency-based quest completion.
+
+    Tracks how many times an action occurs within a defined period
+    (day, week, month). Occurrences are stored in user_quest.quest_metadata.
+
+    Quest template condition:
+        {"type": "frequency", "target": 3, "period": "week"}
+
+    Metadata structure:
+        {"occurrences": [{"entry_id": "uuid", "date": "YYYY-MM-DD"}]}
+    """
+
+    def check_completion(
+        self,
+        db: "Session",
+        user_quest: "UserMissionQuest",
+        context: dict,
+    ) -> tuple[bool, int]:
+        condition = self._get_completion_condition(user_quest)
+        target = int(condition.get("target", 1))
+        period = condition.get("period", "week")
+
+        start, end = self._get_current_period_bounds(period)
+
+        occurrences = list(user_quest.quest_metadata.get("occurrences", []))
+        occurrences = self._filter_occurrences_by_period(occurrences, start, end)
+
+        entry_id = context.get("journal_entry_id") or context.get("entry_id")
+        entry_date = self._extract_entry_date(db, user_quest, context, entry_id)
+
+        if entry_id and entry_date and self._in_period(entry_date, start, end):
+            if not any(occ.get("entry_id") == entry_id for occ in occurrences):
+                occurrences.append(
+                    {
+                        "entry_id": entry_id,
+                        "date": entry_date.date().isoformat(),
+                    }
+                )
+
+        user_quest.quest_metadata["occurrences"] = occurrences
+
+        if target <= 0:
+            return (True, 100)
+
+        count = len(occurrences)
+        progress = min(100, int((count / target) * 100))
+        is_complete = count >= target
+
+        return (is_complete, progress)
+
+    def _get_completion_condition(self, user_quest: "UserMissionQuest") -> dict:
+        if user_quest.template and user_quest.template.completion_condition:
+            return user_quest.template.completion_condition
+        return {}
+
+    def _get_current_period_bounds(self, period: str) -> tuple[datetime, datetime]:
+        now = datetime.utcnow()
+        day_start = datetime(now.year, now.month, now.day)
+
+        if period == "day":
+            start = day_start
+            end = start + timedelta(days=1)
+            return start, end
+
+        if period == "month":
+            start = datetime(now.year, now.month, 1)
+            if now.month == 12:
+                end = datetime(now.year + 1, 1, 1)
+            else:
+                end = datetime(now.year, now.month + 1, 1)
+            return start, end
+
+        week_start = day_start - timedelta(days=day_start.weekday())
+        week_end = week_start + timedelta(days=7)
+        return week_start, week_end
+
+    def _filter_occurrences_by_period(
+        self,
+        occurrences: list[dict],
+        start: datetime,
+        end: datetime,
+    ) -> list[dict]:
+        filtered: list[dict] = []
+        for occurrence in occurrences:
+            date_value = occurrence.get("date")
+            if not date_value:
+                continue
+            try:
+                occurrence_date = datetime.fromisoformat(str(date_value))
+            except ValueError:
+                continue
+            if self._in_period(occurrence_date, start, end):
+                filtered.append(occurrence)
+        return filtered
+
+    def _extract_entry_date(
+        self,
+        db: "Session",
+        user_quest: "UserMissionQuest",
+        context: dict,
+        entry_id: str | None,
+    ) -> datetime | None:
+        for key in ("journal_date", "journal_created_at", "entry_date", "created_at"):
+            if key in context:
+                value = context[key]
+                if isinstance(value, datetime):
+                    return value
+                try:
+                    return datetime.fromisoformat(str(value))
+                except ValueError:
+                    return None
+
+        if entry_id and db is not None:
+            entry = (
+                db.query(JournalEntry)
+                .filter(
+                    JournalEntry.id == entry_id,
+                    JournalEntry.user_id == user_quest.user_id,
+                )
+                .one_or_none()
+            )
+            if entry and entry.created_at:
+                return entry.created_at
+
+        return None
+
+    def _in_period(self, value: datetime, start: datetime, end: datetime) -> bool:
+        return start <= value < end

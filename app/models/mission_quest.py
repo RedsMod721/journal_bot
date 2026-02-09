@@ -186,6 +186,14 @@ class UserMissionQuest(Base):
     completion_progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     completion_target: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 
+    # Flexible metadata storage (for frequency tracking, etc.)
+    quest_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata",
+        JSON,
+        default=dict,
+        nullable=False,
+    )
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     deadline: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

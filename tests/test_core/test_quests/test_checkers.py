@@ -1,8 +1,12 @@
 """Tests for quest completion checkers."""
 
-import pytest
+from datetime import datetime
 
-from app.core.quests.checkers import AccumulationChecker, YesNoChecker
+import pytest
+from freezegun import freeze_time
+
+from app.core.quests.checkers import AccumulationChecker, FrequencyChecker, YesNoChecker
+from app.models.journal_entry import JournalEntry
 from app.models.mission_quest import MissionQuestTemplate, UserMissionQuest
 
 
@@ -23,6 +27,7 @@ def _create_user_quest(
     progress: int = 0,
     status: str = "not_started",
     template: MissionQuestTemplate | None = None,
+    quest_metadata: dict | None = None,
 ) -> UserMissionQuest:
     quest = UserMissionQuest(
         user_id=user_id,
@@ -30,11 +35,28 @@ def _create_user_quest(
         name="Daily Check",
         completion_progress=progress,
         status=status,
+        quest_metadata=quest_metadata or {},
     )
     db_session.add(quest)
     db_session.commit()
     db_session.refresh(quest)
     return quest
+
+
+def _create_journal_entry(
+    db_session,
+    user_id: str,
+    created_at: datetime,
+) -> JournalEntry:
+    entry = JournalEntry(
+        user_id=user_id,
+        content="Entry",
+        created_at=created_at,
+    )
+    db_session.add(entry)
+    db_session.commit()
+    db_session.refresh(entry)
+    return entry
 
 
 def test_yes_no_checker_manual_completion_true(db_session, sample_user) -> None:
@@ -334,3 +356,223 @@ def test_accumulation_checker_uses_completion_target_when_no_template(db_session
 
     assert is_complete is True
     assert new_progress == 100
+
+
+@freeze_time("2026-02-10 10:00:00")
+def test_frequency_checker_counts_occurrences(db_session, sample_user) -> None:
+    checker = FrequencyChecker()
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 5, "period": "week"},
+    )
+    user_quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        quest_metadata={
+            "occurrences": [
+                {"entry_id": "a", "date": "2026-02-09"},
+                {"entry_id": "b", "date": "2026-02-10"},
+            ]
+        },
+    )
+    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 10, 9, 0, 0))
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_entry_id": entry.id},
+    )
+
+    assert is_complete is False
+    assert progress == 60
+    assert len(user_quest.quest_metadata["occurrences"]) == 3
+
+
+@freeze_time("2026-02-10 10:00:00")
+def test_frequency_checker_reaches_target_in_week(db_session, sample_user) -> None:
+    checker = FrequencyChecker()
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 3, "period": "week"},
+    )
+    user_quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        quest_metadata={
+            "occurrences": [
+                {"entry_id": "a", "date": "2026-02-09"},
+                {"entry_id": "b", "date": "2026-02-10"},
+            ]
+        },
+    )
+    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 10, 8, 0, 0))
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_entry_id": entry.id},
+    )
+
+    assert is_complete is True
+    assert progress == 100
+
+
+@freeze_time("2026-02-10 10:00:00")
+def test_frequency_checker_daily_frequency(db_session, sample_user) -> None:
+    checker = FrequencyChecker()
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 2, "period": "day"},
+    )
+    user_quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        quest_metadata={"occurrences": [{"entry_id": "a", "date": "2026-02-10"}]},
+    )
+    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 10, 11, 0, 0))
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_entry_id": entry.id},
+    )
+
+    assert is_complete is True
+    assert progress == 100
+
+
+@freeze_time("2026-02-15 10:00:00")
+def test_frequency_checker_monthly_frequency(db_session, sample_user) -> None:
+    checker = FrequencyChecker()
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 3, "period": "month"},
+    )
+    user_quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        quest_metadata={
+            "occurrences": [
+                {"entry_id": "a", "date": "2026-02-01"},
+                {"entry_id": "b", "date": "2026-02-10"},
+            ]
+        },
+    )
+    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 15, 9, 0, 0))
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_entry_id": entry.id},
+    )
+
+    assert is_complete is True
+    assert progress == 100
+
+
+@freeze_time("2026-02-10 10:00:00")
+def test_frequency_checker_duplicate_entry_not_counted_twice(db_session, sample_user) -> None:
+    checker = FrequencyChecker()
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 3, "period": "week"},
+    )
+    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 10, 8, 0, 0))
+    user_quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        quest_metadata={"occurrences": [{"entry_id": entry.id, "date": "2026-02-10"}]},
+    )
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_entry_id": entry.id},
+    )
+
+    assert is_complete is False
+    assert progress == 33
+    assert len(user_quest.quest_metadata["occurrences"]) == 1
+
+
+@freeze_time("2026-02-10 10:00:00")
+def test_frequency_checker_resets_on_new_period(db_session, sample_user) -> None:
+    checker = FrequencyChecker()
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 2, "period": "week"},
+    )
+    user_quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        quest_metadata={"occurrences": [{"entry_id": "a", "date": "2026-02-01"}]},
+    )
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {},
+    )
+
+    assert is_complete is False
+    assert progress == 0
+    assert user_quest.quest_metadata["occurrences"] == []
+
+
+@freeze_time("2026-02-10 10:00:00")
+def test_frequency_checker_partial_progress_calculation(db_session, sample_user) -> None:
+    checker = FrequencyChecker()
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 4, "period": "week"},
+    )
+    user_quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        quest_metadata={"occurrences": [{"entry_id": "a", "date": "2026-02-09"}]},
+    )
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {},
+    )
+
+    assert is_complete is False
+    assert progress == 25
+
+
+@freeze_time("2026-02-10 10:00:00")
+def test_frequency_checker_exact_target_completion(db_session, sample_user) -> None:
+    checker = FrequencyChecker()
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 2, "period": "week"},
+    )
+    user_quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        quest_metadata={
+            "occurrences": [
+                {"entry_id": "a", "date": "2026-02-09"},
+                {"entry_id": "b", "date": "2026-02-10"},
+            ]
+        },
+    )
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {},
+    )
+
+    assert is_complete is True
+    assert progress == 100
