@@ -1358,24 +1358,26 @@ class TestCompoundCondition:
     # Error handling
     # ==========================================================================
 
-    def test_unknown_compound_type_raises_error(self, db_session, sample_user) -> None:
+    def test_unknown_compound_type_returns_false(self, db_session, sample_user) -> None:
+        """Unknown compound types gracefully return False."""
         evaluator = CompoundCondition()
-        with pytest.raises(ValueError, match="Unknown compound condition type"):
-            evaluator.evaluate(
-                db_session, sample_user.id, {"type": "xor", "conditions": []}
-            )
+        result = evaluator.evaluate(
+            db_session, sample_user.id, {"type": "xor", "conditions": []}
+        )
+        assert result is False
 
-    def test_unknown_primitive_type_raises_error(self, db_session, sample_user) -> None:
+    def test_unknown_primitive_type_returns_false(self, db_session, sample_user) -> None:
+        """Unknown primitive types in sub-conditions return False."""
         evaluator = CompoundCondition()
-        with pytest.raises(ValueError, match="Unknown condition type"):
-            evaluator.evaluate(
-                db_session,
-                sample_user.id,
-                {
-                    "type": "and",
-                    "conditions": [{"type": "unknown_condition", "value": 10}],
-                },
-            )
+        result = evaluator.evaluate(
+            db_session,
+            sample_user.id,
+            {
+                "type": "and",
+                "conditions": [{"type": "unknown_condition", "value": 10}],
+            },
+        )
+        assert result is False
 
     def test_missing_type_in_condition_raises_error(self, db_session, sample_user) -> None:
         evaluator = CompoundCondition()

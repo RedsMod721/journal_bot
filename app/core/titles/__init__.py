@@ -5,6 +5,7 @@ This package provides the framework for evaluating whether users
 have met the unlock conditions for titles/achievements.
 """
 
+from app.core.titles.awarder import TitleAwarder
 from app.core.titles.base import ConditionEvaluator, ConditionType
 from app.core.titles.conditions import (
     CONDITION_EVALUATORS,
@@ -28,6 +29,7 @@ __all__ = [
     "ConditionEvaluator",
     "ConditionType",
     "CONDITION_EVALUATORS",
+    "TitleAwarder",
     # Positive conditions
     "JournalCountCondition",
     "JournalStreakCondition",

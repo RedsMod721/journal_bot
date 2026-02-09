@@ -117,40 +117,32 @@ class TestSingleElement:
 
 
 class TestInvalidTypes:
-    """Category 3: Invalid Condition Types"""
+    """Category 3: Invalid Condition Types - gracefully return False"""
 
-    def test_invalid_type_raises_valueerror(self, db_session, sample_user):
+    def test_invalid_type_returns_false(self, db_session, sample_user):
+        """Unknown condition types return False instead of raising."""
         evaluator = CompoundCondition()
         cond = {"type": "and", "conditions": [{"type": "nonexistent"}]}
-        try:
-            evaluator.evaluate(db_session, sample_user.id, cond)
-            assert False
-        except ValueError:
-            pass
+        result = evaluator.evaluate(db_session, sample_user.id, cond)
+        assert result is False
 
-    def test_null_type_raises_error(self, db_session, sample_user):
+    def test_null_type_returns_false(self, db_session, sample_user):
+        """None type returns False."""
         evaluator = CompoundCondition()
-        try:
-            evaluator.evaluate(db_session, sample_user.id, {"type": None})
-            assert False
-        except (ValueError, KeyError):
-            pass
+        result = evaluator.evaluate(db_session, sample_user.id, {"type": None})
+        assert result is False
 
-    def test_integer_type_raises_error(self, db_session, sample_user):
+    def test_integer_type_returns_false(self, db_session, sample_user):
+        """Integer type returns False."""
         evaluator = CompoundCondition()
-        try:
-            evaluator.evaluate(db_session, sample_user.id, {"type": 123})
-            assert False
-        except (ValueError, KeyError):
-            pass
+        result = evaluator.evaluate(db_session, sample_user.id, {"type": 123})
+        assert result is False
 
-    def test_type_with_spaces_raises_error(self, db_session, sample_user):
+    def test_type_with_spaces_returns_false(self, db_session, sample_user):
+        """Type with spaces returns False (no match)."""
         evaluator = CompoundCondition()
-        try:
-            evaluator.evaluate(db_session, sample_user.id, {"type": " journal_count "})
-            assert False
-        except ValueError:
-            pass
+        result = evaluator.evaluate(db_session, sample_user.id, {"type": " journal_count "})
+        assert result is False
 
 
 class TestDeeplyNested:
@@ -623,13 +615,11 @@ class TestBooleanAlgebra:
         assert evaluator.evaluate(db_session, sample_user.id, cond1) == evaluator.evaluate(db_session, sample_user.id, cond2)
 
     def test_case_sensitivity(self, db_session, sample_user):
+        """Type matching is case-sensitive - uppercase returns False."""
         evaluator = CompoundCondition()
         cond_lower = {"type": "and", "conditions": []}
         result_lower = evaluator.evaluate(db_session, sample_user.id, cond_lower)
         cond_upper = {"type": "AND", "conditions": []}
-        try:
-            evaluator.evaluate(db_session, sample_user.id, cond_upper)
-            assert False
-        except ValueError:
-            pass
+        result_upper = evaluator.evaluate(db_session, sample_user.id, cond_upper)
         assert result_lower is True
+        assert result_upper is False
