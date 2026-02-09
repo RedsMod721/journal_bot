@@ -197,7 +197,8 @@ class XPCalculator:
         base_xp: float,
         user_id: str,
         target_type: str,
-        target_name: str,
+        target_name: str | None = None,
+        target_id: str | None = None,
     ) -> float:
         """
         Calculate final XP after applying title multipliers.
@@ -207,11 +208,19 @@ class XPCalculator:
             base_xp: Base XP from distribution strategy
             user_id: User ID for multiplier lookup
             target_type: "theme" or "skill"
-            target_name: Name of the target entity
+            target_name: Name of the target entity (preferred)
+            target_id: ID of the target entity (fallback; triggers lookup)
 
         Returns:
             Final XP amount after multipliers
         """
+        if not target_name and target_id:
+            if target_type == "theme":
+                entity = db.query(Theme).filter(Theme.id == target_id).first()
+            else:
+                entity = db.query(Skill).filter(Skill.id == target_id).first()
+            target_name = entity.name if entity else None
+
         if not target_name:
             return base_xp
 
