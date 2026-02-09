@@ -5,16 +5,17 @@ This module provides checkers for various quest completion types:
 - YesNoChecker: Binary completion (manual or context-based)
 - AccumulationChecker: Track progress toward a target total
 - FrequencyChecker: Complete action X times per period
+- KeywordMatchChecker: Detect keywords in journal content
 
 Each checker inherits from QuestCompletionChecker and implements
 the check_completion() method to evaluate quest progress.
 """
 
 from datetime import datetime, timedelta
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from app.core.quests.base import QuestCompletionChecker
+from app.core.quests.keyword_matcher import KeywordMatcher
 from app.models.journal_entry import JournalEntry
 
 if TYPE_CHECKING:
@@ -309,3 +310,115 @@ class FrequencyChecker(QuestCompletionChecker):
 
     def _in_period(self, value: datetime, start: datetime, end: datetime) -> bool:
         return start <= value < end
+
+
+class KeywordMatchChecker(QuestCompletionChecker):
+    """
+    Evaluates keyword-based quest completion.
+
+    Detects keywords in journal content using stemming and fuzzy matching.
+    Supports single-match (instant completion) and multi-match (track progress)
+    modes.
+
+    Quest template condition:
+        {"type": "keyword_match", "keywords": ["gym", "workout"], "required_matches": 1}
+
+    Context fields:
+        - journal_content: str - The journal entry text to search
+        - detected_keywords: list[str] - Pre-detected keywords (optional)
+
+    Metadata structure (for multi-match):
+        {"matched_keywords": ["gym", "workout"]}
+
+    Example:
+        Quest: "Mention exercise-related activities"
+        completion_condition = {
+            "type": "keyword_match",
+            "keywords": ["gym", "workout", "exercise", "run", "yoga"],
+            "required_matches": 3
+        }
+
+        context = {"journal_content": "Went to the gym for a great workout!"}
+        is_complete, progress = checker.check_completion(db, user_quest, context)
+        # Returns: (False, 66)  # 2 matches out of 3 required
+    """
+
+    def __init__(self) -> None:
+        """Initialize the checker with a KeywordMatcher instance."""
+        self._matcher = KeywordMatcher()
+
+    def check_completion(
+        self,
+        db: "Session",
+        user_quest: "UserMissionQuest",
+        context: dict,
+    ) -> tuple[bool, int]:
+        """
+        Check if keyword requirements have been met.
+
+        Args:
+            db: Database session (unused for keyword checks)
+            user_quest: The user's quest instance
+            context: Dict containing journal_content or detected_keywords
+
+        Returns:
+            (is_complete, progress) tuple
+        """
+        condition = self._get_completion_condition(user_quest)
+        keywords = condition.get("keywords", [])
+        required_matches = int(condition.get("required_matches", 1))
+
+        if not keywords:
+            return (False, user_quest.completion_progress)
+
+        new_matches = self._find_matches(context, keywords)
+
+        if required_matches <= 1:
+            if new_matches:
+                return (True, 100)
+            return (False, user_quest.completion_progress)
+
+        existing_matches = set(user_quest.quest_metadata.get("matched_keywords", []))
+        new_unique_matches = set(new_matches) - existing_matches
+        all_matches = existing_matches | new_unique_matches
+
+        user_quest.quest_metadata["matched_keywords"] = list(all_matches)
+
+        increment = 20 * len(new_unique_matches)
+        progress = min(100, int(user_quest.completion_progress) + increment)
+
+        match_count = len(all_matches)
+        is_complete = match_count >= required_matches
+        if is_complete:
+            progress = 100
+
+        return (is_complete, progress)
+
+    def _get_completion_condition(self, user_quest: "UserMissionQuest") -> dict:
+        """Extract completion condition from quest template or return empty dict."""
+        if user_quest.template and user_quest.template.completion_condition:
+            return user_quest.template.completion_condition
+        return {}
+
+    def _find_matches(self, context: dict, keywords: list[str]) -> list[str]:
+        """
+        Find keyword matches from context.
+
+        Args:
+            context: Dict containing journal_content or detected_keywords
+            keywords: List of keywords to look for
+
+        Returns:
+            List of matched keywords
+        """
+        if "detected_keywords" in context:
+            detected = context["detected_keywords"]
+            if isinstance(detected, list):
+                keywords_lower = {k.lower() for k in keywords}
+                return [k for k in detected if k.lower() in keywords_lower]
+
+        journal_content = context.get("journal_content", "")
+        if not journal_content:
+            return []
+
+        return self._matcher.match_keywords(journal_content, keywords)

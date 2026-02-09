@@ -5,7 +5,12 @@ from datetime import datetime
 import pytest
 from freezegun import freeze_time
 
-from app.core.quests.checkers import AccumulationChecker, FrequencyChecker, YesNoChecker
+from app.core.quests.checkers import (
+    AccumulationChecker,
+    FrequencyChecker,
+    KeywordMatchChecker,
+    YesNoChecker,
+)
 from app.models.journal_entry import JournalEntry
 from app.models.mission_quest import MissionQuestTemplate, UserMissionQuest
 
@@ -547,6 +552,188 @@ def test_frequency_checker_partial_progress_calculation(db_session, sample_user)
 
     assert is_complete is False
     assert progress == 25
+
+
+def test_keyword_match_checker_single_keyword_match(db_session, sample_user) -> None:
+    checker = KeywordMatchChecker()
+    template = _create_template(
+        db_session,
+        {"type": "keyword_match", "keywords": ["gym", "workout", "exercise"]},
+    )
+    user_quest = _create_user_quest(db_session, sample_user.id, template=template)
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "Went to the gym."},
+    )
+
+    assert is_complete is True
+    assert progress == 100
+
+
+def test_keyword_match_checker_multiple_keywords_any(db_session, sample_user) -> None:
+    checker = KeywordMatchChecker()
+    template = _create_template(
+        db_session,
+        {"type": "keyword_match", "keywords": ["gym", "workout", "exercise"]},
+    )
+    user_quest = _create_user_quest(db_session, sample_user.id, template=template)
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "Great workout today."},
+    )
+
+    assert is_complete is True
+    assert progress == 100
+
+
+def test_keyword_match_checker_required_matches_count(db_session, sample_user) -> None:
+    checker = KeywordMatchChecker()
+    template = _create_template(
+        db_session,
+        {
+            "type": "keyword_match",
+            "keywords": ["gym", "workout", "exercise"],
+            "required_matches": 2,
+        },
+    )
+    user_quest = _create_user_quest(db_session, sample_user.id, template=template)
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "Gym workout was great."},
+    )
+
+    assert is_complete is True
+    assert progress == 100
+    assert set(user_quest.quest_metadata.get("matched_keywords", [])) == {"gym", "workout"}
+
+
+def test_keyword_match_checker_no_match_no_progress_change(db_session, sample_user) -> None:
+    checker = KeywordMatchChecker()
+    template = _create_template(
+        db_session,
+        {"type": "keyword_match", "keywords": ["gym", "workout", "exercise"]},
+    )
+    user_quest = _create_user_quest(db_session, sample_user.id, progress=40, template=template)
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "A calm day at home."},
+    )
+
+    assert is_complete is False
+    assert progress == 40
+
+
+def test_keyword_match_checker_stem_matching_works(db_session, sample_user) -> None:
+    checker = KeywordMatchChecker()
+    template = _create_template(
+        db_session,
+        {"type": "keyword_match", "keywords": ["run"]},
+    )
+    user_quest = _create_user_quest(db_session, sample_user.id, template=template)
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "Went running today."},
+    )
+
+    assert is_complete is True
+    assert progress == 100
+
+
+def test_keyword_match_checker_typo_tolerance_works(db_session, sample_user) -> None:
+    checker = KeywordMatchChecker()
+    template = _create_template(
+        db_session,
+        {"type": "keyword_match", "keywords": ["exercise"]},
+    )
+    user_quest = _create_user_quest(db_session, sample_user.id, template=template)
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "Great excercise session."},
+    )
+
+    assert is_complete is True
+    assert progress == 100
+
+
+def test_keyword_match_checker_incremental_progress(db_session, sample_user) -> None:
+    checker = KeywordMatchChecker()
+    template = _create_template(
+        db_session,
+        {
+            "type": "keyword_match",
+            "keywords": ["gym", "workout", "exercise"],
+            "required_matches": 3,
+        },
+    )
+    user_quest = _create_user_quest(db_session, sample_user.id, progress=40, template=template)
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "Went to the gym."},
+    )
+
+    assert is_complete is False
+    assert progress == 60
+
+
+def test_keyword_match_checker_multiple_entries_accumulate(db_session, sample_user) -> None:
+    checker = KeywordMatchChecker()
+    template = _create_template(
+        db_session,
+        {
+            "type": "keyword_match",
+            "keywords": ["gym", "workout", "exercise"],
+            "required_matches": 3,
+        },
+    )
+    user_quest = _create_user_quest(db_session, sample_user.id, template=template)
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "Went to the gym."},
+    )
+
+    assert is_complete is False
+    assert progress == 20
+    user_quest.completion_progress = progress
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "Great workout today."},
+    )
+
+    assert is_complete is False
+    assert progress == 40
+    user_quest.completion_progress = progress
+
+    is_complete, progress = checker.check_completion(
+        db_session,
+        user_quest,
+        {"journal_content": "Evening exercise session."},
+    )
+
+    assert is_complete is True
+    assert progress == 100
+    assert set(user_quest.quest_metadata.get("matched_keywords", [])) == {
+        "gym",
+        "workout",
+        "exercise",
+    }
 
 
 @freeze_time("2026-02-10 10:00:00")
