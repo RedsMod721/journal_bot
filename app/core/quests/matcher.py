@@ -162,11 +162,11 @@ class QuestMatcher:
         """
         Determine if a not_started quest should auto-start based on conditions.
 
-        If no autostart_condition is defined, default to allowing autostart.
+        If no autostart_condition is defined, do not autostart.
         """
         condition = self._get_autostart_condition(quest)
         if not condition:
-            return True
+            return False
 
         condition_type = condition.get("type", "yes_no")
 

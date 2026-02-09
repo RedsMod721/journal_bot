@@ -190,6 +190,8 @@ def test_quest_matcher_autostart_starts_on_progress(db_session, sample_user) -> 
     template = _create_template(
         db_session,
         {"type": "accumulation", "target": 100, "unit": "minutes"},
+        autostart=True,
+        autostart_condition={"type": "accumulation", "unit": "minutes"},
     )
     quest = _create_user_quest(
         db_session,
@@ -210,7 +212,12 @@ def test_quest_matcher_autostart_starts_on_progress(db_session, sample_user) -> 
 def test_quest_matcher_autostart_can_complete_immediately(db_session, sample_user) -> None:
     event_bus = _make_event_bus()
     matcher = QuestMatcher(event_bus)
-    template = _create_template(db_session, {"type": "yes_no"})
+    template = _create_template(
+        db_session,
+        {"type": "yes_no"},
+        autostart=True,
+        autostart_condition={"type": "yes_no"},
+    )
     quest = _create_user_quest(
         db_session,
         sample_user.id,
@@ -224,6 +231,31 @@ def test_quest_matcher_autostart_can_complete_immediately(db_session, sample_use
 
     assert len(updated) == 1
     assert quest.status == "completed"
+
+
+def test_quest_matcher_autostart_without_condition_does_not_start(
+    db_session, sample_user
+) -> None:
+    event_bus = _make_event_bus()
+    matcher = QuestMatcher(event_bus)
+    template = _create_template(
+        db_session,
+        {"type": "accumulation", "target": 100, "unit": "minutes"},
+        autostart=True,
+    )
+    quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        status="not_started",
+        autostart=True,
+    )
+    entry = _create_entry(db_session, sample_user.id, "Worked out for 10 minutes.")
+
+    updated = matcher.match_journal_entry(db_session, entry)
+
+    assert updated == []
+    assert quest.status == "not_started"
 
 
 def test_quest_matcher_autostart_condition_blocks_start(db_session, sample_user) -> None:
