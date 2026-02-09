@@ -8,6 +8,7 @@ from app.core.quests.checkers import (
     YesNoChecker,
 )
 from app.core.quests.keyword_matcher import KeywordMatcher
+from app.core.quests.matcher import QuestMatcher
 
 __all__ = [
     "AccumulationChecker",
@@ -16,5 +17,6 @@ __all__ = [
     "KeywordMatcher",
     "KeywordMatchChecker",
     "QuestCompletionChecker",
+    "QuestMatcher",
     "YesNoChecker",
 ]
