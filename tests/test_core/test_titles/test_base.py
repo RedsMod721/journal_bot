@@ -36,7 +36,12 @@ class TestConditionTypeEnum:
             "specific_quest_completed",
             "morning_entries",
             "night_entries",
-            "compound",
+            "quest_failed",
+            "corrosion_level",
+            "item_equipped",
+            "and",
+            "or",
+            "not",
         }
 
         actual = {member.value for member in ConditionType}
@@ -55,4 +60,4 @@ class TestConditionTypeEnum:
         assert ConditionType.JOURNAL_STREAK.value == "journal_streak"
 
     def test_condition_type_enum_iterable_length(self) -> None:
-        assert len(list(ConditionType)) == 13
+        assert len(list(ConditionType)) == 18
