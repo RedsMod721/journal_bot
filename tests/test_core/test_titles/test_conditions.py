@@ -10,6 +10,7 @@ import pytest
 from freezegun import freeze_time
 
 from app.core.titles.conditions import (
+    CompoundCondition,
     CorrosionLevelCondition,
     ItemEquippedCondition,
     JournalCountCondition,
@@ -1056,3 +1057,327 @@ class TestItemEquippedCondition:
         condition = {"type": "item_equipped", "item_type": "cursed_item"}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+
+class TestCompoundCondition:
+    """Tests for compound conditions with AND, OR, NOT logic."""
+
+    # ==========================================================================
+    # AND conditions
+    # ==========================================================================
+
+    def test_and_all_conditions_true(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=10, xp=1000.0)
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {"type": "theme_xp", "theme": "Education", "value": 1000},
+            ],
+        }
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_and_one_condition_false(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=10, xp=500.0)
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {"type": "theme_xp", "theme": "Education", "value": 1000},
+            ],
+        }
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_and_all_conditions_false(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=5, xp=500.0)
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {"type": "theme_xp", "theme": "Education", "value": 1000},
+            ],
+        }
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_and_empty_conditions_returns_true(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        condition = {"type": "and", "conditions": []}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_and_missing_conditions_raises_error(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        with pytest.raises(KeyError):
+            evaluator.evaluate(db_session, sample_user.id, {"type": "and"})
+
+    # ==========================================================================
+    # OR conditions
+    # ==========================================================================
+
+    def test_or_all_conditions_true(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=10, xp=1000.0)
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {
+            "type": "or",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {"type": "theme_xp", "theme": "Education", "value": 1000},
+            ],
+        }
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_or_one_condition_true(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=10, xp=500.0)
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {
+            "type": "or",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {"type": "theme_xp", "theme": "Education", "value": 1000},
+            ],
+        }
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_or_all_conditions_false(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=5, xp=500.0)
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {
+            "type": "or",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {"type": "theme_xp", "theme": "Education", "value": 1000},
+            ],
+        }
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_or_empty_conditions_returns_false(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        condition = {"type": "or", "conditions": []}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_or_missing_conditions_raises_error(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        with pytest.raises(KeyError):
+            evaluator.evaluate(db_session, sample_user.id, {"type": "or"})
+
+    # ==========================================================================
+    # NOT conditions
+    # ==========================================================================
+
+    def test_not_condition_false_returns_true(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        quest = _create_quest(db_session, sample_user.id, status="completed")
+
+        condition = {
+            "type": "not",
+            "condition": {"type": "quest_failed", "quest_id": quest.id},
+        }
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_not_condition_true_returns_false(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        quest = _create_quest(db_session, sample_user.id, status="failed")
+
+        condition = {
+            "type": "not",
+            "condition": {"type": "quest_failed", "quest_id": quest.id},
+        }
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_not_missing_condition_raises_error(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        with pytest.raises(KeyError):
+            evaluator.evaluate(db_session, sample_user.id, {"type": "not"})
+
+    # ==========================================================================
+    # Nested compound conditions
+    # ==========================================================================
+
+    def test_nested_and_with_or(self, db_session, sample_user) -> None:
+        """AND with nested OR: theme_level AND (skill_rank OR total_xp)"""
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=10, xp=5000.0)
+        skill = Skill(user_id=sample_user.id, name="Python", rank="Intermediate")
+        db_session.add_all([theme, skill])
+        db_session.commit()
+
+        condition = {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {
+                    "type": "or",
+                    "conditions": [
+                        {"type": "skill_rank", "rank": "Expert"},
+                        {"type": "total_xp", "value": 5000},
+                    ],
+                },
+            ],
+        }
+
+        # theme_level=10 is True, skill_rank != Expert but total_xp >= 5000
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_nested_and_with_or_all_false(self, db_session, sample_user) -> None:
+        """AND with nested OR where inner OR is false"""
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=10, xp=1000.0)
+        skill = Skill(user_id=sample_user.id, name="Python", rank="Intermediate")
+        db_session.add_all([theme, skill])
+        db_session.commit()
+
+        condition = {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {
+                    "type": "or",
+                    "conditions": [
+                        {"type": "skill_rank", "rank": "Expert"},
+                        {"type": "total_xp", "value": 5000},
+                    ],
+                },
+            ],
+        }
+
+        # theme_level=10 is True, but neither skill_rank nor total_xp is met
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_nested_or_with_and(self, db_session, sample_user) -> None:
+        """OR with nested AND: journal_streak OR (theme_level AND skill_rank)"""
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=10, xp=1000.0)
+        skill = Skill(user_id=sample_user.id, name="Python", rank="Expert")
+        db_session.add_all([theme, skill])
+        db_session.commit()
+
+        condition = {
+            "type": "or",
+            "conditions": [
+                {"type": "journal_streak", "value": 30},
+                {
+                    "type": "and",
+                    "conditions": [
+                        {"type": "theme_level", "theme": "Education", "value": 10},
+                        {"type": "skill_rank", "rank": "Expert"},
+                    ],
+                },
+            ],
+        }
+
+        # No journal streak, but theme_level AND skill_rank are both true
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    def test_nested_not_with_and(self, db_session, sample_user) -> None:
+        """NOT with nested AND: NOT (quest_failed AND low_xp)"""
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=5, xp=5000.0)
+        quest = _create_quest(db_session, sample_user.id, status="failed")
+        db_session.add(theme)
+        db_session.commit()
+
+        condition = {
+            "type": "not",
+            "condition": {
+                "type": "and",
+                "conditions": [
+                    {"type": "quest_failed", "quest_id": quest.id},
+                    {"type": "total_xp", "value": 100},
+                ],
+            },
+        }
+
+        # Both inner conditions are true, so NOT returns False
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is False
+
+    def test_deeply_nested_conditions(self, db_session, sample_user) -> None:
+        """Three levels of nesting"""
+        evaluator = CompoundCondition()
+        theme = Theme(user_id=sample_user.id, name="Education", level=10, xp=2000.0)
+        skill = Skill(user_id=sample_user.id, name="Python", rank="Expert")
+        db_session.add_all([theme, skill])
+        db_session.commit()
+
+        condition = {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {
+                    "type": "or",
+                    "conditions": [
+                        {
+                            "type": "and",
+                            "conditions": [
+                                {"type": "skill_rank", "rank": "Expert"},
+                                {"type": "total_xp", "value": 1000},
+                            ],
+                        },
+                        {"type": "journal_streak", "value": 100},
+                    ],
+                },
+            ],
+        }
+
+        # theme_level=10: True
+        # Nested OR: (skill_rank=Expert AND total_xp>=1000) OR journal_streak>=100
+        # Inner AND: Expert=True AND 2000>=1000=True => True
+        # So OR is True, and overall AND is True
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+    # ==========================================================================
+    # Error handling
+    # ==========================================================================
+
+    def test_unknown_compound_type_raises_error(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        with pytest.raises(ValueError, match="Unknown compound condition type"):
+            evaluator.evaluate(
+                db_session, sample_user.id, {"type": "xor", "conditions": []}
+            )
+
+    def test_unknown_primitive_type_raises_error(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        with pytest.raises(ValueError, match="Unknown condition type"):
+            evaluator.evaluate(
+                db_session,
+                sample_user.id,
+                {
+                    "type": "and",
+                    "conditions": [{"type": "unknown_condition", "value": 10}],
+                },
+            )
+
+    def test_missing_type_in_condition_raises_error(self, db_session, sample_user) -> None:
+        evaluator = CompoundCondition()
+        with pytest.raises(KeyError):
+            evaluator.evaluate(db_session, sample_user.id, {"conditions": []})

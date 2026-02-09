@@ -7,6 +7,8 @@ have met the unlock conditions for titles/achievements.
 
 from app.core.titles.base import ConditionEvaluator, ConditionType
 from app.core.titles.conditions import (
+    CONDITION_EVALUATORS,
+    CompoundCondition,
     CorrosionLevelCondition,
     ItemEquippedCondition,
     JournalCountCondition,
@@ -25,6 +27,7 @@ from app.core.titles.conditions import (
 __all__ = [
     "ConditionEvaluator",
     "ConditionType",
+    "CONDITION_EVALUATORS",
     # Positive conditions
     "JournalCountCondition",
     "JournalStreakCondition",
@@ -40,4 +43,6 @@ __all__ = [
     "CorrosionLevelCondition",
     "ItemEquippedCondition",
     "QuestFailedCondition",
+    # Compound conditions
+    "CompoundCondition",
 ]

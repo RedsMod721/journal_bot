@@ -58,8 +58,10 @@ class ConditionType(Enum):
     CORROSION_LEVEL = "corrosion_level"
     ITEM_EQUIPPED = "item_equipped"
 
-    # Logical combination
-    COMPOUND = "compound"
+    # Logical combination (compound conditions)
+    AND = "and"
+    OR = "or"
+    NOT = "not"
 
 
 class ConditionEvaluator(ABC):

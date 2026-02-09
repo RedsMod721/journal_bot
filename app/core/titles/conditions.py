@@ -586,3 +586,268 @@ class ItemEquippedCondition(ConditionEvaluator):
         )
 
         return equipped_item is not None
+
+
+class CompoundCondition(ConditionEvaluator):
+    """
+    Evaluates compound boolean conditions.
+
+    Supports AND, OR, and NOT logic with recursive evaluation.
+
+    Condition formats:
+        AND: {"type": "and", "conditions": [ ... ]}
+        OR: {"type": "or", "conditions": [ ... ]}
+        NOT: {"type": "not", "condition": { ... }}
+    """
+
+    def evaluate(self, db: "Session", user_id: str, condition: dict) -> bool:
+        _require_field(condition, "type")
+
+        condition_type = condition["type"]
+
+        if condition_type == "and":
+            _require_field(condition, "conditions")
+            return all(
+                self._evaluate_condition(db, user_id, sub_condition)
+                for sub_condition in condition["conditions"]
+            )
+
+        if condition_type == "or":
+            _require_field(condition, "conditions")
+            return any(
+                self._evaluate_condition(db, user_id, sub_condition)
+                for sub_condition in condition["conditions"]
+            )
+
+        if condition_type == "not":
+            _require_field(condition, "condition")
+            return not self._evaluate_condition(db, user_id, condition["condition"])
+
+        evaluator = self._get_evaluator(condition_type)
+        if evaluator is None:
+            return False
+
+        return evaluator.evaluate(db, user_id, condition)
+
+    def _evaluate_condition(self, db: "Session", user_id: str, condition: dict) -> bool:
+        _require_field(condition, "type")
+        condition_type = condition["type"]
+
+        if condition_type in {"and", "or", "not"}:
+            return self.evaluate(db, user_id, condition)
+
+        evaluator = self._get_evaluator(condition_type)
+        if evaluator is None:
+            return False
+
+        return evaluator.evaluate(db, user_id, condition)
+
+    def _get_evaluator(self, condition_type: str) -> ConditionEvaluator | None:
+        evaluators: dict[str, ConditionEvaluator] = {
+            "journal_streak": JournalStreakCondition(),
+            "theme_level": ThemeLevelCondition(),
+            "skill_level": SkillLevelCondition(),
+            "total_xp": TotalXPCondition(),
+            "theme_xp": ThemeXPCondition(),
+            "quest_completion_count": QuestCompletionCountCondition(),
+            "specific_quest_completed": SpecificQuestCompletedCondition(),
+            "skill_rank": SkillRankCondition(),
+            "journal_count": JournalCountCondition(),
+            "time_based": TimeBasedCondition(),
+            "corrosion_level": CorrosionLevelCondition(),
+            "quest_failed": QuestFailedCondition(),
+            "item_equipped": ItemEquippedCondition(),
+        }
+
+        return evaluators.get(condition_type)
+
+
+CONDITION_EVALUATORS: dict[str, ConditionEvaluator] = {
+    "journal_streak": JournalStreakCondition(),
+    "theme_level": ThemeLevelCondition(),
+    "skill_level": SkillLevelCondition(),
+    "total_xp": TotalXPCondition(),
+    "theme_xp": ThemeXPCondition(),
+    "quest_completion_count": QuestCompletionCountCondition(),
+    "specific_quest_completed": SpecificQuestCompletedCondition(),
+    "skill_rank": SkillRankCondition(),
+    "journal_count": JournalCountCondition(),
+    "time_based": TimeBasedCondition(),
+    "corrosion_level": CorrosionLevelCondition(),
+    "quest_failed": QuestFailedCondition(),
+    "item_equipped": ItemEquippedCondition(),
+    "compound": CompoundCondition(),
+    "and": CompoundCondition(),
+    "or": CompoundCondition(),
+    "not": CompoundCondition(),
+}
+
+
+# =============================================================================
+# COMPOUND CONDITION EVALUATOR
+# =============================================================================
+
+
+# Registry mapping condition types to their evaluator classes
+# Populated after class definitions to avoid forward reference issues
+CONDITION_EVALUATORS: dict[str, type[ConditionEvaluator]] = {}
+
+
+def _register_evaluators() -> None:
+    """Register all condition evaluators in the registry."""
+    global CONDITION_EVALUATORS
+    CONDITION_EVALUATORS = {
+        "journal_streak": JournalStreakCondition,
+        "theme_level": ThemeLevelCondition,
+        "skill_level": SkillLevelCondition,
+        "total_xp": TotalXPCondition,
+        "theme_xp": ThemeXPCondition,
+        "quest_completion_count": QuestCompletionCountCondition,
+        "specific_quest_completed": SpecificQuestCompletedCondition,
+        "skill_rank": SkillRankCondition,
+        "journal_count": JournalCountCondition,
+        "time_based": TimeBasedCondition,
+        "corrosion_level": CorrosionLevelCondition,
+        "quest_failed": QuestFailedCondition,
+        "item_equipped": ItemEquippedCondition,
+    }
+
+
+class CompoundCondition(ConditionEvaluator):
+    """
+    Evaluates compound conditions with boolean logic.
+
+    Supports AND, OR, and NOT operations with recursive evaluation
+    of sub-conditions. Allows building complex unlock requirements.
+
+    Condition formats:
+
+    AND - All conditions must be true:
+        {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {"type": "skill_rank", "rank": "Expert"}
+            ]
+        }
+
+    OR - At least one condition must be true:
+        {
+            "type": "or",
+            "conditions": [
+                {"type": "journal_streak", "value": 7},
+                {"type": "total_xp", "value": 1000}
+            ]
+        }
+
+    NOT - The condition must be false:
+        {
+            "type": "not",
+            "condition": {"type": "quest_failed", "quest_id": "quest-uuid"}
+        }
+
+    Nested - Compound conditions can contain other compound conditions:
+        {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": "Education", "value": 10},
+                {
+                    "type": "or",
+                    "conditions": [
+                        {"type": "skill_rank", "rank": "Expert"},
+                        {"type": "total_xp", "value": 5000}
+                    ]
+                }
+            ]
+        }
+    """
+
+    def evaluate(self, db: "Session", user_id: str, condition: dict) -> bool:
+        """
+        Recursively evaluate a compound condition.
+
+        Args:
+            db: Database session
+            user_id: User's UUID
+            condition: Must contain "type" (and/or/not) and either
+                      "conditions" (list) for and/or, or "condition" (dict) for not
+
+        Returns:
+            True if the compound condition is satisfied
+
+        Raises:
+            KeyError: If required fields are missing
+            ValueError: If condition type is unknown
+        """
+        _require_field(condition, "type")
+        condition_type = condition["type"]
+
+        if condition_type == "and":
+            return self._evaluate_and(db, user_id, condition)
+        elif condition_type == "or":
+            return self._evaluate_or(db, user_id, condition)
+        elif condition_type == "not":
+            return self._evaluate_not(db, user_id, condition)
+        else:
+            raise ValueError(f"Unknown compound condition type: {condition_type}")
+
+    def _evaluate_and(self, db: "Session", user_id: str, condition: dict) -> bool:
+        """Evaluate AND condition - all sub-conditions must be true."""
+        _require_field(condition, "conditions")
+        conditions = condition["conditions"]
+
+        if not conditions:
+            return True
+
+        return all(
+            self._evaluate_sub_condition(db, user_id, sub_cond)
+            for sub_cond in conditions
+        )
+
+    def _evaluate_or(self, db: "Session", user_id: str, condition: dict) -> bool:
+        """Evaluate OR condition - at least one sub-condition must be true."""
+        _require_field(condition, "conditions")
+        conditions = condition["conditions"]
+
+        if not conditions:
+            return False
+
+        return any(
+            self._evaluate_sub_condition(db, user_id, sub_cond)
+            for sub_cond in conditions
+        )
+
+    def _evaluate_not(self, db: "Session", user_id: str, condition: dict) -> bool:
+        """Evaluate NOT condition - the sub-condition must be false."""
+        _require_field(condition, "condition")
+        sub_condition = condition["condition"]
+
+        return not self._evaluate_sub_condition(db, user_id, sub_condition)
+
+    def _evaluate_sub_condition(
+        self, db: "Session", user_id: str, condition: dict
+    ) -> bool:
+        """
+        Evaluate a sub-condition by delegating to the appropriate evaluator.
+
+        Handles both primitive conditions (journal_streak, theme_level, etc.)
+        and nested compound conditions (and, or, not).
+        """
+        _require_field(condition, "type")
+        condition_type = condition["type"]
+
+        # Handle nested compound conditions recursively
+        if condition_type in ("and", "or", "not"):
+            return self.evaluate(db, user_id, condition)
+
+        # Look up the evaluator for primitive conditions
+        if condition_type not in CONDITION_EVALUATORS:
+            raise ValueError(f"Unknown condition type: {condition_type}")
+
+        evaluator_class = CONDITION_EVALUATORS[condition_type]
+        evaluator = evaluator_class()
+        return evaluator.evaluate(db, user_id, condition)
+
+
+# Initialize the evaluator registry
+_register_evaluators()
