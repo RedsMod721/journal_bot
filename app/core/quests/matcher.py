@@ -22,6 +22,7 @@ from app.core.quests.checkers import (
     KeywordMatchChecker,
     YesNoChecker,
 )
+from app.core.quests.keyword_matcher import KeywordMatcher
 from sqlalchemy import and_, or_
 
 if TYPE_CHECKING:
@@ -58,6 +59,7 @@ class QuestMatcher:
         """
         self._event_bus = event_bus
         self._checkers = self._register_checkers()
+        self._keyword_matcher = KeywordMatcher()
 
     def match_journal_entry(
         self,
@@ -121,6 +123,10 @@ class QuestMatcher:
         if quest.status == "not_started" and not quest.autostart:
             return False
 
+        if quest.status == "not_started" and quest.autostart:
+            if not self._should_autostart(quest, context):
+                return False
+
         completion_type = self._get_quest_completion_type(quest)
         checker = self._checkers.get(completion_type)
 
@@ -151,6 +157,72 @@ class QuestMatcher:
             self._emit_progress_updated(quest)
 
         return True
+
+    def _should_autostart(self, quest: "UserMissionQuest", context: dict) -> bool:
+        """
+        Determine if a not_started quest should auto-start based on conditions.
+
+        If no autostart_condition is defined, default to allowing autostart.
+        """
+        condition = self._get_autostart_condition(quest)
+        if not condition:
+            return True
+
+        condition_type = condition.get("type", "yes_no")
+
+        if condition_type == CompletionType.YES_NO.value:
+            return self._context_indicates_completion(context)
+
+        if condition_type == CompletionType.KEYWORD_MATCH.value:
+            keywords = condition.get("keywords", [])
+            if not keywords:
+                return False
+            if "detected_keywords" in context and isinstance(context["detected_keywords"], list):
+                detected = {k.lower() for k in context["detected_keywords"]}
+                return any(k.lower() in detected for k in keywords)
+            content = context.get("journal_content", "")
+            return bool(self._keyword_matcher.match_keywords(content, keywords))
+
+        if condition_type == CompletionType.ACCUMULATION.value:
+            unit = condition.get("unit", "count")
+            amount = context.get(f"detected_{unit}")
+            if amount is None:
+                amount = context.get("detected_amount")
+            try:
+                return float(amount) > 0
+            except (TypeError, ValueError):
+                return False
+
+        if condition_type == CompletionType.FREQUENCY.value:
+            period = condition.get("period", "week")
+            entry_date = context.get("journal_created_at")
+            if entry_date is None:
+                return False
+            checker = FrequencyChecker()
+            start, end = checker._get_current_period_bounds(period)
+            return checker._in_period(entry_date, start, end)
+
+        return False
+
+    def _get_autostart_condition(self, quest: "UserMissionQuest") -> dict | None:
+        if quest.autostart_condition:
+            return quest.autostart_condition
+        if quest.template and quest.template.autostart_condition:
+            return quest.template.autostart_condition
+        return None
+
+    @staticmethod
+    def _context_indicates_completion(context: dict) -> bool:
+        for key in (
+            "manual_completion",
+            "quest_completed",
+            "quest_complete",
+            "completed",
+            "is_complete",
+        ):
+            if context.get(key) is True:
+                return True
+        return False
 
     def _prepare_context(self, entry: "JournalEntry") -> dict:
         """

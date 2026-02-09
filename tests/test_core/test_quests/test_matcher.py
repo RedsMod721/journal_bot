@@ -14,10 +14,17 @@ def _make_event_bus():
     return SimpleNamespace(emit=MagicMock())
 
 
-def _create_template(db_session, completion_condition: dict) -> MissionQuestTemplate:
+def _create_template(
+    db_session,
+    completion_condition: dict,
+    autostart: bool = False,
+    autostart_condition: dict | None = None,
+) -> MissionQuestTemplate:
     template = MissionQuestTemplate(
         name="Template",
         completion_condition=completion_condition,
+        autostart=autostart,
+        autostart_condition=autostart_condition,
     )
     db_session.add(template)
     db_session.commit()
@@ -217,6 +224,55 @@ def test_quest_matcher_autostart_can_complete_immediately(db_session, sample_use
 
     assert len(updated) == 1
     assert quest.status == "completed"
+
+
+def test_quest_matcher_autostart_condition_blocks_start(db_session, sample_user) -> None:
+    event_bus = _make_event_bus()
+    matcher = QuestMatcher(event_bus)
+    template = _create_template(
+        db_session,
+        {"type": "accumulation", "target": 100, "unit": "minutes"},
+        autostart=True,
+        autostart_condition={"type": "keyword_match", "keywords": ["gym"]},
+    )
+    quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        status="not_started",
+        autostart=True,
+    )
+    entry = _create_entry(db_session, sample_user.id, "Rested today.")
+
+    updated = matcher.match_journal_entry(db_session, entry)
+
+    assert updated == []
+    assert quest.status == "not_started"
+
+
+def test_quest_matcher_autostart_condition_allows_start(db_session, sample_user) -> None:
+    event_bus = _make_event_bus()
+    matcher = QuestMatcher(event_bus)
+    template = _create_template(
+        db_session,
+        {"type": "accumulation", "target": 100, "unit": "minutes"},
+        autostart=True,
+        autostart_condition={"type": "keyword_match", "keywords": ["gym"]},
+    )
+    quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        status="not_started",
+        autostart=True,
+    )
+    entry = _create_entry(db_session, sample_user.id, "Gym for 10 minutes.")
+
+    updated = matcher.match_journal_entry(db_session, entry)
+
+    assert len(updated) == 1
+    assert quest.status == "in_progress"
+    assert quest.completion_progress == 10
 
 
 def test_quest_matcher_handles_multiple_quests_in_one_entry(db_session, sample_user) -> None:

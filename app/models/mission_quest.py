@@ -80,6 +80,12 @@ class MissionQuestTemplate(Base):
     # Auto-start behavior: if True, quest can start when completion conditions are met
     autostart: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Optional autostart condition (separate from completion)
+    autostart_condition: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
     # Completion condition - JSON for flexibility
     # Examples:
     # {"type": "yes_no"} - Simple yes/no completion
@@ -187,6 +193,12 @@ class UserMissionQuest(Base):
 
     # Auto-start behavior for this quest instance
     autostart: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Optional autostart condition for this quest instance
+    autostart_condition: Mapped[Optional[dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+    )
 
     # Progress tracking (for accumulation-type quests)
     completion_progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
