@@ -653,6 +653,17 @@ class TestSkillRankCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
+    def test_skill_rank_higher_than_required_is_met(
+        self, db_session, sample_user, sample_skill
+    ) -> None:
+        evaluator = SkillRankCondition()
+        sample_skill.rank = "Master"
+        db_session.commit()
+
+        condition = {"type": "skill_rank", "rank": "Expert"}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
     def test_skill_rank_entity_not_found_returns_false(self, db_session) -> None:
         evaluator = SkillRankCondition()
         other_user = _create_user(db_session)

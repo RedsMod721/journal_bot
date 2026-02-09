@@ -43,6 +43,7 @@ class MQTemplateBase(BaseSchema):
     description_template: str = Field(max_length=1000)
     type: str = Field(max_length=50)
     structure: str = Field(max_length=50)
+    autostart: bool = Field(default=False)
     completion_condition: dict = Field(default_factory=dict)
     reward_xp: int = Field(default=0, ge=0)
     reward_coins: int = Field(default=0, ge=0)
@@ -127,6 +128,7 @@ class UserMQBase(BaseSchema):
     name: NameStr
     personalized_description: DescriptionStr = None
     status: str = Field(default="not_started", max_length=20)
+    autostart: bool = Field(default=False)
     completion_target: int = Field(default=100, ge=0)
     deadline: datetime | None = None
 
@@ -157,6 +159,7 @@ class UserMQCreate(UserMQBase):
     user_id: UUIDStr
     template_id: UUIDStr | None = None
     parent_mq_id: UUIDStr | None = None
+    autostart: bool | None = None
 
 
 class UserMQUpdate(BaseSchema):

@@ -48,6 +48,7 @@ def create_mq_template(db: Session, mq: MQTemplateCreate) -> MissionQuestTemplat
         description_template=mq.description_template,
         type=mq.type,
         structure=mq.structure,
+        autostart=mq.autostart,
         completion_condition=mq.completion_condition,
         reward_xp=mq.reward_xp,
         reward_coins=mq.reward_coins,
@@ -122,6 +123,19 @@ def create_user_mq(db: Session, user_mq: UserMQCreate) -> UserMissionQuest:
         )
         quest = create_user_mq(db, quest_data)
     """
+    template_autostart = None
+    if user_mq.template_id:
+        template = (
+            db.query(MissionQuestTemplate)
+            .filter(MissionQuestTemplate.id == user_mq.template_id)
+            .first()
+        )
+        template_autostart = template.autostart if template else None
+
+    autostart_value = (
+        user_mq.autostart if user_mq.autostart is not None else (template_autostart or False)
+    )
+
     db_user_mq = UserMissionQuest(
         user_id=user_mq.user_id,
         template_id=user_mq.template_id,
@@ -129,6 +143,7 @@ def create_user_mq(db: Session, user_mq: UserMQCreate) -> UserMissionQuest:
         name=user_mq.name,
         personalized_description=user_mq.personalized_description,
         status=user_mq.status,
+        autostart=autostart_value,
         completion_target=user_mq.completion_target,
         deadline=user_mq.deadline,
     )

@@ -1,5 +1,7 @@
 """Tests for keyword matcher."""
 
+from unittest.mock import patch
+
 import pytest
 
 from app.core.quests.keyword_matcher import KeywordMatcher
@@ -263,3 +265,15 @@ def test_keyword_matcher_stem_and_fuzzy_both_match_no_dup() -> None:
     keywords = ["run"]
 
     assert matcher.match_keywords(text, keywords) == ["run"]
+
+
+def test_keyword_matcher_fallback_tokenizer_on_missing_punkt() -> None:
+    matcher = KeywordMatcher()
+    text = "Went to the gym."
+    keywords = ["gym"]
+
+    with patch(
+        "app.core.quests.keyword_matcher.word_tokenize",
+        side_effect=LookupError("punkt not found"),
+    ):
+        assert matcher.match_keywords(text, keywords) == ["gym"]

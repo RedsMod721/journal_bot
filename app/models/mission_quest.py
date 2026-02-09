@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.utils.database import Base
@@ -76,6 +76,9 @@ class MissionQuestTemplate(Base):
 
     # structure: single_action, multi_action, multi_part
     structure: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # Auto-start behavior: if True, quest can start when completion conditions are met
+    autostart: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Completion condition - JSON for flexibility
     # Examples:
@@ -181,6 +184,9 @@ class UserMissionQuest(Base):
     # Status tracking
     # Valid statuses: not_started, in_progress, completed, failed
     status: Mapped[str] = mapped_column(String(20), default="not_started", nullable=False)
+
+    # Auto-start behavior for this quest instance
+    autostart: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Progress tracking (for accumulation-type quests)
     completion_progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

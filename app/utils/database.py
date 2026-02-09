@@ -24,15 +24,29 @@ from pathlib import Path
 from typing import Generator
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-# Database file path - relative to project root
-DATABASE_DIR = Path(__file__).parent.parent.parent / "data"
-DATABASE_PATH = DATABASE_DIR / "database.db"
-DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+# Database configuration
+from app.config import DATABASE_URL as CONFIG_DATABASE_URL
 
-# Ensure data directory exists
-DATABASE_DIR.mkdir(parents=True, exist_ok=True)
+# Resolve database URL from config/env
+DATABASE_URL = CONFIG_DATABASE_URL
+
+_db_url = make_url(DATABASE_URL)
+DATABASE_PATH: Path | None
+DATABASE_DIR: Path | None
+
+if _db_url.get_backend_name() == "sqlite" and _db_url.database:
+    DATABASE_PATH = Path(_db_url.database)
+    DATABASE_DIR = DATABASE_PATH.parent
+else:
+    DATABASE_PATH = None
+    DATABASE_DIR = None
+
+# Ensure data directory exists for SQLite file databases
+if DATABASE_DIR is not None:
+    DATABASE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Create SQLAlchemy engine
 # check_same_thread=False is required for SQLite to work with FastAPI's
@@ -106,9 +120,13 @@ def get_database_info() -> dict:
     Returns:
         dict: Database configuration details including path and connection status
     """
+    database_path = str(DATABASE_PATH) if DATABASE_PATH is not None else ""
+    database_exists = DATABASE_PATH.exists() if DATABASE_PATH is not None else False
+    directory_exists = DATABASE_DIR.exists() if DATABASE_DIR is not None else False
+
     return {
         "database_url": DATABASE_URL,
-        "database_path": str(DATABASE_PATH),
-        "database_exists": DATABASE_PATH.exists(),
-        "directory_exists": DATABASE_DIR.exists(),
+        "database_path": database_path,
+        "database_exists": database_exists,
+        "directory_exists": directory_exists,
     }

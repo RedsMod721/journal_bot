@@ -22,6 +22,7 @@ from app.core.quests.checkers import (
     KeywordMatchChecker,
     YesNoChecker,
 )
+from sqlalchemy import and_, or_
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -79,7 +80,13 @@ class QuestMatcher:
             db.query(UserMissionQuest)
             .filter(
                 UserMissionQuest.user_id == entry.user_id,
-                UserMissionQuest.status == "in_progress",
+                or_(
+                    UserMissionQuest.status == "in_progress",
+                    and_(
+                        UserMissionQuest.status == "not_started",
+                        UserMissionQuest.autostart == True,  # noqa: E712
+                    ),
+                ),
             )
             .all()
         )
@@ -111,6 +118,9 @@ class QuestMatcher:
         Returns:
             True if quest was updated, False otherwise
         """
+        if quest.status == "not_started" and not quest.autostart:
+            return False
+
         completion_type = self._get_quest_completion_type(quest)
         checker = self._checkers.get(completion_type)
 
@@ -127,6 +137,10 @@ class QuestMatcher:
 
         if new_progress == old_progress and not is_complete:
             return False
+
+        if quest.status == "not_started" and quest.autostart:
+            if is_complete or new_progress > old_progress:
+                quest.start()
 
         quest.completion_progress = new_progress
 

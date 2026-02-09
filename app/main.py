@@ -13,6 +13,7 @@ from app.config import (
     OLLAMA_HOST,
     OLLAMA_MODEL,
 )
+from app.utils.logging_config import configure_logging
 
 # Create FastAPI app instance
 app = FastAPI(
@@ -22,6 +23,11 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+
+@app.on_event("startup")
+def _configure_logging() -> None:
+    configure_logging()
 
 # Configure CORS for local frontend development
 app.add_middleware(

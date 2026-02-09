@@ -156,3 +156,7 @@ webencodings @ file:///Users/builder/cbouss/perseverance-python-buildout/croot/w
 websocket-client @ file:///private/var/folders/nz/j6p8yfhx1mv_0grj5xl4650h0000gp/T/abs_d37u7gqts8/croot/websocket-client_1715878310260/work
 wheel==0.44.0
 yaspin==3.1.0
+fastapi==0.128.0
+uvicorn==0.40.0
+python-dotenv==1.0.1
+ollama==0.1.6

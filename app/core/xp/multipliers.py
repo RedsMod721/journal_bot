@@ -5,7 +5,10 @@ Calculates combined XP multipliers from a user's equipped titles.
 Multipliers stack multiplicatively for powerful synergies.
 """
 
-from sqlalchemy.orm import Session
+from datetime import datetime
+
+from sqlalchemy import or_
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.title import UserTitle
 
@@ -96,11 +99,14 @@ def calculate_title_multipliers(
         For Education theme: 1.10 × 1.15 × 1.20 = 1.518 (+51.8%)
     """
     # Get user's equipped titles
+    now = datetime.utcnow()
     user_titles = (
         db.query(UserTitle)
+        .options(joinedload(UserTitle.title_template))
         .filter(
             UserTitle.user_id == user_id,
             UserTitle.is_equipped == True,  # noqa: E712
+            or_(UserTitle.expires_at.is_(None), UserTitle.expires_at > now),
         )
         .all()
     )
@@ -108,6 +114,8 @@ def calculate_title_multipliers(
     combined_multiplier = 1.0
 
     for user_title in user_titles:
+        if not user_title.title_template:
+            continue
         effect = user_title.title_template.effect
 
         if applies_to_target(effect, target_type, target_id):

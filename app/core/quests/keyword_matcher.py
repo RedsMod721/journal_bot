@@ -10,6 +10,7 @@ Uses Porter stemming from NLTK and SequenceMatcher for fuzzy matching.
 """
 
 from difflib import SequenceMatcher
+import re
 
 from nltk.stem import PorterStemmer
 from nltk.tokenize import word_tokenize
@@ -61,7 +62,7 @@ class KeywordMatcher:
             return []
 
         text_tokens = self._tokenize_and_stem(text)
-        text_tokens_lower = [token.lower() for token in word_tokenize(text.lower())]
+        text_tokens_lower = [token.lower() for token in self._safe_word_tokenize(text.lower())]
 
         matched: list[str] = []
         seen: set[str] = set()
@@ -86,8 +87,19 @@ class KeywordMatcher:
         Returns:
             List of stemmed tokens
         """
-        tokens = word_tokenize(text.lower())
+        tokens = self._safe_word_tokenize(text.lower())
         return [self._stemmer.stem(token) for token in tokens]
+
+    def _safe_word_tokenize(self, text: str) -> list[str]:
+        """
+        Tokenize text using NLTK when available, with a regex fallback.
+
+        The fallback avoids NLTK's "punkt" dependency and preserves hyphenated words.
+        """
+        try:
+            return word_tokenize(text)
+        except LookupError:
+            return re.findall(r"[\w-]+", text)
 
     def _keyword_matches(
         self,

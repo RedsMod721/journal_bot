@@ -31,6 +31,7 @@ def _create_user_quest(
     template: MissionQuestTemplate,
     progress: int = 0,
     status: str = "in_progress",
+    autostart: bool = False,
 ) -> UserMissionQuest:
     quest = UserMissionQuest(
         user_id=user_id,
@@ -38,6 +39,7 @@ def _create_user_quest(
         name="Quest",
         completion_progress=progress,
         status=status,
+        autostart=autostart,
     )
     db_session.add(quest)
     db_session.commit()
@@ -151,6 +153,70 @@ def test_quest_matcher_emits_quest_completed_event(db_session, sample_user) -> N
     assert event_bus.emit.call_count == 1
     args, _ = event_bus.emit.call_args
     assert args[0] == "quest.completed"
+
+
+def test_quest_matcher_autostart_ignores_unmatched_entry(db_session, sample_user) -> None:
+    event_bus = _make_event_bus()
+    matcher = QuestMatcher(event_bus)
+    template = _create_template(
+        db_session,
+        {"type": "accumulation", "target": 100, "unit": "minutes"},
+    )
+    quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        status="not_started",
+        autostart=True,
+    )
+    entry = _create_entry(db_session, sample_user.id, "Rested today.")
+
+    updated = matcher.match_journal_entry(db_session, entry)
+
+    assert updated == []
+    assert quest.status == "not_started"
+
+
+def test_quest_matcher_autostart_starts_on_progress(db_session, sample_user) -> None:
+    event_bus = _make_event_bus()
+    matcher = QuestMatcher(event_bus)
+    template = _create_template(
+        db_session,
+        {"type": "accumulation", "target": 100, "unit": "minutes"},
+    )
+    quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        status="not_started",
+        autostart=True,
+    )
+    entry = _create_entry(db_session, sample_user.id, "Worked out for 15 minutes.")
+
+    updated = matcher.match_journal_entry(db_session, entry)
+
+    assert len(updated) == 1
+    assert quest.status == "in_progress"
+    assert quest.completion_progress == 15
+
+
+def test_quest_matcher_autostart_can_complete_immediately(db_session, sample_user) -> None:
+    event_bus = _make_event_bus()
+    matcher = QuestMatcher(event_bus)
+    template = _create_template(db_session, {"type": "yes_no"})
+    quest = _create_user_quest(
+        db_session,
+        sample_user.id,
+        template=template,
+        status="not_started",
+        autostart=True,
+    )
+    entry = _create_entry(db_session, sample_user.id, "Did it.", {"manual_completion": True})
+
+    updated = matcher.match_journal_entry(db_session, entry)
+
+    assert len(updated) == 1
+    assert quest.status == "completed"
 
 
 def test_quest_matcher_handles_multiple_quests_in_one_entry(db_session, sample_user) -> None:

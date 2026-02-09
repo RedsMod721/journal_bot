@@ -59,6 +59,16 @@ def _max_consecutive_streak(dates: list[date]) -> int:
 # Corrosion levels from best to worst
 CORROSION_LEVELS = ["Fresh", "Familiar", "Dusty", "Rusty", "Forgotten"]
 
+# Skill ranks from lowest to highest
+SKILL_RANK_ORDER = [
+    "Beginner",
+    "Amateur",
+    "Intermediate",
+    "Advanced",
+    "Expert",
+    "Master",
+]
+
 
 def _get_corrosion_index(level: str) -> int:
     """Get numeric index for corrosion level. Returns -1 if invalid."""
@@ -374,9 +384,16 @@ class SkillRankCondition(ConditionEvaluator):
         """
         _require_field(condition, "rank")
 
+        required_rank = condition["rank"]
+        if required_rank not in SKILL_RANK_ORDER:
+            return False
+
+        required_index = SKILL_RANK_ORDER.index(required_rank)
+        acceptable_ranks = SKILL_RANK_ORDER[required_index:]
+
         return (
             db.query(Skill)
-            .filter(Skill.user_id == user_id, Skill.rank == condition["rank"])
+            .filter(Skill.user_id == user_id, Skill.rank.in_(acceptable_ranks))
             .first()
             is not None
         )

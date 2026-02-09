@@ -98,57 +98,91 @@ class XPCalculator:
         awards: list[dict[str, Any]] = []
         total_xp = 0.0
 
+        # Preload target entities to avoid per-target queries
+        theme_ids = [
+            target_key.split(":", 1)[1]
+            for target_key in distribution
+            if target_key.startswith("theme:")
+        ]
+        skill_ids = [
+            target_key.split(":", 1)[1]
+            for target_key in distribution
+            if target_key.startswith("skill:")
+        ]
+
+        themes = (
+            db.query(Theme).filter(Theme.id.in_(theme_ids)).all()
+            if theme_ids
+            else []
+        )
+        skills = (
+            db.query(Skill).filter(Skill.id.in_(skill_ids)).all()
+            if skill_ids
+            else []
+        )
+
+        theme_map = {theme.id: theme for theme in themes}
+        skill_map = {skill.id: skill for skill in skills}
+
         # Process each target
         for target_key, strategy_xp in distribution.items():
             target_type, target_id = target_key.split(":", 1)
 
             # Calculate final XP with multipliers
-            final_xp = self._calculate_final_xp(
-                db, strategy_xp, entry.user_id, target_type, target_id
-            )
+            if target_type == "theme":
+                entity = theme_map.get(target_id)
+                if entity is None:
+                    continue
+                final_xp = self._calculate_final_xp(
+                    db, strategy_xp, entry.user_id, target_type, entity.name
+                )
+                entity.add_xp(final_xp)
 
             # Award XP to the entity
-            if target_type == "theme":
-                entity = self._award_to_theme(db, target_id, final_xp)
-                if entity:
-                    self._update_xp_breakdown(entity, "journal", final_xp)
-                    awards.append({
-                        "type": "theme",
-                        "id": target_id,
-                        "name": entity.name,
-                        "xp": final_xp,
-                    })
-                    total_xp += final_xp
+                self._update_xp_breakdown(entity, "journal", final_xp)
+                awards.append({
+                    "type": "theme",
+                    "id": target_id,
+                    "name": entity.name,
+                    "xp": final_xp,
+                })
+                total_xp += final_xp
 
-                    # Emit event
-                    self.event_bus.emit("xp.awarded", {
-                        "user_id": entry.user_id,
-                        "amount": final_xp,
-                        "source": "journal",
-                        "target_type": "theme",
-                        "target_id": target_id,
-                    })
+                # Emit event
+                self.event_bus.emit("xp.awarded", {
+                    "user_id": entry.user_id,
+                    "amount": final_xp,
+                    "source": "journal",
+                    "target_type": "theme",
+                    "target_id": target_id,
+                })
 
             elif target_type == "skill":
-                entity = self._award_to_skill(db, target_id, final_xp)
-                if entity:
-                    self._update_xp_breakdown(entity, "journal", final_xp)
-                    awards.append({
-                        "type": "skill",
-                        "id": target_id,
-                        "name": entity.name,
-                        "xp": final_xp,
-                    })
-                    total_xp += final_xp
+                entity = skill_map.get(target_id)
+                if entity is None:
+                    continue
+                final_xp = self._calculate_final_xp(
+                    db, strategy_xp, entry.user_id, target_type, entity.name
+                )
+                entity.add_xp(final_xp)
 
-                    # Emit event
-                    self.event_bus.emit("xp.awarded", {
-                        "user_id": entry.user_id,
-                        "amount": final_xp,
-                        "source": "journal",
-                        "target_type": "skill",
-                        "target_id": target_id,
-                    })
+                self._update_xp_breakdown(entity, "journal", final_xp)
+                awards.append({
+                    "type": "skill",
+                    "id": target_id,
+                    "name": entity.name,
+                    "xp": final_xp,
+                })
+                total_xp += final_xp
+
+                # Emit event
+                self.event_bus.emit("xp.awarded", {
+                    "user_id": entry.user_id,
+                    "amount": final_xp,
+                    "source": "journal",
+                    "target_type": "skill",
+                    "target_id": target_id,
+                })
 
         db.commit()
 
@@ -163,7 +197,7 @@ class XPCalculator:
         base_xp: float,
         user_id: str,
         target_type: str,
-        target_id: str,
+        target_name: str,
     ) -> float:
         """
         Calculate final XP after applying title multipliers.
@@ -173,19 +207,11 @@ class XPCalculator:
             base_xp: Base XP from distribution strategy
             user_id: User ID for multiplier lookup
             target_type: "theme" or "skill"
-            target_id: ID of the target entity
+            target_name: Name of the target entity
 
         Returns:
             Final XP amount after multipliers
         """
-        # Look up the entity to get its name for multiplier matching
-        if target_type == "theme":
-            entity = db.query(Theme).filter(Theme.id == target_id).first()
-            target_name = entity.name if entity else ""
-        else:
-            entity = db.query(Skill).filter(Skill.id == target_id).first()
-            target_name = entity.name if entity else ""
-
         if not target_name:
             return base_xp
 

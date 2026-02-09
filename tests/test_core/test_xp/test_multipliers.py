@@ -5,6 +5,8 @@ Tests the applies_to_target helper and calculate_title_multipliers function
 with various title effect configurations.
 """
 
+from datetime import datetime, timedelta
+
 import pytest
 
 from app.core.xp.multipliers import applies_to_target, calculate_title_multipliers
@@ -247,6 +249,64 @@ class TestCalculateTitleMultipliers:
             db_session, sample_user.id, "theme", "Education"
         )
         assert result == 1.0
+
+    def test_expired_titles_are_ignored(self, db_session, sample_user):
+        """Expired titles should not apply multipliers."""
+        template = TitleTemplate(
+            name="ExpiredTitle",
+            effect={
+                "type": "xp_multiplier",
+                "scope": "theme",
+                "target": "Education",
+                "value": 2.0,
+            },
+            rank="C",
+        )
+        db_session.add(template)
+        db_session.commit()
+
+        expired_title = UserTitle(
+            user_id=sample_user.id,
+            title_template_id=template.id,
+            is_equipped=True,
+            expires_at=datetime.utcnow() - timedelta(days=1),
+        )
+        db_session.add(expired_title)
+        db_session.commit()
+
+        result = calculate_title_multipliers(
+            db_session, sample_user.id, "theme", "Education"
+        )
+        assert result == 1.0
+
+    def test_unexpired_titles_still_apply(self, db_session, sample_user):
+        """Unexpired titles should still apply multipliers."""
+        template = TitleTemplate(
+            name="TemporaryTitle",
+            effect={
+                "type": "xp_multiplier",
+                "scope": "theme",
+                "target": "Education",
+                "value": 1.5,
+            },
+            rank="C",
+        )
+        db_session.add(template)
+        db_session.commit()
+
+        active_title = UserTitle(
+            user_id=sample_user.id,
+            title_template_id=template.id,
+            is_equipped=True,
+            expires_at=datetime.utcnow() + timedelta(days=1),
+        )
+        db_session.add(active_title)
+        db_session.commit()
+
+        result = calculate_title_multipliers(
+            db_session, sample_user.id, "theme", "Education"
+        )
+        assert result == pytest.approx(1.5)
 
     def test_non_xp_multiplier_effects_are_ignored(self, db_session, sample_user):
         """Effects with non-xp_multiplier type should not apply."""
