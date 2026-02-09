@@ -24,6 +24,7 @@ from app.core.titles.conditions import (
     ThemeXPCondition,
     TimeBasedCondition,
     TotalXPCondition,
+    _max_consecutive_streak,
 )
 from app.models.journal_entry import JournalEntry
 from app.models.item import ItemTemplate, UserItem
@@ -126,6 +127,11 @@ class TestJournalStreakCondition:
         condition = {"type": "journal_streak", "value": 5}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
+
+
+class TestConditionHelpers:
+    def test_max_consecutive_streak_empty_list(self) -> None:
+        assert _max_consecutive_streak([]) == 0
 
     def test_journal_streak_entity_not_found_returns_false(self, db_session, sample_user) -> None:
         evaluator = JournalStreakCondition()
@@ -1383,3 +1389,12 @@ class TestCompoundCondition:
         evaluator = CompoundCondition()
         with pytest.raises(KeyError):
             evaluator.evaluate(db_session, sample_user.id, {"conditions": []})
+
+    def test_compound_condition_delegates_to_evaluator(self, db_session, sample_user, sample_theme) -> None:
+        evaluator = CompoundCondition()
+        sample_theme.xp = 250.0
+        db_session.commit()
+
+        condition = {"type": "total_xp", "value": 100}
+
+        assert evaluator.evaluate(db_session, sample_user.id, condition) is True

@@ -84,6 +84,16 @@
     "/^python -m pytest tests/test_core/test_titles/test_conditions\\.py -v$/": {
       "approve": true,
       "matchCommandLine": true
-    }
+    },
+    "/^python -m pytest tests/test_core/test_xp/test_equal_distributor\\.py tests/test_core/test_titles/test_conditions\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^python -m pytest tests/test_core/test_titles/test_compound_conditions\\.py -v$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "pytest": true,
+    "/opt/anaconda3/bin/conda": true
   }
 }

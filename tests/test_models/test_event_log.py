@@ -99,3 +99,16 @@ class TestEventLogModel:
 
         assert len(results) == 1
         assert results[0].id == log_user.id
+
+    def test_event_log_repr_includes_type_and_user_prefix(self, db_session, sample_user):
+        event_log = EventLog(
+            user_id=sample_user.id,
+            event_type="xp.awarded",
+        )
+        db_session.add(event_log)
+        db_session.commit()
+
+        representation = repr(event_log)
+
+        assert "<EventLog xp.awarded user=" in representation
+        assert sample_user.id[:8] in representation

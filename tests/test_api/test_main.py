@@ -6,6 +6,7 @@ These tests cover:
 - Health check endpoint (/health)
 - check_ollama_connection function (with various scenarios)
 """
+import runpy
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -97,6 +98,22 @@ class TestHealthEndpoint:
         data = response.json()
         assert "database" in data
         assert "status" in data["database"]
+
+
+def test_main_invokes_uvicorn_run() -> None:
+    mock_uvicorn = MagicMock()
+
+    with patch.dict(sys.modules, {"uvicorn": mock_uvicorn}):
+        sys.modules.pop("app.main", None)
+        runpy.run_module("app.main", run_name="__main__")
+
+    mock_uvicorn.run.assert_called_once_with(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info",
+    )
 
 
 class TestCheckOllamaConnection:

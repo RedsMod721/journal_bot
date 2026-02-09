@@ -20,11 +20,12 @@ Usage:
     title = awarder.award_title(db, user_id, template_id, "manual_grant")
 """
 
+import time
 from typing import TYPE_CHECKING
 
 from app.core.events import EventBus
 from app.core.titles.conditions import CONDITION_EVALUATORS, CompoundCondition
-from app.crud.title import award_title_to_user, get_all_title_templates, get_user_titles
+from app.crud.title import award_title_to_user, get_user_titles
 from app.models.title import TitleTemplate, UserTitle
 from app.schemas.title import UserTitleCreate
 from app.utils.logging_config import get_logger
@@ -56,6 +57,34 @@ class TitleAwarder:
         self._event_bus = event_bus
         self._compound_evaluator = CompoundCondition()
         self._evaluators = self._register_evaluators()
+        self._template_snapshot_cache: list[dict] | None = None
+        self._template_snapshot_cache_time = 0.0
+        self._template_snapshot_cache_ttl = 1.0
+
+    def _get_template_snapshots(self, db: "Session") -> list[dict]:
+        """
+        Get cached title template snapshots for condition evaluation.
+
+        Returns a list of dicts with id and unlock_condition. Uses a short
+        TTL-based cache to reduce repeated DB reads in tight loops while still
+        allowing new templates to appear promptly.
+        """
+        now = time.monotonic()
+        if (
+            self._template_snapshot_cache is not None
+            and (now - self._template_snapshot_cache_time) < self._template_snapshot_cache_ttl
+        ):
+            return self._template_snapshot_cache
+
+        snapshots = [
+            {"id": template_id, "unlock_condition": unlock_condition}
+            for template_id, unlock_condition in db.query(
+                TitleTemplate.id, TitleTemplate.unlock_condition
+            ).all()
+        ]
+        self._template_snapshot_cache = snapshots
+        self._template_snapshot_cache_time = now
+        return snapshots
 
     def check_user_unlocks(self, db: "Session", user_id: str) -> list[UserTitle]:
         """
@@ -71,24 +100,27 @@ class TitleAwarder:
         Returns:
             List of newly awarded UserTitle instances
         """
-        all_templates = get_all_title_templates(db)
+        template_snapshots = self._get_template_snapshots(db)
         user_titles = get_user_titles(db, user_id)
         owned_template_ids = {ut.title_template_id for ut in user_titles}
 
         newly_unlocked: list[UserTitle] = []
 
-        for template in all_templates:
-            if template.id in owned_template_ids:
+        for snapshot in template_snapshots:
+            template_id = snapshot["id"]
+            unlock_condition = snapshot.get("unlock_condition")
+
+            if template_id in owned_template_ids:
                 continue
 
-            if not template.unlock_condition:
+            if not unlock_condition:
                 continue
 
-            if self._evaluate_condition(db, user_id, template.unlock_condition):
+            if self._evaluate_condition(db, user_id, unlock_condition):
                 user_title = self.award_title(
                     db=db,
                     user_id=user_id,
-                    template_id=template.id,
+                    template_id=template_id,
                     unlock_reason="condition_met",
                 )
                 newly_unlocked.append(user_title)

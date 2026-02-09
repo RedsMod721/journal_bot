@@ -197,3 +197,48 @@ class TestItemModel:
 
         assert len(equipped) == 1
         assert equipped[0].id == item_equipped.id
+
+    def test_item_template_repr(self, db_session):
+        template = ItemTemplate(
+            name="Mystery Box",
+            description="Surprise",
+            item_type="loot",
+            rarity="legendary",
+        )
+        db_session.add(template)
+        db_session.commit()
+
+        assert repr(template) == "<ItemTemplate Mystery Box (legendary)>"
+
+    def test_user_item_repr_statuses(self, db_session, sample_user):
+        template = ItemTemplate(
+            name="Badge",
+            description="Achievement",
+            item_type="collectible",
+            rarity="rare",
+        )
+        db_session.add(template)
+        db_session.commit()
+
+        item_equipped = UserItem(
+            user_id=sample_user.id,
+            template_id=template.id,
+            is_equipped=True,
+        )
+        item_consumed = UserItem(
+            user_id=sample_user.id,
+            template_id=template.id,
+            is_consumed=True,
+        )
+        item_inventory = UserItem(
+            user_id=sample_user.id,
+            template_id=template.id,
+            is_equipped=False,
+            is_consumed=False,
+        )
+        db_session.add_all([item_equipped, item_consumed, item_inventory])
+        db_session.commit()
+
+        assert "(equipped)" in repr(item_equipped)
+        assert "(consumed)" in repr(item_consumed)
+        assert "(inventory)" in repr(item_inventory)

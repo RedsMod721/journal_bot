@@ -180,6 +180,15 @@ class TestUnsubscribe:
         # Act & Assert (should not raise)
         bus.unsubscribe("xp.awarded", callback)
 
+    def test_unsubscribe_ignores_missing_callback_in_existing_event(self) -> None:
+        """Should ignore removal when callback is not in list for known event."""
+        bus = EventBus()
+        callback = MagicMock()
+        other_callback = MagicMock()
+
+        bus.subscribe("xp.awarded", callback)
+        bus.unsubscribe("xp.awarded", other_callback)
+
     def test_unsubscribe_from_unknown_event_type_does_not_raise(self) -> None:
         """Should not raise when unsubscribing from an unknown event type."""
         bus = EventBus()

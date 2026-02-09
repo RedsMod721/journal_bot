@@ -223,6 +223,26 @@ xp:
         assert xp_section.base_journal_xp == 50
         assert xp_section.practice_time_multiplier == 0.5
 
+    def test_get_returns_default_when_config_none(self, tmp_path: Path) -> None:
+        """Should return default when internal config is None."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("xp:\n  base_journal_xp: 50")
+
+        loader = ConfigLoader(config_path=config_file)
+        loader._config = None
+
+        assert loader.get("xp.base_journal_xp", default=99) == 99
+
+    def test_get_reads_dict_values(self, tmp_path: Path) -> None:
+        """Should read dict-backed values when config is a dict."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("xp:\n  base_journal_xp: 50")
+
+        loader = ConfigLoader(config_path=config_file)
+        loader._config = {"section": {"value": 123}}
+
+        assert loader.get("section.value") == 123
+
 
 class TestHotReloadOnFileChange:
     """Test automatic configuration reload when file changes."""
@@ -299,6 +319,16 @@ class TestHotReloadOnFileChange:
         config_file.unlink()
 
         loader.reload()
+
+        assert loader.config.xp.base_journal_xp == 50
+
+    def test_config_property_initializes_default_when_missing(self, tmp_path: Path) -> None:
+        """config property should initialize defaults when config is None."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("xp:\n  base_journal_xp: 50")
+
+        loader = ConfigLoader(config_path=config_file)
+        loader._config = None
 
         assert loader.config.xp.base_journal_xp == 50
 

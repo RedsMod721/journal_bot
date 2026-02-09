@@ -11,6 +11,11 @@ class DummyStrategy(XPDistributionStrategy):
         return {}
 
 
+class ParentStrategy(XPDistributionStrategy):
+    def distribute(self, entry, categories, base_xp):
+        return super().distribute(entry, categories, base_xp)
+
+
 class TestXPDistributionStrategyBase:
     def test_xp_distribution_strategy_is_abstract(self) -> None:
         with pytest.raises(TypeError):
@@ -20,6 +25,11 @@ class TestXPDistributionStrategyBase:
         strategy = DummyStrategy()
         result = strategy.distribute(entry=None, categories={}, base_xp=1.0)
         assert result == {}
+
+    def test_xp_distribution_strategy_base_raises(self) -> None:
+        strategy = ParentStrategy()
+        with pytest.raises(NotImplementedError):
+            strategy.distribute(entry=None, categories={}, base_xp=1.0)
 
 
 class TestXPTarget:

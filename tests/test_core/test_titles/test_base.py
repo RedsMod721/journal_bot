@@ -11,6 +11,11 @@ class DummyEvaluator(ConditionEvaluator):
         return True
 
 
+class ParentEvaluator(ConditionEvaluator):
+    def evaluate(self, db, user_id, condition):
+        return super().evaluate(db, user_id, condition)
+
+
 class TestConditionEvaluatorBase:
     def test_condition_evaluator_is_abstract(self) -> None:
         with pytest.raises(TypeError):
@@ -19,6 +24,11 @@ class TestConditionEvaluatorBase:
     def test_condition_evaluator_subclass_implements(self) -> None:
         evaluator = DummyEvaluator()
         assert evaluator.evaluate(None, "user-1", {"type": "theme_level"}) is True
+
+    def test_condition_evaluator_base_raises(self) -> None:
+        evaluator = ParentEvaluator()
+        with pytest.raises(NotImplementedError):
+            evaluator.evaluate(None, "user-1", {"type": "theme_level"})
 
 
 class TestConditionTypeEnum:

@@ -314,6 +314,22 @@ def test_evaluate_condition_handles_unknown_type_gracefully(
     assert result is False
 
 
+def test_evaluate_condition_handles_evaluator_exception(
+    db_session, sample_user, awarder
+) -> None:
+    failing_evaluator = MagicMock()
+    failing_evaluator.evaluate.side_effect = RuntimeError("boom")
+    awarder._evaluators["theme_level"] = failing_evaluator
+
+    result = awarder._evaluate_condition(
+        db_session,
+        sample_user.id,
+        {"type": "theme_level", "theme": "Education", "value": 1},
+    )
+
+    assert result is False
+
+
 def test_evaluate_condition_handles_missing_type(
     db_session, sample_user, awarder
 ) -> None:
