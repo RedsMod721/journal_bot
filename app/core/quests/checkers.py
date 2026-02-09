@@ -3,6 +3,7 @@ Concrete implementations of quest completion checkers.
 
 This module provides checkers for various quest completion types:
 - YesNoChecker: Binary completion (manual or context-based)
+- AccumulationChecker: Track progress toward a target total
 
 Each checker inherits from QuestCompletionChecker and implements
 the check_completion() method to evaluate quest progress.
@@ -79,3 +80,96 @@ class YesNoChecker(QuestCompletionChecker):
             return (True, 100)
 
         return (False, user_quest.completion_progress)
+
+
+class AccumulationChecker(QuestCompletionChecker):
+    """
+    Evaluates accumulation-based quest completion.
+
+    Tracks progress toward a target total by accumulating detected
+    amounts from journal entries. Used for quests like "Exercise for
+    50 minutes total" or "Read 100 pages this month".
+
+    Quest template condition:
+        {"type": "accumulation", "target": 50, "unit": "minutes"}
+
+    Supported units and context keys:
+        - "minutes" -> context["detected_minutes"]
+        - "count" -> context["detected_count"]
+        - "pages" -> context["detected_pages"]
+        - "hours" -> context["detected_hours"]
+        - "km" -> context["detected_km"]
+        - "miles" -> context["detected_miles"]
+        - Generic: context["detected_{unit}"] or context["detected_amount"]
+
+    Example:
+        Quest: "Exercise for 50 minutes total"
+        completion_condition = {"type": "accumulation", "target": 50, "unit": "minutes"}
+        user_quest.completion_progress = 20
+
+        context = {"detected_minutes": 30}
+        is_complete, progress = checker.check_completion(db, user_quest, context)
+        # Returns: (True, 50)  # 20 + 30 = 50, target reached
+    """
+
+    def check_completion(
+        self,
+        db: "Session",
+        user_quest: "UserMissionQuest",
+        context: dict,
+    ) -> tuple[bool, int]:
+        """
+        Check if an accumulation quest has reached its target.
+
+        Args:
+            db: Database session (unused for accumulation checks)
+            user_quest: The user's quest instance
+            context: Dict containing detected amounts
+
+        Returns:
+            (is_complete, new_progress) tuple
+        """
+        condition = self._get_completion_condition(user_quest)
+        target = condition.get("target", user_quest.completion_target)
+        unit = condition.get("unit", "count")
+
+        detected_amount = self._extract_amount(context, unit)
+        new_progress = float(user_quest.completion_progress) + detected_amount
+
+        target_value = float(target)
+        is_complete = new_progress >= target_value
+        capped_progress = min(new_progress, target_value)
+
+        return (is_complete, int(capped_progress))
+
+    def _get_completion_condition(self, user_quest: "UserMissionQuest") -> dict:
+        """Extract completion condition from quest template or return empty dict."""
+        if user_quest.template and user_quest.template.completion_condition:
+            return user_quest.template.completion_condition
+        return {}
+
+    def _extract_amount(self, context: dict, unit: str) -> float:
+        """
+        Extract the detected amount from context based on unit type.
+
+        Args:
+            context: Dict containing detected values
+            unit: The unit type to look for
+
+        Returns:
+            The detected amount as an integer, or 0 if not found
+        """
+        unit_key = f"detected_{unit}"
+        if unit_key in context:
+            try:
+                return float(context[unit_key])
+            except (TypeError, ValueError):
+                return 0.0
+
+        if "detected_amount" in context:
+            try:
+                return float(context["detected_amount"])
+            except (TypeError, ValueError):
+                return 0.0
+
+        return 0.0
