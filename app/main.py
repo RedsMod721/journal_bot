@@ -1,6 +1,8 @@
 """
 Main FastAPI application for Status Window
 """
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,6 +17,12 @@ from app.config import (
 )
 from app.utils.logging_config import configure_logging
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    configure_logging()
+    yield
+
+
 # Create FastAPI app instance
 app = FastAPI(
     title=API_TITLE,
@@ -22,12 +30,8 @@ app = FastAPI(
     version=API_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
-
-
-@app.on_event("startup")
-def _configure_logging() -> None:
-    configure_logging()
 
 # Configure CORS for local frontend development
 app.add_middleware(
