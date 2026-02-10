@@ -921,7 +921,7 @@ async def create_journal_entry(
 **Tasks:**
 1. ✅ Create MissionQuest model with hierarchy support
 2. ✅ Implement M/Q creation, retrieval, update, delete
-3. ✅ Build quest matcher (match journal entries to active M/Q)
+3. ✅ Build quest matcher (match journal entries to active M/Q + autostart gating)
 
 **Deliverables:**
 
@@ -944,6 +944,8 @@ class MissionQuestTemplate(Base):
     type = Column(String)  # daily, timed, periodic, repeatable, etc.
     structure = Column(String)  # single_action, multi_action, multi_part
     completion_condition = Column(JSON)  # {"type": "yes_no"} or {"type": "accumulation", "target": 50}
+    autostart = Column(Boolean, default=False)  # opt-in; requires autostart_condition
+    autostart_condition = Column(JSON, nullable=True)  # separate from completion_condition
     reward_xp = Column(Integer, default=0)
     reward_coins = Column(Integer, default=0)
     difficulty = Column(String, default="medium")
@@ -965,6 +967,9 @@ class UserMissionQuest(Base):
     status = Column(String, default="not_started")  # not_started, in_progress, completed, failed
     completion_progress = Column(Integer, default=0)  # For accumulation quests
     completion_target = Column(Integer, default=100)
+    autostart = Column(Boolean, default=False)
+    autostart_condition = Column(JSON, nullable=True)
+    quest_metadata = Column(JSON, default=dict)  # frequency tracking, counters, etc.
     
     created_at = Column(DateTime, default=datetime.utcnow)
     deadline = Column(DateTime, nullable=True)
@@ -1006,6 +1011,14 @@ class QuestMatcher:
         completed_quest_ids = []
         
         for quest in active_quests:
+            # Only auto-start if explicitly enabled AND a condition is defined
+            if quest.status == "not_started":
+                if not quest.autostart or not quest.autostart_condition:
+                    continue
+                if not self._should_autostart(quest, ai_categories):
+                    continue
+                quest.status = "in_progress"
+
             if self._matches_quest(quest, ai_categories):
                 quest.status = "completed"
                 quest.completed_at = datetime.utcnow()
@@ -1030,6 +1043,11 @@ class QuestMatcher:
         matches = sum(1 for kw in quest_keywords if kw in entry_text)
         return matches >= len(quest_keywords) * 0.5
 ```
+
+**Notes:**
+- Autostart is opt-in. Default `autostart=False` means a quest stays `not_started` until manually started.
+- Autostart requires a non-empty `autostart_condition` (either on the quest instance or its template).
+- `quest_metadata` stores state for frequency/accumulation tracking.
 
 **Checkpoint:** Create a quest, write a journal entry, verify quest completion is detected
 

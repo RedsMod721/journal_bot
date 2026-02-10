@@ -653,6 +653,28 @@ class TestSkillModel:
 
 ---
 
+### Quest Matcher & Autostart (Core Logic)
+
+**File:** `tests/test_core/test_quest_matcher.py`
+
+```python
+def test_autostart_requires_condition(db_session, sample_user, quest_factory):
+    """Not-started quests should not autostart without a condition"""
+    quest = quest_factory(user_id=sample_user.id, status="not_started", autostart=True)
+    assert quest.autostart_condition is None
+    # matcher should skip this quest entirely
+
+def test_autostart_uses_template_condition(db_session, sample_user, template_factory, quest_factory):
+    """Instance should inherit template autostart_condition when unset"""
+    template = template_factory(autostart=True, autostart_condition={"type": "keyword_match", "keywords": ["run"]})
+    quest = quest_factory(user_id=sample_user.id, template_id=template.id, autostart=True, autostart_condition=None)
+    # matcher should use template condition and start on keyword match
+```
+
+**Related core tests:**
+- Title XP multipliers should ignore expired titles (e.g., `tests/test_core/test_xp_calculator.py`)
+- Skill rank thresholds should use `>=` boundary checks (e.g., `tests/test_models/test_skill.py`)
+
 ## 🌐 API ENDPOINT TESTING
 
 **File:** `tests/test_api/test_journal_endpoints.py`
