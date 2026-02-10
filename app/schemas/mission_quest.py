@@ -185,6 +185,8 @@ class UserMQUpdate(BaseSchema):
 
     status: str | None = Field(default=None, max_length=20)
     completion_progress: int | None = Field(default=None, ge=0)
+    autostart: bool | None = None
+    autostart_condition: dict | None = None
 
 
 class UserMQResponse(UserMQBase):

@@ -518,6 +518,23 @@ class TestUserMissionQuestCRUD:
         assert result.status == "in_progress"
         assert result.completion_progress == 25
 
+    def test_update_user_mq_autostart_fields(self, db_session, sample_user):
+        """Should update autostart fields."""
+        user_mq = create_user_mq(
+            db_session,
+            UserMQCreate(name="Auto", user_id=sample_user.id),
+        )
+
+        update = UserMQUpdate(
+            autostart=True,
+            autostart_condition={"type": "keyword_match", "keywords": ["gym"]},
+        )
+        result = update_user_mq(db_session, user_mq.id, update)
+
+        assert result is not None
+        assert result.autostart is True
+        assert result.autostart_condition == {"type": "keyword_match", "keywords": ["gym"]}
+
     def test_update_user_mq_empty_update(self, db_session, sample_user):
         """Should allow empty update with no changes."""
         # Arrange
