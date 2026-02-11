@@ -98,6 +98,7 @@ class JournalEntryResponse(JournalEntryBase):
         ai_categories: AI-detected categories (themes, skills, sentiment)
         ai_suggested_quests: AI-suggested quests based on content
         ai_processed: Whether AI has processed this entry
+        processing_status: Current processing status (pending, processing, completed, failed)
 
     Example:
         {
@@ -108,7 +109,8 @@ class JournalEntryResponse(JournalEntryBase):
             "created_at": "2025-01-15T10:30:00",
             "ai_categories": {"themes": ["health"], "sentiment": "positive"},
             "ai_suggested_quests": [],
-            "ai_processed": true
+            "ai_processed": true,
+            "processing_status": "completed"
         }
     """
 
@@ -118,5 +120,30 @@ class JournalEntryResponse(JournalEntryBase):
     ai_categories: dict
     ai_suggested_quests: list
     ai_processed: bool
+    processing_status: str = Field(default="pending")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class QuestProgressSummary(BaseSchema):
+    """Summary of quest progress after processing."""
+
+    quest_id: UUIDStr
+    progress: int
+    completed: bool
+
+
+class ProcessingSummary(BaseSchema):
+    """Summary of journal entry processing results."""
+
+    xp_distributed: dict[str, float] = Field(default_factory=dict)
+    quests_updated: list[QuestProgressSummary] = Field(default_factory=list)
+    titles_unlocked: list[str] = Field(default_factory=list)
+    total_processing_time_ms: int = 0
+
+
+class JournalEntryWithProcessingResponse(BaseSchema):
+    """Response schema for journal entry creation with processing summary."""
+
+    entry: JournalEntryResponse
+    processing_summary: ProcessingSummary

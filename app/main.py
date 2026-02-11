@@ -1,7 +1,4 @@
-"""
-Main FastAPI application for Status Window
-"""
-from contextlib import asynccontextmanager
+"""Main FastAPI application for Status Window."""
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,12 +12,13 @@ from app.config import (
     OLLAMA_HOST,
     OLLAMA_MODEL,
 )
-from app.utils.logging_config import configure_logging
+from app.api.v1.journal import router as journal_router
+from app.core.config_loader import get_config
+from app.core.events import get_event_bus
+from app.core.orchestrator import JournalProcessingOrchestrator
+from app.utils.logging_config import configure_logging, get_logger
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    configure_logging()
-    yield
+logger = get_logger(__name__)
 
 
 # Create FastAPI app instance
@@ -30,8 +28,18 @@ app = FastAPI(
     version=API_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan,
 )
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    """Initialize shared runtime singletons on application startup."""
+    configure_logging()
+
+    event_bus = get_event_bus()
+    config = get_config()
+    app.state.orchestrator = JournalProcessingOrchestrator(event_bus, config)
+    logger.info("Journal processing orchestrator initialized")
 
 # Configure CORS for local frontend development
 app.add_middleware(
@@ -128,8 +136,10 @@ async def health_check():
     return JSONResponse(content=response, status_code=status_code)
 
 
-# TODO: Add API routes
-# - /api/v1/journal (Week 3)
+# API routes
+app.include_router(journal_router, prefix="/api/v1")
+
+# TODO: Add more API routes
 # - /api/v1/character (Week 5)
 # - /api/v1/quests (Week 4)
 
