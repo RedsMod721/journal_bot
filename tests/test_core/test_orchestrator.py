@@ -519,6 +519,49 @@ class TestErrorHandling:
 
         assert len(sample_entry.processing_error) <= 500
 
+    def test_voice_entry_with_whitespace_only_content_fails_without_retry(
+        self,
+        db_session,
+        orchestrator,
+        sample_user,
+    ) -> None:
+        entry = JournalEntry(
+            user_id=sample_user.id,
+            content="   ",
+            entry_type="voice",
+        )
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        result = orchestrator.process_entry(db_session, entry)
+
+        assert result["status"] == "failed"
+        assert entry.processing_status == "failed"
+        assert entry.retry_count == 1
+        assert "no transcript" in (entry.processing_error or "").lower()
+
+    def test_missing_transcript_sets_failed_even_when_retry_count_low(
+        self,
+        db_session,
+        orchestrator,
+        sample_user,
+    ) -> None:
+        entry = JournalEntry(
+            user_id=sample_user.id,
+            content="",
+            entry_type="voice",
+            retry_count=0,
+        )
+        db_session.add(entry)
+        db_session.commit()
+        db_session.refresh(entry)
+
+        result = orchestrator.process_entry(db_session, entry)
+
+        assert result["status"] == "failed"
+        assert entry.processing_status == "failed"
+
 
 class TestEventListeners:
     """Tests for event listener behavior."""

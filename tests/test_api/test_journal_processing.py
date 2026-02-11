@@ -278,3 +278,48 @@ def test_create_entry_emits_event(client, user, monkeypatch):
     assert payload["user_id"] == user.id
     assert payload["content"] == "Event emission test"
     assert "entry_id" in payload
+
+
+def test_create_entry_without_orchestrator_returns_server_error(api_db_session, user):
+    def override_get_db():
+        yield api_db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        with TestClient(app, raise_server_exceptions=False) as local_client:
+            if hasattr(local_client.app.state, "orchestrator"):
+                delattr(local_client.app.state, "orchestrator")
+
+            response = local_client.post(
+                "/api/v1/journal/entry",
+                json={
+                    "user_id": user.id,
+                    "content": "No orchestrator configured",
+                    "entry_type": "text",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+
+
+def test_create_entry_with_voice_type_and_empty_content_is_rejected(
+    client,
+    api_db_session,
+    user,
+):
+    before_count = api_db_session.query(JournalEntry).count()
+
+    response = client.post(
+        "/api/v1/journal/entry",
+        json={
+            "user_id": user.id,
+            "content": "   ",
+            "entry_type": "voice",
+        },
+    )
+
+    assert response.status_code == 422
+    after_count = api_db_session.query(JournalEntry).count()
+    assert after_count == before_count

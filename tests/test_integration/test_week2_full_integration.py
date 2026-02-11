@@ -1,6 +1,7 @@
 """End-to-end integration tests for the complete Week 2 processing system."""
 
 from collections.abc import Generator
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -391,3 +392,267 @@ def test_week2_cascade_awards_multiple_titles(db_session: Session):
     }
 
     assert len(title_events) == 3
+
+
+def test_week2_flow_quest_completes_on_third_entry_same_week(
+    db_session: Session,
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Verify a frequency quest completes on the third entry within the same week."""
+    user = _make_user(db_session)
+    theme = Theme(user_id=user.id, name="Education")
+    skill = Skill(user_id=user.id, name="Python")
+    db_session.add_all([theme, skill])
+    db_session.commit()
+    db_session.refresh(theme)
+    db_session.refresh(skill)
+
+    template = MissionQuestTemplate(
+        name="Exercise 3 times this week",
+        completion_condition={"type": "frequency", "target": 3, "period": "week"},
+        reward_xp=150,
+        reward_coins=20,
+    )
+    db_session.add(template)
+    db_session.commit()
+    db_session.refresh(template)
+
+    quest = UserMissionQuest(
+        user_id=user.id,
+        template_id=template.id,
+        name=template.name,
+        status="in_progress",
+    )
+    db_session.add(quest)
+    db_session.commit()
+
+    event_bus = EventBus()
+    progress_events: list[dict] = []
+    completed_events: list[dict] = []
+    event_bus.subscribe("quest.progress_updated", lambda payload: progress_events.append(payload))
+    event_bus.subscribe("quest.completed", lambda payload: completed_events.append(payload))
+
+    monkeypatch.setattr("app.api.v1.journal.get_event_bus", lambda: event_bus)
+    client.app.state.orchestrator = _make_orchestrator_with_categories(
+        event_bus, theme, skill
+    )
+
+    for index in range(3):
+        response = client.post(
+            "/api/v1/journal/entry",
+            json={
+                "user_id": user.id,
+                "content": f"Week session {index + 1}: gym and study",
+                "entry_type": "text",
+            },
+        )
+        assert response.status_code == 201
+
+    db_session.refresh(quest)
+    assert quest.status == "completed"
+    assert quest.completion_progress == 100
+    assert len(progress_events) == 2
+    assert len(completed_events) == 1
+    assert completed_events[0]["quest_id"] == quest.id
+    assert completed_events[0]["reward_xp"] == 150
+    assert completed_events[0]["reward_coins"] == 20
+
+
+def test_week2_flow_frequency_resets_next_week(db_session: Session):
+    """Verify frequency quest progress is computed from occurrences in current week only."""
+    user = _make_user(db_session)
+
+    template = MissionQuestTemplate(
+        name="Exercise 3 times this week",
+        completion_condition={"type": "frequency", "target": 3, "period": "week"},
+    )
+    db_session.add(template)
+    db_session.commit()
+    db_session.refresh(template)
+
+    old_date = (datetime.utcnow() - timedelta(days=10)).date().isoformat()
+    quest = UserMissionQuest(
+        user_id=user.id,
+        template_id=template.id,
+        name=template.name,
+        status="in_progress",
+        quest_metadata={"occurrences": [{"entry_id": "old-entry", "date": old_date}]},
+    )
+    db_session.add(quest)
+    db_session.commit()
+    db_session.refresh(quest)
+
+    entry = JournalEntry(
+        user_id=user.id,
+        content="Weekly training checkpoint.",
+        entry_type="text",
+    )
+    db_session.add(entry)
+    db_session.commit()
+    db_session.refresh(entry)
+
+    orchestrator = JournalProcessingOrchestrator(EventBus(), get_config())
+    result = orchestrator.process_entry(db_session, entry)
+
+    assert result["status"] == "completed"
+    db_session.refresh(quest)
+    assert quest.status == "in_progress"
+    assert quest.completion_progress == 33
+    occurrences = quest.quest_metadata.get("occurrences", [])
+    assert len(occurrences) == 1
+    assert occurrences[0]["entry_id"] == entry.id
+
+
+def test_week2_flow_does_not_double_count_same_entry_id_for_frequency(
+    db_session: Session,
+):
+    """Reprocessing the same entry should not increment frequency progress twice."""
+    user = _make_user(db_session)
+
+    template = MissionQuestTemplate(
+        name="Exercise 3 times this week",
+        completion_condition={"type": "frequency", "target": 3, "period": "week"},
+    )
+    db_session.add(template)
+    db_session.commit()
+    db_session.refresh(template)
+
+    quest = UserMissionQuest(
+        user_id=user.id,
+        template_id=template.id,
+        name=template.name,
+        status="in_progress",
+    )
+    entry = JournalEntry(
+        user_id=user.id,
+        content="Gym and stretching session.",
+        entry_type="text",
+    )
+    db_session.add_all([quest, entry])
+    db_session.commit()
+    db_session.refresh(quest)
+    db_session.refresh(entry)
+
+    event_bus = EventBus()
+    progress_events: list[dict] = []
+    event_bus.subscribe("quest.progress_updated", lambda payload: progress_events.append(payload))
+
+    orchestrator = JournalProcessingOrchestrator(event_bus, get_config())
+    first = orchestrator.process_entry(db_session, entry)
+    second = orchestrator.process_entry(db_session, entry)
+
+    assert first["status"] == "completed"
+    assert second["status"] == "completed"
+
+    db_session.refresh(quest)
+    assert quest.completion_progress == 33
+    occurrences = quest.quest_metadata.get("occurrences", [])
+    assert len(occurrences) == 1
+    assert occurrences[0]["entry_id"] == entry.id
+    assert len(progress_events) == 1
+
+
+def test_week2_flow_title_multiplier_ignores_expired_titles(db_session: Session):
+    """Ensure expired equipped titles do not affect XP multiplier calculation."""
+    user = _make_user(db_session)
+    theme = Theme(user_id=user.id, name="Education")
+    db_session.add(theme)
+    db_session.commit()
+    db_session.refresh(theme)
+
+    expired_template = TitleTemplate(
+        name="Expired Bonus",
+        rank="B",
+        effect={"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 2.0},
+        unlock_condition={"type": "journal_count", "value": 9999},
+    )
+    db_session.add(expired_template)
+    db_session.commit()
+    db_session.refresh(expired_template)
+
+    expired_user_title = UserTitle(
+        user_id=user.id,
+        title_template_id=expired_template.id,
+        is_equipped=True,
+        expires_at=datetime.utcnow() - timedelta(days=1),
+    )
+    db_session.add(expired_user_title)
+
+    entry = JournalEntry(
+        user_id=user.id,
+        content="Focused learning session.",
+        entry_type="text",
+    )
+    db_session.add(entry)
+    db_session.commit()
+    db_session.refresh(entry)
+
+    orchestrator = JournalProcessingOrchestrator(EventBus(), get_config())
+    orchestrator._stub_categorize = lambda journal_entry: {  # type: ignore[method-assign]
+        "themes": [{"id": theme.id, "name": theme.name}],
+        "skills": [],
+        "sentiment": "neutral",
+    }
+    result = orchestrator.process_entry(db_session, entry)
+
+    base_xp = float(get_config().get("xp.base_journal_xp", 50))
+    theme_award = next(
+        award for award in result["xp_summary"]["awards"] if award["type"] == "theme"
+    )
+    assert theme_award["xp"] == pytest.approx(base_xp)
+
+    db_session.refresh(theme)
+    assert theme.theme_metadata["xp_breakdown"]["journal"] == pytest.approx(base_xp)
+
+
+def test_week2_flow_unlocks_only_missing_titles_when_some_already_owned(
+    db_session: Session,
+):
+    """Title unlock pass should award only templates the user does not already own."""
+    user = _make_user(db_session)
+    theme = Theme(user_id=user.id, name="Education", level=10)
+    db_session.add(theme)
+
+    first_template = TitleTemplate(
+        name="Owned Learner Badge",
+        rank="C",
+        effect={},
+        unlock_condition={"type": "theme_level", "theme": "Education", "value": 10},
+    )
+    second_template = TitleTemplate(
+        name="New Learner Badge",
+        rank="B",
+        effect={},
+        unlock_condition={"type": "theme_level", "theme": "Education", "value": 10},
+    )
+    db_session.add_all([first_template, second_template])
+    db_session.commit()
+    db_session.refresh(first_template)
+    db_session.refresh(second_template)
+
+    already_owned = UserTitle(
+        user_id=user.id,
+        title_template_id=first_template.id,
+        is_equipped=False,
+    )
+    db_session.add(already_owned)
+    db_session.commit()
+
+    event_bus = EventBus()
+    unlocked_events: list[dict] = []
+    event_bus.subscribe("title.unlocked", lambda payload: unlocked_events.append(payload))
+
+    awarder = TitleAwarder(event_bus)
+    newly_awarded = awarder.check_user_unlocks(db_session, user.id)
+
+    assert len(newly_awarded) == 1
+    assert newly_awarded[0].title_template_id == second_template.id
+    assert (
+        db_session.query(UserTitle)
+        .filter(UserTitle.user_id == user.id)
+        .count()
+        == 2
+    )
+    assert len(unlocked_events) == 1
+    assert unlocked_events[0]["title_name"] == "New Learner Badge"

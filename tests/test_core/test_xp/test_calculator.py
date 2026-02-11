@@ -206,6 +206,99 @@ class TestXPCalculatorProcess:
         db_session.refresh(sample_theme)
         assert sample_theme.theme_metadata["xp_breakdown"]["journal"] == pytest.approx(40.0)
 
+    def test_emits_theme_leveled_up_when_theme_levels(self, db_session, sample_user, sample_theme):
+        sample_theme.xp = 0.0
+        sample_theme.xp_to_next_level = 5.0
+        db_session.commit()
+
+        event_bus = _make_event_bus()
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=event_bus,
+            config=DummyConfig(10.0),
+        )
+        entry = SimpleNamespace(user_id=sample_user.id, content="")
+        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+
+        calculator.process_journal_entry(db_session, entry, categories)
+
+        event_names = [call.args[0] for call in event_bus.emit.call_args_list]
+        assert "theme.leveled_up" in event_names
+        level_call = next(call for call in event_bus.emit.call_args_list if call.args[0] == "theme.leveled_up")
+        payload = level_call.args[1]
+        assert payload["theme_id"] == sample_theme.id
+        assert payload["new_level"] >= 1
+        assert payload["theme_name"] == sample_theme.name
+
+    def test_emits_skill_leveled_up_when_skill_levels(self, db_session, sample_user, sample_skill):
+        sample_skill.xp = 0.0
+        sample_skill.xp_to_next_level = 5.0
+        db_session.commit()
+
+        event_bus = _make_event_bus()
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=event_bus,
+            config=DummyConfig(10.0),
+        )
+        entry = SimpleNamespace(user_id=sample_user.id, content="")
+        categories = {"themes": [], "skills": [{"id": sample_skill.id, "name": sample_skill.name}]}
+
+        calculator.process_journal_entry(db_session, entry, categories)
+
+        event_names = [call.args[0] for call in event_bus.emit.call_args_list]
+        assert "skill.leveled_up" in event_names
+        level_call = next(call for call in event_bus.emit.call_args_list if call.args[0] == "skill.leveled_up")
+        payload = level_call.args[1]
+        assert payload["skill_id"] == sample_skill.id
+        assert payload["new_level"] >= 1
+        assert payload["skill_name"] == sample_skill.name
+
+    def test_does_not_emit_level_event_when_no_level_change(self, db_session, sample_user, sample_theme):
+        sample_theme.xp = 0.0
+        sample_theme.xp_to_next_level = 1000.0
+        db_session.commit()
+
+        event_bus = _make_event_bus()
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=event_bus,
+            config=DummyConfig(10.0),
+        )
+        entry = SimpleNamespace(user_id=sample_user.id, content="")
+        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+
+        calculator.process_journal_entry(db_session, entry, categories)
+
+        event_names = [call.args[0] for call in event_bus.emit.call_args_list]
+        assert event_names == ["xp.awarded"]
+
+    def test_multi_level_jump_emits_level_event_with_final_level(self, db_session, sample_user, sample_theme):
+        sample_theme.level = 0
+        sample_theme.xp = 0.0
+        sample_theme.xp_to_next_level = 5.0
+        db_session.commit()
+
+        event_bus = _make_event_bus()
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=event_bus,
+            config=DummyConfig(300.0),
+        )
+        entry = SimpleNamespace(user_id=sample_user.id, content="")
+        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+
+        calculator.process_journal_entry(db_session, entry, categories)
+        db_session.refresh(sample_theme)
+
+        level_events = [
+            call for call in event_bus.emit.call_args_list if call.args[0] == "theme.leveled_up"
+        ]
+        assert len(level_events) == 1
+        payload = level_events[0].args[1]
+        assert payload["new_level"] == sample_theme.level
+        assert payload["new_level"] > 1
+
 
 class TestXPCalculatorHelpers:
     def test_calculate_final_xp_with_multiple_titles(self, db_session, sample_user, sample_theme):

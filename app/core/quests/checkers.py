@@ -221,7 +221,9 @@ class FrequencyChecker(QuestCompletionChecker):
                     }
                 )
 
-        user_quest.quest_metadata["occurrences"] = occurrences
+        # Reassign metadata so SQLAlchemy tracks JSON changes between requests.
+        current_metadata = dict(user_quest.quest_metadata or {})
+        user_quest.quest_metadata = {**current_metadata, "occurrences": occurrences}
 
         if target <= 0:
             return (True, 100)

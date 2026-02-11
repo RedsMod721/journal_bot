@@ -379,3 +379,45 @@ def test_quest_matcher_handles_checker_exception_gracefully(db_session, sample_u
 
     assert updated == []
     assert event_bus.emit.call_count == 0
+
+
+def test_frequency_checker_ignores_invalid_occurrence_dates(db_session, sample_user) -> None:
+    event_bus = _make_event_bus()
+    matcher = QuestMatcher(event_bus)
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 3, "period": "week"},
+    )
+    quest = _create_user_quest(db_session, sample_user.id, template=template)
+    quest.quest_metadata = {"occurrences": [{"entry_id": "legacy", "date": "bad-date"}]}
+    db_session.commit()
+
+    entry = _create_entry(db_session, sample_user.id, "Workout session.")
+    updated = matcher.match_journal_entry(db_session, entry)
+
+    assert len(updated) == 1
+    assert quest.completion_progress == 33
+    occurrences = quest.quest_metadata.get("occurrences", [])
+    assert len(occurrences) == 1
+    assert occurrences[0]["entry_id"] == entry.id
+
+
+def test_frequency_checker_deduplicates_same_entry_id(db_session, sample_user) -> None:
+    event_bus = _make_event_bus()
+    matcher = QuestMatcher(event_bus)
+    template = _create_template(
+        db_session,
+        {"type": "frequency", "target": 3, "period": "week"},
+    )
+    quest = _create_user_quest(db_session, sample_user.id, template=template)
+    entry = _create_entry(db_session, sample_user.id, "Gym day.")
+
+    first_update = matcher.match_journal_entry(db_session, entry)
+    second_update = matcher.match_journal_entry(db_session, entry)
+
+    assert len(first_update) == 1
+    assert second_update == []
+    assert quest.completion_progress == 33
+    occurrences = quest.quest_metadata.get("occurrences", [])
+    assert len(occurrences) == 1
+    assert occurrences[0]["entry_id"] == entry.id
