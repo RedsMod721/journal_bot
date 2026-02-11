@@ -133,12 +133,13 @@ class XPCalculator:
                 entity = theme_map.get(target_id)
                 if entity is None:
                     continue
+                previous_level = entity.level
                 final_xp = self._calculate_final_xp(
                     db, strategy_xp, entry.user_id, target_type, entity.name
                 )
                 entity.add_xp(final_xp)
 
-            # Award XP to the entity
+                # Award XP to the entity
                 self._update_xp_breakdown(entity, "journal", final_xp)
                 awards.append({
                     "type": "theme",
@@ -157,10 +158,19 @@ class XPCalculator:
                     "target_id": target_id,
                 })
 
+                if entity.level > previous_level:
+                    self.event_bus.emit("theme.leveled_up", {
+                        "user_id": entry.user_id,
+                        "theme_id": target_id,
+                        "new_level": entity.level,
+                        "theme_name": entity.name,
+                    })
+
             elif target_type == "skill":
                 entity = skill_map.get(target_id)
                 if entity is None:
                     continue
+                previous_level = entity.level
                 final_xp = self._calculate_final_xp(
                     db, strategy_xp, entry.user_id, target_type, entity.name
                 )
@@ -183,6 +193,15 @@ class XPCalculator:
                     "target_type": "skill",
                     "target_id": target_id,
                 })
+
+                if entity.level > previous_level:
+                    self.event_bus.emit("skill.leveled_up", {
+                        "user_id": entry.user_id,
+                        "skill_id": target_id,
+                        "new_level": entity.level,
+                        "skill_name": entity.name,
+                        "new_rank": entity.rank,
+                    })
 
         db.commit()
 

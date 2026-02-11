@@ -56,6 +56,10 @@ logger = get_logger(__name__)
 MAX_RETRY_COUNT = 3
 
 
+class MissingTranscriptError(ValueError):
+    """Raised when a voice journal entry has no transcript content."""
+
+
 class JournalProcessingOrchestrator:
     """
     Main orchestrator for processing journal entries.
@@ -312,8 +316,11 @@ class JournalProcessingOrchestrator:
         """
         Stub categorization for Week 2.
 
-        Returns empty categories. Will be replaced with AI categorization
-        in Week 3.
+        Returns empty categories. Will be replaced with AI categorization in
+        Week 3.
+
+        Voice entries require a transcript in `content`. Missing transcript
+        content is treated as a non-retryable processing error.
 
         Args:
             entry: The journal entry to categorize
@@ -321,6 +328,9 @@ class JournalProcessingOrchestrator:
         Returns:
             Empty category dict with expected structure
         """
+        if entry.entry_type in {"voice", "voice_transcription"} and not (entry.content or "").strip():
+            raise MissingTranscriptError("Voice entry has no transcript to process")
+
         return {
             "themes": [],
             "skills": [],
@@ -353,7 +363,15 @@ class JournalProcessingOrchestrator:
         entry.last_retry_at = datetime.utcnow()
         entry.processing_error = str(error)[:500]  # Truncate to fit column
 
-        if entry.retry_count < MAX_RETRY_COUNT:
+        if isinstance(error, MissingTranscriptError):
+            entry.processing_status = "failed"
+            logger.error(
+                "Journal entry processing failed due to missing transcript",
+                entry_id=entry.id,
+                retry_count=entry.retry_count,
+                error=str(error),
+            )
+        elif entry.retry_count < MAX_RETRY_COUNT:
             entry.processing_status = "pending"
             logger.warning(
                 "Journal entry processing failed, will retry",
