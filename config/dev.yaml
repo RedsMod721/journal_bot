@@ -1,0 +1,46 @@
+app:
+  name: "RPG Life Tracker"
+  version: "1.0.0"
+  environment: "development"
+  debug: true
+  log_level: "DEBUG"
+
+database:
+  type: "sqlite"
+  sqlite:
+    path: "data/db/rpg_life_tracker.db"
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "rpg_life_tracker"
+    username: "postgres"
+    password: "password"
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  workers: 1
+
+ai:
+  ollama:
+    base_url: "http://localhost:11434"
+    model: "llama3.2:3b"
+    timeout: 30
+  qdrant:
+    host: "localhost"
+    port: 6333
+    collection: "rag_documents"
+    vector_size: 384
+
+testing:
+  database:
+    path: ":memory:"
+  coverage:
+    min_threshold: 95
+
+logging:
+  directory: "data/logs"
+  max_file_size_mb: 100
+  backup_count: 5
+  format: "{time} | {level} | {message}"
