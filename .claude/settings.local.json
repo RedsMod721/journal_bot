@@ -15,7 +15,10 @@
       "Bash(alembic heads:*)",
       "Bash(alembic stamp:*)",
       "Bash(python -m py_compile:*)",
-      "Bash(ruff check:*)"
+      "Bash(ruff check:*)",
+      "Bash(conda run -n myenv pip install loguru -q)",
+      "Bash(conda run -n myenv python scripts/init_db.py)",
+      "Bash(conda run -n myenv python3 -c \"from src.core.quests import match_quests, check_quest_match, update_quest_progress; print\\(''imports OK''\\)\")"
     ],
     "additionalDirectories": [
       "/Users/sebastian/Python/projects/journal_bot",
