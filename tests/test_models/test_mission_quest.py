@@ -10,6 +10,7 @@ Tests cover:
 
 Follows the AAA pattern: Arrange, Act, Assert
 """
+
 import pytest
 from datetime import datetime, timedelta
 
@@ -382,7 +383,9 @@ class TestUserMissionQuestModel:
         # Assert
         assert user_mq.status == "failed"
 
-    def test_user_mq_complete_after_failed_sets_completed(self, db_session, sample_user):
+    def test_user_mq_complete_after_failed_sets_completed(
+        self, db_session, sample_user
+    ):
         """complete() should set completed status even if previously failed."""
         # Arrange
         user_mq = UserMissionQuest(
@@ -826,9 +829,11 @@ class TestUserMissionQuestModel:
         db_session.commit()
 
         # Assert
-        remaining_quests = db_session.query(UserMissionQuest).filter(
-            UserMissionQuest.user_id == user_id
-        ).all()
+        remaining_quests = (
+            db_session.query(UserMissionQuest)
+            .filter(UserMissionQuest.user_id == user_id)
+            .all()
+        )
         assert len(remaining_quests) == 0
 
     def test_template_deletion_cascades_to_user_mq(self, db_session, sample_user):
@@ -852,9 +857,11 @@ class TestUserMissionQuestModel:
         db_session.commit()
 
         # Assert
-        remaining_quests = db_session.query(UserMissionQuest).filter(
-            UserMissionQuest.template_id == template_id
-        ).all()
+        remaining_quests = (
+            db_session.query(UserMissionQuest)
+            .filter(UserMissionQuest.template_id == template_id)
+            .all()
+        )
         assert len(remaining_quests) == 0
 
     # =========================================================================
@@ -893,9 +900,11 @@ class TestMissionQuestCategory:
         db_session.commit()
 
         # Act
-        health_quests = db_session.query(MissionQuestTemplate).filter(
-            MissionQuestTemplate.category == "Health"
-        ).all()
+        health_quests = (
+            db_session.query(MissionQuestTemplate)
+            .filter(MissionQuestTemplate.category == "Health")
+            .all()
+        )
 
         # Assert
         assert len(health_quests) == 2
@@ -919,9 +928,11 @@ class TestMissionQuestType:
         db_session.commit()
 
         # Act
-        daily_quests = db_session.query(MissionQuestTemplate).filter(
-            MissionQuestTemplate.type == "daily"
-        ).all()
+        daily_quests = (
+            db_session.query(MissionQuestTemplate)
+            .filter(MissionQuestTemplate.type == "daily")
+            .all()
+        )
 
         # Assert
         assert len(daily_quests) == 2

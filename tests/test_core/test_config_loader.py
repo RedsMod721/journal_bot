@@ -8,6 +8,7 @@ Tests:
 - Validation catches invalid config
 - get_config returns singleton
 """
+
 import time
 from pathlib import Path
 
@@ -25,7 +26,8 @@ class TestLoadConfigFromYaml:
         """Should load configuration from a valid YAML file."""
         # Arrange
         config_file = tmp_path / "test_config.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 xp:
   base_journal_xp: 75
   practice_time_multiplier: 0.8
@@ -61,7 +63,8 @@ karma:
 items:
   knowledge_capsule_duration_days: 45
   consumable_effects_duration_minutes: 90
-""")
+"""
+        )
 
         # Act
         loader = ConfigLoader(config_path=config_file)
@@ -92,10 +95,12 @@ items:
         """Should fill missing sections with defaults."""
         # Arrange
         config_file = tmp_path / "partial.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 xp:
   base_journal_xp: 100
-""")
+"""
+        )
 
         # Act
         loader = ConfigLoader(config_path=config_file)
@@ -118,12 +123,14 @@ xp:
     def test_load_with_extra_keys_ignores_unknown(self, tmp_path: Path) -> None:
         """Should ignore unknown keys in config file."""
         config_file = tmp_path / "extra.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 xp:
   base_journal_xp: 70
 extra_section:
   some_key: 123
-""")
+"""
+        )
 
         loader = ConfigLoader(config_path=config_file)
 
@@ -132,9 +139,11 @@ extra_section:
     def test_null_section_uses_defaults(self, tmp_path: Path) -> None:
         """Should fall back to defaults when section is null."""
         config_file = tmp_path / "null_section.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 xp: null
-""")
+"""
+        )
 
         loader = ConfigLoader(config_path=config_file)
 
@@ -148,7 +157,8 @@ class TestGetNestedValueWithDotNotation:
         """Should retrieve nested values using dot notation."""
         # Arrange
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 xp:
   base_journal_xp: 50
   practice_time_multiplier: 0.5
@@ -165,7 +175,8 @@ titles:
   effect_multipliers:
     S_rank: 1.50
     A_rank: 1.30
-""")
+"""
+        )
         loader = ConfigLoader(config_path=config_file)
 
         # Act & Assert
@@ -189,7 +200,9 @@ titles:
         assert loader.get("nonexistent.key", default=42) == 42
         assert loader.get("xp.nonexistent", default="fallback") == "fallback"
 
-    def test_get_with_invalid_intermediate_returns_default(self, tmp_path: Path) -> None:
+    def test_get_with_invalid_intermediate_returns_default(
+        self, tmp_path: Path
+    ) -> None:
         """Should return default when intermediate key is missing."""
         config_file = tmp_path / "config.yaml"
         config_file.write_text("xp:\n  base_journal_xp: 50")
@@ -209,11 +222,13 @@ titles:
         """Should retrieve entire sections."""
         # Arrange
         config_file = tmp_path / "config.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 xp:
   base_journal_xp: 50
   practice_time_multiplier: 0.5
-""")
+"""
+        )
         loader = ConfigLoader(config_path=config_file)
 
         # Act
@@ -322,7 +337,9 @@ class TestHotReloadOnFileChange:
 
         assert loader.config.xp.base_journal_xp == 50
 
-    def test_config_property_initializes_default_when_missing(self, tmp_path: Path) -> None:
+    def test_config_property_initializes_default_when_missing(
+        self, tmp_path: Path
+    ) -> None:
         """config property should initialize defaults when config is None."""
         config_file = tmp_path / "config.yaml"
         config_file.write_text("xp:\n  base_journal_xp: 50")
@@ -340,11 +357,13 @@ class TestValidationCatchesInvalidConfig:
         """Should reject invalid configuration values."""
         # Arrange
         config_file = tmp_path / "invalid.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 xp:
   base_journal_xp: -100
   practice_time_multiplier: 0.5
-""")
+"""
+        )
 
         # Act - should use defaults on validation error
         loader = ConfigLoader(config_path=config_file)
@@ -356,10 +375,12 @@ xp:
         """Should reject wrong data types."""
         # Arrange
         config_file = tmp_path / "wrong_types.yaml"
-        config_file.write_text("""
+        config_file.write_text(
+            """
 xp:
   base_journal_xp: "not a number"
-""")
+"""
+        )
 
         # Act
         loader = ConfigLoader(config_path=config_file)
@@ -396,18 +417,18 @@ xp:
     def test_validation_accepts_boundary_values(self) -> None:
         """Should accept boundary values within schema constraints."""
         valid_data = {
-          "xp": {"base_journal_xp": 1, "practice_time_multiplier": 10.0},
-          "levels": {"theme": {"base_xp": 1, "scaling_factor": 3.0}},
-          "quests": {
-            "daily_xp_reward": 0,
-            "weekly_xp_reward": 0,
-            "monthly_xp_reward": 0,
-          },
-          "karma": {"negative_action_penalty": 0},
-          "items": {
-            "knowledge_capsule_duration_days": 1,
-            "consumable_effects_duration_minutes": 1,
-          },
+            "xp": {"base_journal_xp": 1, "practice_time_multiplier": 10.0},
+            "levels": {"theme": {"base_xp": 1, "scaling_factor": 3.0}},
+            "quests": {
+                "daily_xp_reward": 0,
+                "weekly_xp_reward": 0,
+                "monthly_xp_reward": 0,
+            },
+            "karma": {"negative_action_penalty": 0},
+            "items": {
+                "knowledge_capsule_duration_days": 1,
+                "consumable_effects_duration_minutes": 1,
+            },
         }
 
         config = GameBalanceConfig(**valid_data)
@@ -468,7 +489,9 @@ class TestGetConfigReturnsSingleton:
         assert loader1 is not loader2
         assert loader1.get("xp.base_journal_xp") == loader2.get("xp.base_journal_xp")
 
-    def test_multiple_get_calls_do_not_reload_within_interval(self, tmp_path: Path) -> None:
+    def test_multiple_get_calls_do_not_reload_within_interval(
+        self, tmp_path: Path
+    ) -> None:
         """Multiple get() calls should not reload within interval."""
         config_file = tmp_path / "config.yaml"
         config_file.write_text("xp:\n  base_journal_xp: 100")

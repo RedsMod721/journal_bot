@@ -1,6 +1,7 @@
 """
 Tests for XPCalculator orchestration.
 """
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -46,10 +47,14 @@ def _equip_title(db_session, user_id: str, template_id: str, is_equipped: bool =
 
 
 class TestXPCalculatorProcess:
-    def test_process_journal_entry_distributes_xp(self, db_session, sample_user, sample_theme, sample_skill):
+    def test_process_journal_entry_distributes_xp(
+        self, db_session, sample_user, sample_theme, sample_skill
+    ):
         strategy = EqualDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(60.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(60.0)
+        )
 
         entry = SimpleNamespace(user_id=sample_user.id, content="")
         categories = {
@@ -62,7 +67,9 @@ class TestXPCalculatorProcess:
         assert summary["total_xp"] == pytest.approx(60.0)
         assert len(summary["awards"]) == 2
 
-    def test_process_journal_entry_applies_multipliers(self, db_session, sample_user, sample_theme):
+    def test_process_journal_entry_applies_multipliers(
+        self, db_session, sample_user, sample_theme
+    ):
         template = _create_title(
             db_session,
             "Scholar",
@@ -77,35 +84,56 @@ class TestXPCalculatorProcess:
 
         strategy = EqualDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(50.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(50.0)
+        )
 
         entry = SimpleNamespace(user_id=sample_user.id, content="")
-        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+        categories = {
+            "themes": [{"id": sample_theme.id, "name": sample_theme.name}],
+            "skills": [],
+        }
 
         summary = calculator.process_journal_entry(db_session, entry, categories)
 
         assert summary["total_xp"] == pytest.approx(55.0)
 
-    def test_process_journal_entry_updates_xp_breakdown(self, db_session, sample_user, sample_theme):
+    def test_process_journal_entry_updates_xp_breakdown(
+        self, db_session, sample_user, sample_theme
+    ):
         strategy = EqualDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(40.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(40.0)
+        )
 
         entry = SimpleNamespace(user_id=sample_user.id, content="")
-        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+        categories = {
+            "themes": [{"id": sample_theme.id, "name": sample_theme.name}],
+            "skills": [],
+        }
 
         calculator.process_journal_entry(db_session, entry, categories)
 
         db_session.refresh(sample_theme)
-        assert sample_theme.theme_metadata["xp_breakdown"]["journal"] == pytest.approx(40.0)
+        assert sample_theme.theme_metadata["xp_breakdown"]["journal"] == pytest.approx(
+            40.0
+        )
 
-    def test_process_journal_entry_emits_xp_awarded_events(self, db_session, sample_user, sample_theme):
+    def test_process_journal_entry_emits_xp_awarded_events(
+        self, db_session, sample_user, sample_theme
+    ):
         strategy = EqualDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(30.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(30.0)
+        )
 
         entry = SimpleNamespace(user_id=sample_user.id, content="")
-        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+        categories = {
+            "themes": [{"id": sample_theme.id, "name": sample_theme.name}],
+            "skills": [],
+        }
 
         calculator.process_journal_entry(db_session, entry, categories)
 
@@ -115,27 +143,38 @@ class TestXPCalculatorProcess:
         assert kwargs == {}
         assert args[1]["user_id"] == sample_user.id
 
-    def test_process_journal_entry_triggers_level_ups(self, db_session, sample_user, sample_theme):
+    def test_process_journal_entry_triggers_level_ups(
+        self, db_session, sample_user, sample_theme
+    ):
         sample_theme.xp = 0
         sample_theme.xp_to_next_level = 5.0
         db_session.commit()
 
         strategy = EqualDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(10.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(10.0)
+        )
 
         entry = SimpleNamespace(user_id=sample_user.id, content="")
-        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+        categories = {
+            "themes": [{"id": sample_theme.id, "name": sample_theme.name}],
+            "skills": [],
+        }
 
         calculator.process_journal_entry(db_session, entry, categories)
 
         db_session.refresh(sample_theme)
         assert sample_theme.level >= 1
 
-    def test_process_journal_entry_handles_no_categories_gracefully(self, db_session, sample_user, sample_theme, sample_skill):
+    def test_process_journal_entry_handles_no_categories_gracefully(
+        self, db_session, sample_user, sample_theme, sample_skill
+    ):
         strategy = EqualDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(50.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(50.0)
+        )
 
         entry = SimpleNamespace(user_id=sample_user.id, content="")
         summary = calculator.process_journal_entry(db_session, entry, {})
@@ -146,10 +185,14 @@ class TestXPCalculatorProcess:
         assert summary["awards"] == []
         assert event_bus.emit.call_count == 0
 
-    def test_process_journal_entry_with_equal_strategy(self, db_session, sample_user, sample_theme, sample_skill):
+    def test_process_journal_entry_with_equal_strategy(
+        self, db_session, sample_user, sample_theme, sample_skill
+    ):
         strategy = EqualDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(60.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(60.0)
+        )
 
         entry = SimpleNamespace(user_id=sample_user.id, content="")
         categories = {
@@ -162,27 +205,42 @@ class TestXPCalculatorProcess:
         assert summary["total_xp"] == pytest.approx(60.0)
         assert {award["type"] for award in summary["awards"]} == {"theme", "skill"}
 
-    def test_process_journal_entry_with_weighted_strategy(self, db_session, sample_user, sample_theme, sample_skill):
+    def test_process_journal_entry_with_weighted_strategy(
+        self, db_session, sample_user, sample_theme, sample_skill
+    ):
         strategy = WeightedDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(100.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(100.0)
+        )
 
         entry = SimpleNamespace(user_id=sample_user.id, content="")
         categories = {
-            "themes": [{"id": sample_theme.id, "name": sample_theme.name, "confidence": 0.75}],
-            "skills": [{"id": sample_skill.id, "name": sample_skill.name, "confidence": 0.25}],
+            "themes": [
+                {"id": sample_theme.id, "name": sample_theme.name, "confidence": 0.75}
+            ],
+            "skills": [
+                {"id": sample_skill.id, "name": sample_skill.name, "confidence": 0.25}
+            ],
         }
 
         summary = calculator.process_journal_entry(db_session, entry, categories)
 
         assert summary["total_xp"] == pytest.approx(100.0)
 
-    def test_process_journal_entry_with_proportional_strategy(self, db_session, sample_user, sample_theme, sample_skill):
+    def test_process_journal_entry_with_proportional_strategy(
+        self, db_session, sample_user, sample_theme, sample_skill
+    ):
         strategy = ProportionalDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(90.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(90.0)
+        )
 
-        entry = SimpleNamespace(user_id=sample_user.id, content=f"{sample_skill.name} {sample_theme.name} {sample_skill.name}")
+        entry = SimpleNamespace(
+            user_id=sample_user.id,
+            content=f"{sample_skill.name} {sample_theme.name} {sample_skill.name}",
+        )
         categories = {
             "themes": [{"id": sample_theme.id, "name": sample_theme.name}],
             "skills": [{"id": sample_skill.id, "name": sample_skill.name}],
@@ -192,21 +250,32 @@ class TestXPCalculatorProcess:
 
         assert summary["total_xp"] == pytest.approx(90.0)
 
-    def test_xp_breakdown_accumulates_over_multiple_entries(self, db_session, sample_user, sample_theme):
+    def test_xp_breakdown_accumulates_over_multiple_entries(
+        self, db_session, sample_user, sample_theme
+    ):
         strategy = EqualDistributor()
         event_bus = _make_event_bus()
-        calculator = XPCalculator(strategy=strategy, event_bus=event_bus, config=DummyConfig(20.0))
+        calculator = XPCalculator(
+            strategy=strategy, event_bus=event_bus, config=DummyConfig(20.0)
+        )
 
         entry = SimpleNamespace(user_id=sample_user.id, content="")
-        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+        categories = {
+            "themes": [{"id": sample_theme.id, "name": sample_theme.name}],
+            "skills": [],
+        }
 
         calculator.process_journal_entry(db_session, entry, categories)
         calculator.process_journal_entry(db_session, entry, categories)
 
         db_session.refresh(sample_theme)
-        assert sample_theme.theme_metadata["xp_breakdown"]["journal"] == pytest.approx(40.0)
+        assert sample_theme.theme_metadata["xp_breakdown"]["journal"] == pytest.approx(
+            40.0
+        )
 
-    def test_emits_theme_leveled_up_when_theme_levels(self, db_session, sample_user, sample_theme):
+    def test_emits_theme_leveled_up_when_theme_levels(
+        self, db_session, sample_user, sample_theme
+    ):
         sample_theme.xp = 0.0
         sample_theme.xp_to_next_level = 5.0
         db_session.commit()
@@ -218,19 +287,28 @@ class TestXPCalculatorProcess:
             config=DummyConfig(10.0),
         )
         entry = SimpleNamespace(user_id=sample_user.id, content="")
-        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+        categories = {
+            "themes": [{"id": sample_theme.id, "name": sample_theme.name}],
+            "skills": [],
+        }
 
         calculator.process_journal_entry(db_session, entry, categories)
 
         event_names = [call.args[0] for call in event_bus.emit.call_args_list]
         assert "theme.leveled_up" in event_names
-        level_call = next(call for call in event_bus.emit.call_args_list if call.args[0] == "theme.leveled_up")
+        level_call = next(
+            call
+            for call in event_bus.emit.call_args_list
+            if call.args[0] == "theme.leveled_up"
+        )
         payload = level_call.args[1]
         assert payload["theme_id"] == sample_theme.id
         assert payload["new_level"] >= 1
         assert payload["theme_name"] == sample_theme.name
 
-    def test_emits_skill_leveled_up_when_skill_levels(self, db_session, sample_user, sample_skill):
+    def test_emits_skill_leveled_up_when_skill_levels(
+        self, db_session, sample_user, sample_skill
+    ):
         sample_skill.xp = 0.0
         sample_skill.xp_to_next_level = 5.0
         db_session.commit()
@@ -242,19 +320,28 @@ class TestXPCalculatorProcess:
             config=DummyConfig(10.0),
         )
         entry = SimpleNamespace(user_id=sample_user.id, content="")
-        categories = {"themes": [], "skills": [{"id": sample_skill.id, "name": sample_skill.name}]}
+        categories = {
+            "themes": [],
+            "skills": [{"id": sample_skill.id, "name": sample_skill.name}],
+        }
 
         calculator.process_journal_entry(db_session, entry, categories)
 
         event_names = [call.args[0] for call in event_bus.emit.call_args_list]
         assert "skill.leveled_up" in event_names
-        level_call = next(call for call in event_bus.emit.call_args_list if call.args[0] == "skill.leveled_up")
+        level_call = next(
+            call
+            for call in event_bus.emit.call_args_list
+            if call.args[0] == "skill.leveled_up"
+        )
         payload = level_call.args[1]
         assert payload["skill_id"] == sample_skill.id
         assert payload["new_level"] >= 1
         assert payload["skill_name"] == sample_skill.name
 
-    def test_does_not_emit_level_event_when_no_level_change(self, db_session, sample_user, sample_theme):
+    def test_does_not_emit_level_event_when_no_level_change(
+        self, db_session, sample_user, sample_theme
+    ):
         sample_theme.xp = 0.0
         sample_theme.xp_to_next_level = 1000.0
         db_session.commit()
@@ -266,14 +353,19 @@ class TestXPCalculatorProcess:
             config=DummyConfig(10.0),
         )
         entry = SimpleNamespace(user_id=sample_user.id, content="")
-        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+        categories = {
+            "themes": [{"id": sample_theme.id, "name": sample_theme.name}],
+            "skills": [],
+        }
 
         calculator.process_journal_entry(db_session, entry, categories)
 
         event_names = [call.args[0] for call in event_bus.emit.call_args_list]
         assert event_names == ["xp.awarded"]
 
-    def test_multi_level_jump_emits_level_event_with_final_level(self, db_session, sample_user, sample_theme):
+    def test_multi_level_jump_emits_level_event_with_final_level(
+        self, db_session, sample_user, sample_theme
+    ):
         sample_theme.level = 0
         sample_theme.xp = 0.0
         sample_theme.xp_to_next_level = 5.0
@@ -286,13 +378,18 @@ class TestXPCalculatorProcess:
             config=DummyConfig(300.0),
         )
         entry = SimpleNamespace(user_id=sample_user.id, content="")
-        categories = {"themes": [{"id": sample_theme.id, "name": sample_theme.name}], "skills": []}
+        categories = {
+            "themes": [{"id": sample_theme.id, "name": sample_theme.name}],
+            "skills": [],
+        }
 
         calculator.process_journal_entry(db_session, entry, categories)
         db_session.refresh(sample_theme)
 
         level_events = [
-            call for call in event_bus.emit.call_args_list if call.args[0] == "theme.leveled_up"
+            call
+            for call in event_bus.emit.call_args_list
+            if call.args[0] == "theme.leveled_up"
         ]
         assert len(level_events) == 1
         payload = level_events[0].args[1]
@@ -301,11 +398,18 @@ class TestXPCalculatorProcess:
 
 
 class TestXPCalculatorHelpers:
-    def test_calculate_final_xp_with_multiple_titles(self, db_session, sample_user, sample_theme):
+    def test_calculate_final_xp_with_multiple_titles(
+        self, db_session, sample_user, sample_theme
+    ):
         template1 = _create_title(
             db_session,
             "Scholar",
-            {"type": "xp_multiplier", "scope": "theme", "target": sample_theme.name, "value": 1.10},
+            {
+                "type": "xp_multiplier",
+                "scope": "theme",
+                "target": sample_theme.name,
+                "value": 1.10,
+            },
         )
         template2 = _create_title(
             db_session,
@@ -320,16 +424,28 @@ class TestXPCalculatorHelpers:
         for template in [template1, template2, template3]:
             _equip_title(db_session, sample_user.id, template.id, is_equipped=True)
 
-        calculator = XPCalculator(strategy=EqualDistributor(), event_bus=_make_event_bus(), config=DummyConfig())
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=_make_event_bus(),
+            config=DummyConfig(),
+        )
 
         final_xp = calculator._calculate_final_xp(
-            db_session, base_xp=10.0, user_id=sample_user.id, target_type="theme", target_id=sample_theme.id
+            db_session,
+            base_xp=10.0,
+            user_id=sample_user.id,
+            target_type="theme",
+            target_id=sample_theme.id,
         )
 
         assert final_xp == pytest.approx(10.0 * 1.518)
 
     def test_award_to_theme_calls_crud_correctly(self, db_session, sample_theme):
-        calculator = XPCalculator(strategy=EqualDistributor(), event_bus=_make_event_bus(), config=DummyConfig())
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=_make_event_bus(),
+            config=DummyConfig(),
+        )
 
         before_xp = sample_theme.xp
         theme = calculator._award_to_theme(db_session, sample_theme.id, 5.0)
@@ -338,7 +454,11 @@ class TestXPCalculatorHelpers:
         assert theme.xp > before_xp
 
     def test_award_to_skill_calls_crud_correctly(self, db_session, sample_skill):
-        calculator = XPCalculator(strategy=EqualDistributor(), event_bus=_make_event_bus(), config=DummyConfig())
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=_make_event_bus(),
+            config=DummyConfig(),
+        )
 
         before_xp = sample_skill.xp
         skill = calculator._award_to_skill(db_session, sample_skill.id, 5.0)
@@ -346,21 +466,39 @@ class TestXPCalculatorHelpers:
         assert skill is not None
         assert skill.xp > before_xp
 
-    def test_calculate_final_xp_missing_target_returns_base(self, db_session, sample_user):
-        calculator = XPCalculator(strategy=EqualDistributor(), event_bus=_make_event_bus(), config=DummyConfig())
+    def test_calculate_final_xp_missing_target_returns_base(
+        self, db_session, sample_user
+    ):
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=_make_event_bus(),
+            config=DummyConfig(),
+        )
 
         final_xp = calculator._calculate_final_xp(
-            db_session, base_xp=12.0, user_id=sample_user.id, target_type="theme", target_id="missing"
+            db_session,
+            base_xp=12.0,
+            user_id=sample_user.id,
+            target_type="theme",
+            target_id="missing",
         )
 
         assert final_xp == 12.0
 
     def test_award_to_theme_missing_returns_none(self, db_session):
-        calculator = XPCalculator(strategy=EqualDistributor(), event_bus=_make_event_bus(), config=DummyConfig())
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=_make_event_bus(),
+            config=DummyConfig(),
+        )
 
         assert calculator._award_to_theme(db_session, "missing", 5.0) is None
 
     def test_award_to_skill_missing_returns_none(self, db_session):
-        calculator = XPCalculator(strategy=EqualDistributor(), event_bus=_make_event_bus(), config=DummyConfig())
+        calculator = XPCalculator(
+            strategy=EqualDistributor(),
+            event_bus=_make_event_bus(),
+            config=DummyConfig(),
+        )
 
         assert calculator._award_to_skill(db_session, "missing", 5.0) is None

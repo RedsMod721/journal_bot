@@ -55,7 +55,9 @@ def client(db_session: Session):
     app.dependency_overrides.clear()
 
 
-def _capture_events(event_bus: EventBus, event_types: list[str]) -> list[tuple[str, dict]]:
+def _capture_events(
+    event_bus: EventBus, event_types: list[str]
+) -> list[tuple[str, dict]]:
     """Subscribe event listeners and return the shared event capture list."""
     captured: list[tuple[str, dict]] = []
 
@@ -102,12 +104,13 @@ def test_complete_week2_flow_journal_to_title(
     user = _make_user(db_session)
 
     # Setup: theme level 9 (close to level-up), skill level 4
-    theme_xp_to_next = 100.0 * (1.15 ** 9)
+    theme_xp_to_next = 100.0 * (1.15**9)
     theme = Theme(
         user_id=user.id,
         name="Education",
         level=9,
-        xp=theme_xp_to_next - 20.0,  # +27.5 XP from journal (with multiplier) reaches lv10
+        xp=theme_xp_to_next
+        - 20.0,  # +27.5 XP from journal (with multiplier) reaches lv10
         xp_to_next_level=theme_xp_to_next,
     )
     skill = Skill(
@@ -151,7 +154,12 @@ def test_complete_week2_flow_journal_to_title(
     bonus_title = TitleTemplate(
         name="Focus Buff",
         rank="C",
-        effect={"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 1.10},
+        effect={
+            "type": "xp_multiplier",
+            "scope": "theme",
+            "target": "Education",
+            "value": 1.10,
+        },
         unlock_condition={"type": "journal_count", "value": 9999},
     )
     db_session.add_all([unlock_title, bonus_title])
@@ -167,7 +175,9 @@ def test_complete_week2_flow_journal_to_title(
     db_session.add(equipped_bonus)
     db_session.commit()
 
-    titles_before = db_session.query(UserTitle).filter(UserTitle.user_id == user.id).count()
+    titles_before = (
+        db_session.query(UserTitle).filter(UserTitle.user_id == user.id).count()
+    )
 
     event_bus = EventBus()
     captured = _capture_events(
@@ -205,7 +215,9 @@ def test_complete_week2_flow_journal_to_title(
     assert theme.level == 10
     assert theme.theme_metadata["xp_breakdown"]["journal"] > 0
 
-    titles_after = db_session.query(UserTitle).filter(UserTitle.user_id == user.id).count()
+    titles_after = (
+        db_session.query(UserTitle).filter(UserTitle.user_id == user.id).count()
+    )
     assert titles_after == titles_before + 1
 
     unlocked = (
@@ -306,9 +318,7 @@ def test_week2_system_with_multiple_concurrent_entries(
         entry_ids.append(response.json()["entry"]["id"])
 
     entries = (
-        db_session.query(JournalEntry)
-        .filter(JournalEntry.id.in_(entry_ids))
-        .all()
+        db_session.query(JournalEntry).filter(JournalEntry.id.in_(entry_ids)).all()
     )
     assert len(entries) == 10
     assert all(entry.processing_status == "completed" for entry in entries)
@@ -326,7 +336,7 @@ def test_week2_cascade_awards_multiple_titles(db_session: Session):
     """Test single level-up unlocks multiple titles."""
     user = _make_user(db_session)
 
-    theme_xp_to_next = 100.0 * (1.15 ** 9)
+    theme_xp_to_next = 100.0 * (1.15**9)
     theme = Theme(
         user_id=user.id,
         name="Education",
@@ -374,12 +384,7 @@ def test_week2_cascade_awards_multiple_titles(db_session: Session):
     new_titles = awarder.check_user_unlocks(db_session, user.id)
 
     assert len(new_titles) == 3
-    assert (
-        db_session.query(UserTitle)
-        .filter(UserTitle.user_id == user.id)
-        .count()
-        == 3
-    )
+    assert db_session.query(UserTitle).filter(UserTitle.user_id == user.id).count() == 3
 
     awarded_names = {
         db_session.get(TitleTemplate, user_title.title_template_id).name
@@ -430,8 +435,12 @@ def test_week2_flow_quest_completes_on_third_entry_same_week(
     event_bus = EventBus()
     progress_events: list[dict] = []
     completed_events: list[dict] = []
-    event_bus.subscribe("quest.progress_updated", lambda payload: progress_events.append(payload))
-    event_bus.subscribe("quest.completed", lambda payload: completed_events.append(payload))
+    event_bus.subscribe(
+        "quest.progress_updated", lambda payload: progress_events.append(payload)
+    )
+    event_bus.subscribe(
+        "quest.completed", lambda payload: completed_events.append(payload)
+    )
 
     monkeypatch.setattr("app.api.v1.journal.get_event_bus", lambda: event_bus)
     client.app.state.orchestrator = _make_orchestrator_with_categories(
@@ -536,7 +545,9 @@ def test_week2_flow_does_not_double_count_same_entry_id_for_frequency(
 
     event_bus = EventBus()
     progress_events: list[dict] = []
-    event_bus.subscribe("quest.progress_updated", lambda payload: progress_events.append(payload))
+    event_bus.subscribe(
+        "quest.progress_updated", lambda payload: progress_events.append(payload)
+    )
 
     orchestrator = JournalProcessingOrchestrator(event_bus, get_config())
     first = orchestrator.process_entry(db_session, entry)
@@ -564,7 +575,12 @@ def test_week2_flow_title_multiplier_ignores_expired_titles(db_session: Session)
     expired_template = TitleTemplate(
         name="Expired Bonus",
         rank="B",
-        effect={"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 2.0},
+        effect={
+            "type": "xp_multiplier",
+            "scope": "theme",
+            "target": "Education",
+            "value": 2.0,
+        },
         unlock_condition={"type": "journal_count", "value": 9999},
     )
     db_session.add(expired_template)
@@ -641,18 +657,15 @@ def test_week2_flow_unlocks_only_missing_titles_when_some_already_owned(
 
     event_bus = EventBus()
     unlocked_events: list[dict] = []
-    event_bus.subscribe("title.unlocked", lambda payload: unlocked_events.append(payload))
+    event_bus.subscribe(
+        "title.unlocked", lambda payload: unlocked_events.append(payload)
+    )
 
     awarder = TitleAwarder(event_bus)
     newly_awarded = awarder.check_user_unlocks(db_session, user.id)
 
     assert len(newly_awarded) == 1
     assert newly_awarded[0].title_template_id == second_template.id
-    assert (
-        db_session.query(UserTitle)
-        .filter(UserTitle.user_id == user.id)
-        .count()
-        == 2
-    )
+    assert db_session.query(UserTitle).filter(UserTitle.user_id == user.id).count() == 2
     assert len(unlocked_events) == 1
     assert unlocked_events[0]["title_name"] == "New Learner Badge"

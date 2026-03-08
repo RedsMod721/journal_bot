@@ -6,6 +6,7 @@ Tests:
 - log_execution_time decorator works correctly
 - Log level respects environment variable
 """
+
 import json
 import logging
 import os
@@ -16,7 +17,6 @@ from unittest import mock
 import pytest
 
 from app.utils.logging_config import (
-    LOG_FILE,
     configure_logging,
     get_logger,
     log_execution_time,
@@ -76,7 +76,9 @@ class TestLoggerCreatesJsonLogs:
 class TestLogExecutionTimeDecorator:
     """Test the log_execution_time decorator."""
 
-    def test_decorator_logs_slow_function(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_decorator_logs_slow_function(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Should log execution time for functions taking >10ms."""
         # Arrange
         configure_logging()
@@ -95,7 +97,9 @@ class TestLogExecutionTimeDecorator:
         captured = capsys.readouterr()
         assert "slow_function completed in" in captured.err
 
-    def test_decorator_skips_fast_function(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_decorator_skips_fast_function(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Should not log execution time for functions taking <10ms."""
         # Arrange
         configure_logging()
@@ -111,10 +115,13 @@ class TestLogExecutionTimeDecorator:
         # Assert
         assert result == "fast"
         # Should not have logged (function is too fast)
-        assert not any("fast_function completed in" in record.message for record in caplog.records)
+        assert not any(
+            "fast_function completed in" in record.message for record in caplog.records
+        )
 
     def test_decorator_preserves_function_metadata(self) -> None:
         """Should preserve the original function's name and docstring."""
+
         # Arrange
         @log_execution_time
         def documented_function() -> None:

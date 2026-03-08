@@ -9,7 +9,6 @@ Tests cover:
 
 Following AAA pattern (Arrange, Act, Assert) as per TESTING_GUIDE.md
 """
-import pytest
 
 from app.models.journal_entry import JournalEntry
 
@@ -174,7 +173,7 @@ class TestJournalEntryModel:
         ai_categories = {
             "themes": ["health", "fitness"],
             "skills": ["running", "meal-prep"],
-            "sentiment": "positive"
+            "sentiment": "positive",
         }
 
         # Act
@@ -292,9 +291,9 @@ class TestJournalEntryModel:
         db_session.commit()
 
         # Assert
-        remaining_entries = db_session.query(JournalEntry).filter(
-            JournalEntry.user_id == user_id
-        ).all()
+        remaining_entries = (
+            db_session.query(JournalEntry).filter(JournalEntry.user_id == user_id).all()
+        )
         assert len(remaining_entries) == 0
 
     # =========================================================================
@@ -399,7 +398,9 @@ class TestJournalEntryModel:
         assert "..." not in repr_30
         assert "..." in repr_31
 
-    def test_journal_entry_ai_processed_false_with_ai_data(self, db_session, sample_user):
+    def test_journal_entry_ai_processed_false_with_ai_data(
+        self, db_session, sample_user
+    ):
         """AI data should persist even when ai_processed is False"""
         # Arrange
         ai_categories = {"themes": ["Work"], "score": 0.7}
@@ -422,7 +423,9 @@ class TestJournalEntryModel:
         assert entry.ai_categories == ai_categories
         assert entry.ai_suggested_quests == suggested
 
-    def test_journal_entry_entry_type_allows_custom_value(self, db_session, sample_user):
+    def test_journal_entry_entry_type_allows_custom_value(
+        self, db_session, sample_user
+    ):
         """entry_type should accept custom string values"""
         # Arrange & Act
         entry = JournalEntry(
@@ -448,7 +451,9 @@ class TestJournalEntryModel:
         # Assert
         assert entry.content == ""
 
-    def test_journal_entry_ai_categories_non_string_values(self, db_session, sample_user):
+    def test_journal_entry_ai_categories_non_string_values(
+        self, db_session, sample_user
+    ):
         """AI categories should store non-string JSON values"""
         # Arrange
         ai_categories = {"score": 0.85, "count": 2, "nested": {"ok": True}}
@@ -554,7 +559,9 @@ class TestJournalEntryModel:
             # Assert
             assert entry.processing_status == status
 
-    def test_journal_entry_processing_error_stores_message(self, db_session, sample_user):
+    def test_journal_entry_processing_error_stores_message(
+        self, db_session, sample_user
+    ):
         """processing_error should store error message"""
         # Arrange
         error_msg = "AI processing timeout after 30 seconds"

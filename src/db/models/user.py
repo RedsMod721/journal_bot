@@ -11,6 +11,7 @@ Circular FK note:
     This is resolved with `use_alter=True` so SQLAlchemy emits the FK as a
     deferred ALTER TABLE after both tables are created.
 """
+
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
@@ -18,7 +19,6 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    Column,
     DateTime,
     Float,
     ForeignKey,
@@ -32,7 +32,7 @@ from src.db.base import Base
 
 if TYPE_CHECKING:
     from src.db.models.forgiveness import DecaySnapshot, ForgivenessConfig
-    from src.db.models.journal_entry import EntryAttachment, JournalEntry, JournalEntryStructured
+    from src.db.models.journal_entry import JournalEntry
     from src.db.models.quest import Quest, QuestFailureTracker
     from src.db.models.skill import Skill, Theme
     from src.db.models.xp import XpAward  # noqa: F401
@@ -86,7 +86,9 @@ class User(Base):
     # ------------------------------------------------------------------
     # Profile
     # ------------------------------------------------------------------
-    username: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(
+        String(50), unique=True, nullable=True
+    )
     display_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Localization
@@ -95,9 +97,13 @@ class User(Base):
 
     # Crisis/localization — ISO 3166-1 alpha-2, application validates uppercase
     home_country: Mapped[str] = mapped_column(String(2), nullable=False, default="FR")
-    allow_ip_geolocation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    allow_ip_geolocation: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     last_known_country: Mapped[Optional[str]] = mapped_column(String(2), nullable=True)
-    country_last_resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    country_last_resolved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
 
     # ------------------------------------------------------------------
     # Forgiveness / decay (FK is deferred — see use_alter below)
@@ -116,8 +122,12 @@ class User(Base):
     # ------------------------------------------------------------------
     # Q27: Learning system
     # ------------------------------------------------------------------
-    learning_phase_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    quest_decisions_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    learning_phase_complete: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    quest_decisions_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     # User-adjustable thresholds for instant vs. long-term quest classification
     confidence_threshold_instant: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.65
@@ -129,14 +139,18 @@ class User(Base):
     # ------------------------------------------------------------------
     # System / personality
     # ------------------------------------------------------------------
-    # Cache: authoritative value lives in story_arcs.status
-    # FK to story_arcs.id will be added when that table is implemented
-    active_arc_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    active_arc_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("story_arcs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Cache of current personality state (authoritative: personality_states table)
     current_personality: Mapped[str] = mapped_column(
         String(50), nullable=False, default="observer"
     )
-    allow_trusted_nodes: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    allow_trusted_nodes: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
 
     # ------------------------------------------------------------------
     # Moderation / admin
@@ -148,9 +162,14 @@ class User(Base):
     # ------------------------------------------------------------------
     # Timestamps
     # ------------------------------------------------------------------
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 

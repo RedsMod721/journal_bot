@@ -14,6 +14,7 @@ Usage:
         __tablename__ = "my_table"
         ...
 """
+
 from sqlalchemy.orm import DeclarativeBase
 
 

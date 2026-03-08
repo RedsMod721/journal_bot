@@ -25,6 +25,7 @@ PostgreSQL notes:
     - pool_pre_ping=True  — validates connections before use (handles idle timeouts)
     - URL: postgresql://<user>:<password>@<host>:<port>/<database>
 """
+
 import os
 from contextlib import contextmanager
 from pathlib import Path
@@ -61,7 +62,7 @@ def _load_db_url() -> str:
     config_path = Path(os.getenv("CONFIG_PATH", str(_DEFAULT_CONFIG)))
     if config_path.exists():
         try:
-            import yaml  # optional dependency; gracefully absent in minimal envs
+            import yaml  # type: ignore[import-untyped]  # optional dependency
 
             with config_path.open() as fh:
                 cfg = yaml.safe_load(fh) or {}
@@ -95,6 +96,7 @@ def _load_db_url() -> str:
 
 
 DATABASE_URL: str = _load_db_url()
+
 
 # ---------------------------------------------------------------------------
 # SQLite FK pragma — fires on every new connection
@@ -230,6 +232,42 @@ def init_db() -> None:
         Path(db_path_str).parent.mkdir(parents=True, exist_ok=True)
 
     Base.metadata.create_all(bind=engine)
+    _create_sqlite_tenant_integrity_triggers()
+
+
+def _create_sqlite_tenant_integrity_triggers() -> None:
+    """Install required SQLite tenant-integrity triggers for optional SET NULL FKs."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    trigger_sql = [
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_personality_messages_quest_user
+        BEFORE INSERT ON personality_messages
+        WHEN NEW.quest_id IS NOT NULL
+        BEGIN
+            SELECT CASE
+                WHEN (SELECT user_id FROM quests WHERE id = NEW.quest_id) != NEW.user_id
+                THEN RAISE(ABORT, 'personality_messages.quest_id must belong to same user')
+            END;
+        END;
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_personality_messages_quest_user_upd
+        BEFORE UPDATE OF quest_id, user_id ON personality_messages
+        WHEN NEW.quest_id IS NOT NULL
+        BEGIN
+            SELECT CASE
+                WHEN (SELECT user_id FROM quests WHERE id = NEW.quest_id) != NEW.user_id
+                THEN RAISE(ABORT, 'personality_messages.quest_id must belong to same user')
+            END;
+        END;
+        """,
+    ]
+
+    with engine.begin() as conn:
+        for stmt in trigger_sql:
+            conn.execute(text(stmt))
 
 
 def drop_db() -> None:

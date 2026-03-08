@@ -13,6 +13,7 @@ Usage:
         # sample_user: Pre-created user instance
         ...
 """
+
 import pytest
 from typing import Generator
 
@@ -28,7 +29,7 @@ from app.models.user import User  # noqa: F401
 from app.models.theme import Theme  # noqa: F401
 from app.models.skill import Skill  # noqa: F401
 from app.models.title import TitleTemplate, UserTitle  # noqa: F401
-from app.models.mission_quest import MissionQuestTemplate, UserMissionQuest  # noqa: F401
+import app.models.mission_quest  # noqa: F401
 from app.models.journal_entry import JournalEntry  # noqa: F401
 from app.models.user_stats import UserStats  # noqa: F401
 from app.models.event_log import EventLog  # noqa: F401
@@ -50,10 +51,7 @@ def db_engine():
     Yields:
         Engine: SQLAlchemy engine connected to in-memory database
     """
-    engine = create_engine(
-        TEST_DATABASE_URL,
-        connect_args={"check_same_thread": False}
-    )
+    engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     yield engine
     Base.metadata.drop_all(engine)
@@ -73,11 +71,7 @@ def db_session(db_engine) -> Generator[Session, None, None]:
     Yields:
         Session: SQLAlchemy session for database operations
     """
-    SessionLocal = sessionmaker(
-        autocommit=False,
-        autoflush=False,
-        bind=db_engine
-    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
     session = SessionLocal()
     try:
         yield session
@@ -109,6 +103,7 @@ def fake() -> Faker:
 # MODEL FIXTURES
 # =============================================================================
 
+
 @pytest.fixture
 def sample_user(db_session, fake):
     """
@@ -124,12 +119,8 @@ def sample_user(db_session, fake):
     Returns:
         User: A persisted User instance
     """
-    from app.models.user import User
 
-    user = User(
-        username=fake.user_name(),
-        email=fake.email()
-    )
+    user = User(username=fake.user_name(), email=fake.email())
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
@@ -152,12 +143,9 @@ def sample_theme(db_session, sample_user):
     Returns:
         Theme: A persisted Theme instance
     """
-    from app.models.theme import Theme
 
     theme = Theme(
-        user_id=sample_user.id,
-        name="Education",
-        description="Learning and growing"
+        user_id=sample_user.id, name="Education", description="Learning and growing"
     )
     db_session.add(theme)
     db_session.commit()
@@ -181,13 +169,12 @@ def sample_skill(db_session, sample_user, sample_theme):
     Returns:
         Skill: A persisted Skill instance
     """
-    from app.models.skill import Skill
 
     skill = Skill(
         user_id=sample_user.id,
         theme_id=sample_theme.id,
         name="Python Programming",
-        description="Learn Python"
+        description="Learn Python",
     )
     db_session.add(skill)
     db_session.commit()

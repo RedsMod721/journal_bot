@@ -6,6 +6,7 @@ These tests cover:
 - get_db() - FastAPI dependency generator for database sessions
 - init_db() - database initialization
 """
+
 from pathlib import Path
 
 from sqlalchemy import create_engine
@@ -67,7 +68,7 @@ def test_get_db_yields_session_and_closes():
 def test_get_db_closes_session_on_exception():
     """get_db should close session even if an exception occurs."""
     db_gen = get_db()
-    db = next(db_gen)
+    next(db_gen)
 
     # Simulate an exception during request processing
     try:

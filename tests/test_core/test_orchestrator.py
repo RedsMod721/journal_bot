@@ -1,6 +1,5 @@
 """Tests for JournalProcessingOrchestrator."""
 
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,9 +9,7 @@ from app.core.events import EventBus
 from app.core.orchestrator import JournalProcessingOrchestrator, MAX_RETRY_COUNT
 from app.models.journal_entry import JournalEntry
 from app.models.mission_quest import MissionQuestTemplate, UserMissionQuest
-from app.models.theme import Theme
-from app.models.skill import Skill
-from app.models.title import TitleTemplate, UserTitle
+from app.models.title import TitleTemplate
 
 
 @pytest.fixture
@@ -63,7 +60,7 @@ class TestOrchestratorInitialization:
         assert orchestrator.ai_categorizer is None
 
     def test_orchestrator_registers_event_listeners(self, event_bus, config) -> None:
-        orchestrator = JournalProcessingOrchestrator(
+        JournalProcessingOrchestrator(
             event_bus=event_bus,
             config=config,
         )
@@ -109,7 +106,7 @@ class TestProcessEntry:
         # Verify initial status
         assert sample_entry.processing_status == "pending"
 
-        result = orchestrator.process_entry(db_session, sample_entry)
+        orchestrator.process_entry(db_session, sample_entry)
 
         # Should be completed after processing
         assert sample_entry.processing_status == "completed"
@@ -578,38 +575,44 @@ class TestEventListeners:
         orchestrator,
     ) -> None:
         # Should not raise an exception
-        orchestrator._on_xp_awarded({
-            "user_id": "user-id",
-            "amount": 50,
-            "source": "journal",
-            "target_type": "theme",
-            "target_id": "theme-id",
-        })
+        orchestrator._on_xp_awarded(
+            {
+                "user_id": "user-id",
+                "amount": 50,
+                "source": "journal",
+                "target_type": "theme",
+                "target_id": "theme-id",
+            }
+        )
 
     def test_on_level_up_logs_event(
         self,
         orchestrator,
     ) -> None:
         # Should not raise an exception
-        orchestrator._on_level_up({
-            "user_id": "user-id",
-            "theme_id": "theme-id",
-            "new_level": 5,
-            "theme_name": "Education",
-        })
+        orchestrator._on_level_up(
+            {
+                "user_id": "user-id",
+                "theme_id": "theme-id",
+                "new_level": 5,
+                "theme_name": "Education",
+            }
+        )
 
     def test_on_quest_completed_logs_event(
         self,
         orchestrator,
     ) -> None:
         # Should not raise an exception
-        orchestrator._on_quest_completed({
-            "user_id": "user-id",
-            "quest_id": "quest-id",
-            "quest_name": "Daily Quest",
-            "reward_xp": 100,
-            "reward_coins": 50,
-        })
+        orchestrator._on_quest_completed(
+            {
+                "user_id": "user-id",
+                "quest_id": "quest-id",
+                "quest_name": "Daily Quest",
+                "reward_xp": 100,
+                "reward_coins": 50,
+            }
+        )
 
     def test_event_bus_emits_to_orchestrator_handlers(
         self,
@@ -629,17 +632,20 @@ class TestEventListeners:
             "_on_quest_completed",
             patched_handler,
         ):
-            orchestrator = JournalProcessingOrchestrator(
+            JournalProcessingOrchestrator(
                 event_bus=event_bus,
                 config=config,
             )
-            event_bus.emit("quest.completed", {
-                "user_id": "user-id",
-                "quest_id": "quest-id",
-                "quest_name": "Test",
-                "reward_xp": 0,
-                "reward_coins": 0,
-            })
+            event_bus.emit(
+                "quest.completed",
+                {
+                    "user_id": "user-id",
+                    "quest_id": "quest-id",
+                    "quest_name": "Test",
+                    "reward_xp": 0,
+                    "reward_coins": 0,
+                },
+            )
 
         assert handler_called["value"] is True
 

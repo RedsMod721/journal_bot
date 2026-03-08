@@ -21,6 +21,8 @@ This document provides **complete specifications** for Week 2.5: the preparation
 
 **Core Principle:** *Solid foundation → smooth implementation. Invest time in Week 2.5 to save weeks in debugging later.*
 
+**Canonical execution note:** For final Week 2.5 sign-off on the `src/` stack, follow `docs/tooling/WEEK_3_GO_NO_GO_CHECKLIST.md` plus `docs/specs/KB_SEED_CONTRACT.md`.
+
 ### Why Week 2.5?
 
 **Original Timeline:** Week 2 → Core Database → Week 3 → AI Integration
@@ -42,7 +44,7 @@ This document provides **complete specifications** for Week 2.5: the preparation
 
 **Week 2.5 is Complete If:**
 - ✅ Development environment operational (Python 3.11+, dependencies installed)
-- ✅ Database schema implemented (38 tables, all migrations run)
+- ✅ Database schema implemented (52 canonical tables, all migrations run)
 - ✅ Core services functional (journal processing, XP calculation, no AI)
 - ✅ Test coverage ≥95% (core modules)
 - ✅ Performance benchmarks met (queries <100ms, transactions <500ms)
@@ -397,7 +399,7 @@ build/
 
 ## PART II: DATABASE SCHEMA IMPLEMENTATION
 
-### 2.1 SQLAlchemy Models (38 Tables)
+### 2.1 SQLAlchemy Models (52 Canonical Tables)
 
 **src/db/models.py (Core Tables):**
 
@@ -628,7 +630,7 @@ class GlobalSkill(Base):
 alembic init migrations
 
 # Create first migration
-alembic revision --autogenerate -m "Initial schema - 38 tables"
+alembic revision --autogenerate -m "Initial schema - 52 canonical tables"
 
 # Apply migrations
 alembic upgrade head
@@ -677,7 +679,7 @@ CREATE TABLE skills (
 CREATE INDEX idx_skills_user_id ON skills(user_id);
 CREATE INDEX idx_skills_canonical_name ON skills(canonical_name);
 
--- ... (Continue for all 38 tables)
+-- ... (Continue for all 52 canonical tables)
 ```
 
 ### 2.2 Database Initialization
@@ -751,7 +753,7 @@ from loguru import logger
 if __name__ == "__main__":
     logger.info("Initializing database...")
     init_db()
-    logger.info("✅ Database initialized successfully (38 tables created)")
+    logger.info("✅ Database initialized successfully (52 canonical tables created)")
 ```
 
 ```bash
@@ -1277,67 +1279,28 @@ class TestPerformance:
 **Run All Checks:**
 
 ```bash
-# 1. Code Quality (Black, Ruff, MyPy)
-black src/ tests/
-ruff check src/ tests/
-mypy src/
+# 1. Preflight (runtime deps + canonical seed contract)
+python scripts/validation/week3_preflight.py --require-runtime-deps --require-seed-artifacts
+python scripts/validation/validate_preseed_kb.py --strict-artifacts
 
-# 2. Unit Tests (95%+ coverage)
-pytest tests/unit/ --cov=src/core --cov-fail-under=95
+# 2. Code Quality (Black, Ruff, MyPy)
+python -m black --check src tests
+python -m ruff check src tests
+python -m mypy --explicit-package-bases src
 
-# 3. Integration Tests
-pytest tests/integration/ -v
+# 3. Unit Contract Gates
+pytest --confcutdir=tests/unit tests/unit/ai/ tests/unit/db/ -q
 
-# 4. Performance Benchmarks
-pytest tests/integration/test_performance.py -v
+# 4. Performance Smoke
+pytest --confcutdir=tests/test_performance tests/test_performance/test_week3_pipeline_smoke.py -q
 
-# 5. Database Migrations
-alembic upgrade head
-python scripts/validate_schema.py
-
-# 6. Documentation
-python scripts/generate_docs.py
+# 5. Canonical Schema
+python scripts/init_db.py --strict --expected-min-tables 52 --hide-tables
+python scripts/validation/validate_canonical_schema.py
 ```
 
-**scripts/validate_schema.py:**
-
-```python
-"""Validate database schema against architecture."""
-
-from src.db.session import engine
-from src.db.models import Base
-from sqlalchemy import inspect
-
-def validate_schema():
-    """Check all 38 tables exist."""
-    inspector = inspect(engine)
-    existing_tables = inspector.get_table_names()
-    
-    expected_tables = [
-        "users", "skills", "themes", "journal_entries", "quests",
-        "global_skills", "global_quest_templates", "global_insights",
-        # ... (list all 38 tables)
-    ]
-    
-    missing = set(expected_tables) - set(existing_tables)
-    extra = set(existing_tables) - set(expected_tables)
-    
-    if missing:
-        print(f"❌ Missing tables: {missing}")
-        return False
-    
-    if extra:
-        print(f"⚠️ Extra tables: {extra}")
-    
-    print(f"✅ All {len(expected_tables)} tables present")
-    return True
-
-if __name__ == "__main__":
-    if validate_schema():
-        exit(0)
-    else:
-        exit(1)
-```
+**Schema + seed contract are the Week 2.5 canonical baseline.**  
+`scripts/validation/validate_canonical_schema.py` is authoritative for table/trigger inventory, and `scripts/validation/validate_preseed_kb.py` is authoritative for pre-seed contract checks.
 
 ### 5.2 Success Criteria Matrix
 
@@ -1348,20 +1311,20 @@ if __name__ == "__main__":
 | Dependencies | ⬜ | `pip list` | All installed |
 | Config Files | ⬜ | `ls config/` | dev.yaml exists |
 | **Database** | | | |
-| Schema Created | ⬜ | `python scripts/validate_schema.py` | 38 tables |
-| Migrations Run | ⬜ | `alembic current` | Head revision |
-| Sample Data | ⬜ | `python scripts/seed_test_data.py` | 10+ records |
+| Canonical Schema | ⬜ | `python scripts/init_db.py --strict --expected-min-tables 52 --hide-tables` | 52 tables |
+| Schema Validator | ⬜ | `python scripts/validation/validate_canonical_schema.py` | Missing=0 |
+| Seed Contract | ⬜ | `python scripts/validation/validate_preseed_kb.py --strict-artifacts` | Pass |
 | **Code Quality** | | | |
-| Black Format | ⬜ | `black --check src/` | All formatted |
-| Ruff Lint | ⬜ | `ruff check src/` | Zero errors |
-| MyPy Types | ⬜ | `mypy src/` | Zero errors |
+| Black Format | ⬜ | `python -m black --check src tests` | All formatted |
+| Ruff Lint | ⬜ | `python -m ruff check src tests` | Zero errors |
+| MyPy Types | ⬜ | `python -m mypy --explicit-package-bases src` | Zero errors |
 | **Tests** | | | |
-| Unit Coverage | ⬜ | `pytest tests/unit/ --cov` | ≥95% |
-| Integration Pass | ⬜ | `pytest tests/integration/` | All pass |
-| Performance | ⬜ | `pytest tests/integration/test_performance.py` | Meet targets |
+| Unit Contract | ⬜ | `pytest --confcutdir=tests/unit tests/unit/ai/ tests/unit/db/ -q` | All pass |
+| Performance Smoke | ⬜ | `pytest --confcutdir=tests/test_performance tests/test_performance/test_week3_pipeline_smoke.py -q` | Pass |
+| End-to-end Bundle | ⬜ | `bash scripts/validation/run_validation_gates.sh` | All green |
 | **Documentation** | | | |
-| README | ⬜ | `cat README.md` | Setup guide |
-| API Docs | ⬜ | `ls docs/api/` | Endpoints documented |
+| Seed Contract Doc | ⬜ | `cat docs/specs/KB_SEED_CONTRACT.md` | Present |
+| Week 3 Checklist | ⬜ | `cat docs/tooling/WEEK_3_GO_NO_GO_CHECKLIST.md` | Updated |
 
 **All ✅ → Ready for Week 3 AI Integration**
 
@@ -1373,11 +1336,11 @@ if __name__ == "__main__":
 
 **Completed:**
 - ✅ Development environment setup (MacBook Pro, Python 3.11+, dependencies)
-- ✅ Database schema implemented (38 tables, SQLAlchemy models)
+- ✅ Database schema implemented (52 canonical tables, SQLAlchemy models)
 - ✅ Core services operational (XP calculation, quest matching, no AI)
 - ✅ Test coverage ≥95% (unit + integration tests)
 - ✅ Performance benchmarks met (queries <100ms, XP calc <1ms)
-- ✅ Validation gates passed (all checks green)
+- ✅ Validation gates passed (schema + seed + quality checks green)
 - ✅ Documentation complete (setup guide, API docs, troubleshooting)
 
 **Next Steps (Week 3):**

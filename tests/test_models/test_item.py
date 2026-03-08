@@ -1,6 +1,7 @@
 """
 Tests for ItemTemplate and UserItem models.
 """
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -191,7 +192,7 @@ class TestItemModel:
         equipped = (
             db_session.query(UserItem)
             .filter(UserItem.user_id == sample_user.id)
-            .filter(UserItem.is_equipped == True)
+            .filter(UserItem.is_equipped.is_(True))
             .all()
         )
 

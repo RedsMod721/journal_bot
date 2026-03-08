@@ -6,6 +6,7 @@ These tests cover:
 - Health check endpoint (/health)
 - check_ollama_connection function (with various scenarios)
 """
+
 import runpy
 import sys
 from unittest.mock import MagicMock, patch
@@ -140,9 +141,7 @@ class TestCheckOllamaConnection:
     def test_ollama_preferred_model_available(self):
         """Should indicate when preferred model is available."""
         mock_ollama = MagicMock()
-        mock_ollama.list.return_value = {
-            "models": [{"name": "llama3.2:latest"}]
-        }
+        mock_ollama.list.return_value = {"models": [{"name": "llama3.2:latest"}]}
 
         with patch.dict(sys.modules, {"ollama": mock_ollama}):
             result = check_ollama_connection()
@@ -153,9 +152,7 @@ class TestCheckOllamaConnection:
     def test_ollama_preferred_model_not_available(self):
         """Should indicate when preferred model is not available."""
         mock_ollama = MagicMock()
-        mock_ollama.list.return_value = {
-            "models": [{"name": "codellama:7b"}]
-        }
+        mock_ollama.list.return_value = {"models": [{"name": "codellama:7b"}]}
 
         with patch.dict(sys.modules, {"ollama": mock_ollama}):
             result = check_ollama_connection()
@@ -179,7 +176,10 @@ class TestCheckOllamaConnection:
         """Should handle ImportError when ollama is not installed."""
         # Remove ollama from sys.modules if present and make import fail
         with patch.dict(sys.modules, {"ollama": None}):
-            with patch("builtins.__import__", side_effect=ImportError("No module named 'ollama'")):
+            with patch(
+                "builtins.__import__",
+                side_effect=ImportError("No module named 'ollama'"),
+            ):
                 result = check_ollama_connection()
 
         assert result["connected"] is False

@@ -4,6 +4,7 @@ Tests for application configuration.
 These tests verify that configuration values are properly loaded
 and have expected types.
 """
+
 from pathlib import Path
 
 

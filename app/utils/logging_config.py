@@ -23,6 +23,7 @@ Usage:
     def slow_function():
         ...
 """
+
 import functools
 import logging
 import os
@@ -31,8 +32,15 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
-import structlog
-from pythonjsonlogger.json import JsonFormatter as jsonlogger
+try:
+    from pythonjsonlogger.json import JsonFormatter as jsonlogger
+except ModuleNotFoundError:  # pragma: no cover - exercised in minimal envs
+    jsonlogger = None
+
+try:
+    import structlog
+except ModuleNotFoundError:  # pragma: no cover - exercised in minimal envs
+    structlog = None
 
 # Type variable for preserving function signatures in decorator
 F = TypeVar("F", bound=Callable[..., Any])
@@ -83,34 +91,73 @@ def configure_logging() -> None:
         backupCount=5,
     )
     file_handler.setLevel(log_level)
-    json_formatter = jsonlogger(
-        fmt="%(timestamp)s %(level)s %(name)s %(message)s",
-        rename_fields={"levelname": "level", "asctime": "timestamp"},
-        datefmt="%Y-%m-%dT%H:%M:%S",
-    )
+    if jsonlogger is not None:
+        json_formatter = jsonlogger(
+            fmt="%(timestamp)s %(level)s %(name)s %(message)s",
+            rename_fields={"levelname": "level", "asctime": "timestamp"},
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        )
+    else:
+        json_formatter = logging.Formatter(
+            fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        )
     file_handler.setFormatter(json_formatter)
     root_logger.addHandler(file_handler)
 
-    # Configure structlog
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.stdlib.PositionalArgumentsFormatter(),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-        ],
-        wrapper_class=structlog.stdlib.BoundLogger,
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=True,
-    )
+    if structlog is not None:
+        # Configure structlog when available.
+        structlog.configure(
+            processors=[
+                structlog.contextvars.merge_contextvars,
+                structlog.processors.add_log_level,
+                structlog.processors.TimeStamper(fmt="iso"),
+                structlog.stdlib.PositionalArgumentsFormatter(),
+                structlog.processors.StackInfoRenderer(),
+                structlog.processors.format_exc_info,
+                structlog.processors.UnicodeDecoder(),
+                structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+            ],
+            wrapper_class=structlog.stdlib.BoundLogger,
+            context_class=dict,
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            cache_logger_on_first_use=True,
+        )
 
 
-def get_logger(module_name: str) -> structlog.stdlib.BoundLogger:
+class _FallbackBoundLogger:
+    """Minimal structlog-like logger used when structlog is unavailable."""
+
+    def __init__(
+        self, logger: logging.Logger, extra: dict[str, Any] | None = None
+    ) -> None:
+        self._logger = logger
+        self._extra = extra or {}
+
+    def bind(self, **kwargs: Any) -> "_FallbackBoundLogger":
+        merged = dict(self._extra)
+        merged.update(kwargs)
+        return _FallbackBoundLogger(self._logger, merged)
+
+    def _log(self, level: int, message: str, **kwargs: Any) -> None:
+        extra = dict(self._extra)
+        extra.update(kwargs)
+        self._logger.log(level, message, extra=extra)
+
+    def info(self, message: str, **kwargs: Any) -> None:
+        self._log(logging.INFO, message, **kwargs)
+
+    def debug(self, message: str, **kwargs: Any) -> None:
+        self._log(logging.DEBUG, message, **kwargs)
+
+    def warning(self, message: str, **kwargs: Any) -> None:
+        self._log(logging.WARNING, message, **kwargs)
+
+    def error(self, message: str, **kwargs: Any) -> None:
+        self._log(logging.ERROR, message, **kwargs)
+
+
+def get_logger(module_name: str) -> Any:
     """
     Get a structured logger for a module.
 
@@ -124,7 +171,9 @@ def get_logger(module_name: str) -> structlog.stdlib.BoundLogger:
         logger = get_logger(__name__)
         logger.info("Processing started", item_count=42)
     """
-    return structlog.get_logger(module_name).bind(module=module_name)
+    if structlog is not None:
+        return structlog.get_logger(module_name).bind(module=module_name)
+    return _FallbackBoundLogger(logging.getLogger(module_name)).bind(module=module_name)
 
 
 def log_execution_time(func: F) -> F:

@@ -1,6 +1,7 @@
 """
 Tests for EventLog model.
 """
+
 from datetime import datetime, timedelta
 
 from app.models.event_log import EventLog
@@ -64,9 +65,7 @@ class TestEventLogModel:
         db_session.commit()
 
         results = (
-            db_session.query(EventLog)
-            .filter(EventLog.event_type == "xp.awarded")
-            .all()
+            db_session.query(EventLog).filter(EventLog.event_type == "xp.awarded").all()
         )
 
         assert len(results) == 1
@@ -100,7 +99,9 @@ class TestEventLogModel:
         assert len(results) == 1
         assert results[0].id == log_user.id
 
-    def test_event_log_repr_includes_type_and_user_prefix(self, db_session, sample_user):
+    def test_event_log_repr_includes_type_and_user_prefix(
+        self, db_session, sample_user
+    ):
         event_log = EventLog(
             user_id=sample_user.id,
             event_type="xp.awarded",

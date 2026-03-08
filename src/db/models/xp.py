@@ -5,6 +5,7 @@ Table:
     xp_awards — every XP event awarded to a skill or theme, with full
                  audit trail and Section 10/13 idempotency support.
 """
+
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
@@ -77,7 +78,9 @@ class XpAward(Base):
     xp_reason: Mapped[str] = mapped_column(String(100), nullable=False)
     processing_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
     # Section 10 canonical stable identity hash (required for Section 13 v2)
-    award_identity_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    award_identity_key: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
     ruleset_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     pipeline_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
@@ -105,7 +108,9 @@ class XpAward(Base):
     # How much XP the source skill gained (to derive the 0.1% theme share)
     source_skill_xp: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    awarded_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    awarded_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
 
     # ------------------------------------------------------------------
     # Relationships
@@ -171,7 +176,8 @@ class XpAward(Base):
         ),
         # Canonical idempotency index (partial — only when key is populated)
         UniqueConstraint(
-            "user_id", "award_identity_key",
+            "user_id",
+            "award_identity_key",
             name="uq_xp_awards_identity",
         ),
         Index("idx_xp_awards_user", "user_id"),
@@ -200,5 +206,7 @@ class XpAward(Base):
     )
 
     def __repr__(self) -> str:
-        target = f"skill={self.skill_id!r}" if self.skill_id else f"theme={self.theme_id!r}"
+        target = (
+            f"skill={self.skill_id!r}" if self.skill_id else f"theme={self.theme_id!r}"
+        )
         return f"<XpAward id={self.id!r} amount={self.amount} {target}>"

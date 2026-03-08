@@ -5,6 +5,7 @@ Tables:
     forgiveness_configs  — per-user decay presets and rate configuration
     decay_snapshots      — daily staleness snapshots for trend analysis
 """
+
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -69,20 +70,31 @@ class ForgivenessConfig(Base):
 
     # Decay rates (fraction of staleness gained per 24 h, 0.0–1.0)
     skill_decay_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.05)
-    insight_decay_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.10)
+    insight_decay_rate: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.10
+    )
 
     # Grace periods before decay starts (days)
-    skill_grace_period_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
-    insight_grace_period_days: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    skill_grace_period_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=7
+    )
+    insight_grace_period_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3
+    )
 
     # Staleness fraction at which the system flags a skill as critically decayed
     critical_staleness_threshold: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.80
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     # --- Relationships ---
@@ -143,7 +155,9 @@ class DecaySnapshot(Base):
 
     # Aggregated metrics for the day
     average_skill_staleness: Mapped[float | None] = mapped_column(Float, nullable=True)
-    average_insight_staleness: Mapped[float | None] = mapped_column(Float, nullable=True)
+    average_insight_staleness: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
     # Count of skills at or near critical staleness at snapshot time
     skills_near_critical: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -152,12 +166,16 @@ class DecaySnapshot(Base):
     skill_staleness_map: Mapped[str | None] = mapped_column(String, nullable=True)
     insight_staleness_map: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
 
     # --- Relationships ---
     user: Mapped["User"] = relationship("User", back_populates="decay_snapshots")
 
     __table_args__ = (
-        UniqueConstraint("user_id", "snapshot_date", name="uq_decay_snapshots_user_date"),
+        UniqueConstraint(
+            "user_id", "snapshot_date", name="uq_decay_snapshots_user_date"
+        ),
         Index("idx_decay_snapshots_user_date", "user_id", "snapshot_date"),
     )

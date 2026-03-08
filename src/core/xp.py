@@ -25,6 +25,7 @@ import math
 # edited (Appendix A.1.4 "generation rule").
 # ---------------------------------------------------------------------------
 
+
 def _get_xp_exponent(target_level: int) -> float:
     """Select the exponent for advancing TO target_level (target-level semantics).
 
@@ -375,7 +376,11 @@ def calculate_session_xp(
         raise ValueError("quality_mult must be a finite non-negative number")
     if variety_bonus <= -1.0 or math.isnan(variety_bonus) or math.isinf(variety_bonus):
         raise ValueError("variety_bonus must be finite and > -1.0")
-    if troll_multiplier < 0 or math.isnan(troll_multiplier) or math.isinf(troll_multiplier):
+    if (
+        troll_multiplier < 0
+        or math.isnan(troll_multiplier)
+        or math.isinf(troll_multiplier)
+    ):
         raise ValueError("troll_multiplier must be a finite non-negative number")
 
     # Legacy pre-stage retained for backward compatibility only.

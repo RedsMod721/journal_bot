@@ -1,6 +1,7 @@
 """
 Tests for ProportionalDistributor XP strategy.
 """
+
 from types import SimpleNamespace
 
 import pytest

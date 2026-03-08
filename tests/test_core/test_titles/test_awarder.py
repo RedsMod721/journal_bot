@@ -7,7 +7,6 @@ import pytest
 from app.core.events import EventBus
 from app.core.titles.awarder import TitleAwarder
 from app.core.titles.conditions import CONDITION_EVALUATORS
-from app.models.theme import Theme
 from app.models.title import TitleTemplate, UserTitle
 
 
@@ -234,9 +233,7 @@ def test_check_user_unlocks_skips_empty_conditions(
     assert new_titles == []
 
 
-def test_award_title_creates_user_title(
-    db_session, sample_user, awarder
-) -> None:
+def test_award_title_creates_user_title(db_session, sample_user, awarder) -> None:
     template = _create_title_template(
         db_session,
         name="Test Title",
@@ -251,9 +248,7 @@ def test_award_title_creates_user_title(
     assert user_title.title_template_id == template.id
 
 
-def test_award_title_auto_equips_first_title(
-    db_session, sample_user, awarder
-) -> None:
+def test_award_title_auto_equips_first_title(db_session, sample_user, awarder) -> None:
     template = _create_title_template(
         db_session,
         name="First Title",

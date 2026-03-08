@@ -6,6 +6,7 @@ Tables:
     journal_entries_structured — AI-extracted structured fields (Q7)
     entry_attachments          — file attachments (images, PDFs)
 """
+
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
@@ -13,7 +14,6 @@ from typing import TYPE_CHECKING, Optional
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    Column,
     DateTime,
     Float,
     ForeignKey,
@@ -73,9 +73,15 @@ class JournalEntry(Base):
     # Q6: Multi-round questions
     # ------------------------------------------------------------------
     # Tracks whether the AI pipeline is waiting for a user follow-up answer
-    question_state: Mapped[str] = mapped_column(String(20), nullable=False, default="none")
-    questions_asked: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
-    question_timeout: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    question_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="none"
+    )
+    questions_asked: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )  # JSON array
+    question_timeout: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
 
     # ------------------------------------------------------------------
     # Metadata
@@ -83,20 +89,29 @@ class JournalEntry(Base):
     recorded_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime, nullable=True  # Populated for audio entries
     )
-    transcription_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    transcription_confidence: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )
 
     # ------------------------------------------------------------------
     # Processing results
     # ------------------------------------------------------------------
-    processing_duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    processing_duration_ms: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # ------------------------------------------------------------------
     # Timestamps
     # ------------------------------------------------------------------
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
@@ -174,31 +189,47 @@ class JournalEntryStructured(Base):
     goal_relation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     time_of_day_bucket: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    dominant_emotions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
+    dominant_emotions: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )  # JSON array
     energy_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 1–10
-    self_compassion_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 0–10
+    self_compassion_score: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )  # 0–10
 
     task_type: Mapped[Optional[str]] = mapped_column(
         String(50), nullable=True  # creative, analytical, physical, social
     )
-    success_quality: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 0–10
+    success_quality: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )  # 0–10
     blockers_or_obstacles: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     support_used: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    delay_from_planned_time_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    delay_from_planned_time_minutes: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
 
     reflection_depth: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    skills_themes_involved: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
+    skills_themes_involved: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )  # JSON array
 
     # ------------------------------------------------------------------
     # Original categorisation fields
     # ------------------------------------------------------------------
     categories: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
-    sentiment_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # -1.0–1.0
+    sentiment_score: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )  # -1.0–1.0
 
     # Safety / crisis flags
-    safety_flags: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array
+    safety_flags: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )  # JSON array
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
 
     # ------------------------------------------------------------------
     # Relationships
@@ -218,7 +249,9 @@ class JournalEntryStructured(Base):
             ondelete="CASCADE",
             name="fk_journal_entries_structured_user_entry",
         ),
-        UniqueConstraint("user_id", "entry_id", name="uq_journal_entries_structured_user_entry"),
+        UniqueConstraint(
+            "user_id", "entry_id", name="uq_journal_entries_structured_user_entry"
+        ),
         UniqueConstraint("user_id", "id", name="uq_journal_entries_structured_user_id"),
         Index("idx_entries_struct_user", "user_id"),
         Index("idx_entries_struct_user_entry", "user_id", "entry_id"),
@@ -283,7 +316,9 @@ class EntryAttachment(Base):
     processed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     ocr_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
 
     # ------------------------------------------------------------------
     # Relationships

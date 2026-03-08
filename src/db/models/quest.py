@@ -6,12 +6,12 @@ Tables:
     quests                — user's active / historical quests
     quest_failure_tracker — per-user, per-quest-type failure counts (Q23)
 """
+
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -60,16 +60,23 @@ class QuestTemplate(Base):
 
     completion_type: Mapped[str] = mapped_column(String(20), nullable=False)
     base_xp: Mapped[int] = mapped_column(Integer, nullable=False, default=480)
-    estimated_duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    estimated_duration_minutes: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
 
     # JSON: {"distance": "5km", "duration": "30min"}
     parameters: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     # ------------------------------------------------------------------
@@ -150,7 +157,9 @@ class Quest(Base):
     # Physical scope: 'instant' or 'longterm'
     quest_type: Mapped[str] = mapped_column(String(20), nullable=False)
     # Section 10 v8 template/streak identity key (distinct from quest_type)
-    template_quest_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    template_quest_type: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
     completion_type: Mapped[str] = mapped_column(String(20), nullable=False)
 
     # ------------------------------------------------------------------
@@ -172,7 +181,9 @@ class Quest(Base):
         String(36), nullable=True  # Nullable legacy; Section 10 v8 decision determinism
     )
     # Confidence in basis-points (0–10000 = 0%–100%)
-    creation_confidence_bp: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    creation_confidence_bp: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
 
     # ------------------------------------------------------------------
     # XP calculation
@@ -199,7 +210,9 @@ class Quest(Base):
     # ------------------------------------------------------------------
     # Timestamps (RFC3339 + Section 10 v8 epoch-ms)
     # ------------------------------------------------------------------
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
     created_at_utc_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     updated_at_utc_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -318,9 +331,14 @@ class QuestFailureTracker(Base):
     last_failure_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     # ------------------------------------------------------------------
@@ -336,10 +354,14 @@ class QuestFailureTracker(Base):
             ondelete="SET NULL",
             name="fk_quest_failure_tracker_user_skill",
         ),
-        UniqueConstraint("user_id", "quest_type", name="uq_quest_failure_tracker_user_type"),
+        UniqueConstraint(
+            "user_id", "quest_type", name="uq_quest_failure_tracker_user_type"
+        ),
         Index("idx_failure_tracker_user", "user_id"),
         Index("idx_failure_tracker_user_skill", "user_id", "skill_id"),
-        CheckConstraint("failure_count >= 0", name="ck_quest_failure_tracker_failure_count"),
+        CheckConstraint(
+            "failure_count >= 0", name="ck_quest_failure_tracker_failure_count"
+        ),
     )
 
     def __repr__(self) -> str:

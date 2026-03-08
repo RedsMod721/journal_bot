@@ -25,13 +25,15 @@ api:
 ai:
   ollama:
     base_url: "http://localhost:11434"
-    model: "llama3.2:3b"
+    model: "llama3.2:latest"
     timeout: 30
   qdrant:
+    mode: "local"
     host: "localhost"
     port: 6333
+    local_path: "data/qdrant_local"
     collection: "rag_documents"
-    vector_size: 384
+    vector_size: 3072
 
 testing:
   database:

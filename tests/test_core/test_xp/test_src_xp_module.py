@@ -161,13 +161,40 @@ def test_theme_award_identity_key_non_null_source_fields() -> None:
 
 def test_sort_xp_awards_for_payload_uses_canonical_ordering() -> None:
     awards = [
-        {"xp_reason": "b", "distribution_type": "secondary", "skill_id": "s2", "amount": 10},
-        {"xp_reason": "a", "distribution_type": "theme", "theme_id": "t2", "source_skill_id": "s2", "amount": 5},
-        {"xp_reason": "a", "distribution_type": "primary", "skill_id": "s1", "amount": 9},
-        {"xp_reason": "a", "distribution_type": "theme", "theme_id": "t1", "source_skill_id": "s1", "amount": 7},
+        {
+            "xp_reason": "b",
+            "distribution_type": "secondary",
+            "skill_id": "s2",
+            "amount": 10,
+        },
+        {
+            "xp_reason": "a",
+            "distribution_type": "theme",
+            "theme_id": "t2",
+            "source_skill_id": "s2",
+            "amount": 5,
+        },
+        {
+            "xp_reason": "a",
+            "distribution_type": "primary",
+            "skill_id": "s1",
+            "amount": 9,
+        },
+        {
+            "xp_reason": "a",
+            "distribution_type": "theme",
+            "theme_id": "t1",
+            "source_skill_id": "s1",
+            "amount": 7,
+        },
     ]
     sorted_awards = sort_xp_awards_for_payload(awards)
-    assert [a["distribution_type"] for a in sorted_awards] == ["primary", "theme", "theme", "secondary"]
+    assert [a["distribution_type"] for a in sorted_awards] == [
+        "primary",
+        "theme",
+        "theme",
+        "secondary",
+    ]
     assert sorted_awards[1]["theme_id"] == "t1"
     assert sorted_awards[2]["theme_id"] == "t2"
 
@@ -276,8 +303,18 @@ def test_derive_theme_awards_drops_zero_amount_rows() -> None:
 
 def test_sort_xp_awards_for_payload_uses_amount_desc_in_tie_group() -> None:
     awards = [
-        {"xp_reason": "a", "distribution_type": "primary", "skill_id": "s1", "amount": 2},
-        {"xp_reason": "a", "distribution_type": "primary", "skill_id": "s1", "amount": 10},
+        {
+            "xp_reason": "a",
+            "distribution_type": "primary",
+            "skill_id": "s1",
+            "amount": 2,
+        },
+        {
+            "xp_reason": "a",
+            "distribution_type": "primary",
+            "skill_id": "s1",
+            "amount": 10,
+        },
     ]
     sorted_awards = sort_xp_awards_for_payload(awards)
     assert [a["amount"] for a in sorted_awards] == [10, 2]
@@ -296,14 +333,62 @@ def test_sort_xp_awards_for_payload_handles_missing_keys_defaults() -> None:
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"base_xp": -1, "minutes": 30, "quality_mult": 1.0, "variety_bonus": 0.0, "troll_multiplier": 1.0},
-        {"base_xp": 480, "minutes": 0, "quality_mult": 1.0, "variety_bonus": 0.0, "troll_multiplier": 1.0},
-        {"base_xp": 480, "minutes": 30, "quality_mult": -0.1, "variety_bonus": 0.0, "troll_multiplier": 1.0},
-        {"base_xp": 480, "minutes": 30, "quality_mult": math.nan, "variety_bonus": 0.0, "troll_multiplier": 1.0},
-        {"base_xp": 480, "minutes": 30, "quality_mult": 1.0, "variety_bonus": -1.0, "troll_multiplier": 1.0},
-        {"base_xp": 480, "minutes": 30, "quality_mult": 1.0, "variety_bonus": math.inf, "troll_multiplier": 1.0},
-        {"base_xp": 480, "minutes": 30, "quality_mult": 1.0, "variety_bonus": 0.0, "troll_multiplier": -0.1},
-        {"base_xp": 480, "minutes": 30, "quality_mult": 1.0, "variety_bonus": 0.0, "troll_multiplier": math.nan},
+        {
+            "base_xp": -1,
+            "minutes": 30,
+            "quality_mult": 1.0,
+            "variety_bonus": 0.0,
+            "troll_multiplier": 1.0,
+        },
+        {
+            "base_xp": 480,
+            "minutes": 0,
+            "quality_mult": 1.0,
+            "variety_bonus": 0.0,
+            "troll_multiplier": 1.0,
+        },
+        {
+            "base_xp": 480,
+            "minutes": 30,
+            "quality_mult": -0.1,
+            "variety_bonus": 0.0,
+            "troll_multiplier": 1.0,
+        },
+        {
+            "base_xp": 480,
+            "minutes": 30,
+            "quality_mult": math.nan,
+            "variety_bonus": 0.0,
+            "troll_multiplier": 1.0,
+        },
+        {
+            "base_xp": 480,
+            "minutes": 30,
+            "quality_mult": 1.0,
+            "variety_bonus": -1.0,
+            "troll_multiplier": 1.0,
+        },
+        {
+            "base_xp": 480,
+            "minutes": 30,
+            "quality_mult": 1.0,
+            "variety_bonus": math.inf,
+            "troll_multiplier": 1.0,
+        },
+        {
+            "base_xp": 480,
+            "minutes": 30,
+            "quality_mult": 1.0,
+            "variety_bonus": 0.0,
+            "troll_multiplier": -0.1,
+        },
+        {
+            "base_xp": 480,
+            "minutes": 30,
+            "quality_mult": 1.0,
+            "variety_bonus": 0.0,
+            "troll_multiplier": math.nan,
+        },
     ],
 )
 def test_session_xp_rejects_invalid_inputs(kwargs: dict) -> None:

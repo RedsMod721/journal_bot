@@ -13,6 +13,7 @@ Tests cover:
 
 Following AAA pattern (Arrange, Act, Assert) as per TESTING_GUIDE.md
 """
+
 import pytest
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
@@ -110,7 +111,9 @@ class TestUserStatsModel:
     # RELATIONSHIP TESTS
     # =========================================================================
 
-    def test_user_stats_one_to_one_relationship_with_user(self, db_session, sample_user):
+    def test_user_stats_one_to_one_relationship_with_user(
+        self, db_session, sample_user
+    ):
         """UserStats should have bidirectional one-to-one relationship with User"""
         # Arrange & Act
         stats = UserStats(user_id=sample_user.id)
@@ -142,9 +145,9 @@ class TestUserStatsModel:
         db_session.commit()
 
         # Assert
-        remaining_stats = db_session.query(UserStats).filter(
-            UserStats.user_id == user_id
-        ).all()
+        remaining_stats = (
+            db_session.query(UserStats).filter(UserStats.user_id == user_id).all()
+        )
         assert len(remaining_stats) == 0
 
     def test_user_can_only_have_one_stats(self, db_session, sample_user):
@@ -424,7 +427,9 @@ class TestUserStatsModel:
         assert stats.karma_breakdown == breakdown
         assert stats.karma_breakdown["quests_completed"] == 50
 
-    def test_user_stats_karma_breakdown_not_shared_across_instances(self, db_session, fake):
+    def test_user_stats_karma_breakdown_not_shared_across_instances(
+        self, db_session, fake
+    ):
         """karma_breakdown should not be shared across instances"""
         # Arrange
         from app.models.user import User

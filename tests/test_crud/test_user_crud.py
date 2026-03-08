@@ -12,6 +12,7 @@ This module tests all CRUD functions in app/crud/user.py:
 
 Uses db_session fixture from conftest.py for database access.
 """
+
 import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
@@ -26,7 +27,6 @@ from app.crud.user import (
     update_user,
 )
 from app.models.theme import Theme
-from app.models.user import User
 from app.schemas.user import UserCreate
 
 
@@ -395,7 +395,9 @@ class TestUserCRUD:
         assert result is not None
         assert not hasattr(result, "not_a_field")
 
-    def test_update_user_duplicate_username_raises_integrity_error(self, db_session, fake):
+    def test_update_user_duplicate_username_raises_integrity_error(
+        self, db_session, fake
+    ):
         """Should raise IntegrityError when updating to duplicate username."""
         # Arrange
         user1 = create_user(

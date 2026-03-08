@@ -30,7 +30,9 @@ def _new_user(db_session, prefix: str = "journey") -> User:
     return user
 
 
-def _capture_events(event_bus: EventBus, event_types: list[str]) -> list[tuple[str, dict]]:
+def _capture_events(
+    event_bus: EventBus, event_types: list[str]
+) -> list[tuple[str, dict]]:
     captured: list[tuple[str, dict]] = []
 
     for event_type in event_types:
@@ -188,7 +190,9 @@ def test_journey_new_user_first_week(db_session):
         created_at=start,
         categories=categories,
     )
-    _apply_pending_quest_rewards_to_theme(db_session, theme, event_log, applied_quest_ids)
+    _apply_pending_quest_rewards_to_theme(
+        db_session, theme, event_log, applied_quest_ids
+    )
     assert day1_entry.processing_status == "completed"
     assert db_session.query(UserTitle).filter(UserTitle.user_id == user.id).count() >= 1
 
@@ -201,7 +205,9 @@ def test_journey_new_user_first_week(db_session):
         created_at=start + timedelta(days=1),
         categories=categories,
     )
-    _apply_pending_quest_rewards_to_theme(db_session, theme, event_log, applied_quest_ids)
+    _apply_pending_quest_rewards_to_theme(
+        db_session, theme, event_log, applied_quest_ids
+    )
     db_session.refresh(quest)
     assert quest.completion_progress in (66, 67)
 
@@ -235,7 +241,9 @@ def test_journey_new_user_first_week(db_session):
         created_at=start + timedelta(days=6),
         categories=categories,
     )
-    _apply_pending_quest_rewards_to_theme(db_session, theme, event_log, applied_quest_ids)
+    _apply_pending_quest_rewards_to_theme(
+        db_session, theme, event_log, applied_quest_ids
+    )
 
     db_session.refresh(theme)
     db_session.refresh(skill)
@@ -249,14 +257,17 @@ def test_journey_new_user_first_week(db_session):
     assert quest.status == "completed"
     assert (
         db_session.query(UserMissionQuest)
-        .filter(UserMissionQuest.user_id == user.id, UserMissionQuest.status == "completed")
+        .filter(
+            UserMissionQuest.user_id == user.id, UserMissionQuest.status == "completed"
+        )
         .count()
         >= 1
     )
     assert "journal" in theme.theme_metadata.get("xp_breakdown", {})
     assert "quest" in theme.theme_metadata.get("xp_breakdown", {})
     assert (
-        db_session.query(JournalEntry).filter(JournalEntry.user_id == user.id).count() == 7
+        db_session.query(JournalEntry).filter(JournalEntry.user_id == user.id).count()
+        == 7
     )
 
 
@@ -510,7 +521,11 @@ def test_journey_skill_progression_to_master(db_session):
     quest_templates = [
         MissionQuestTemplate(
             name="Skill Minutes",
-            completion_condition={"type": "accumulation", "target": 600, "unit": "minutes"},
+            completion_condition={
+                "type": "accumulation",
+                "target": 600,
+                "unit": "minutes",
+            },
             reward_xp=80,
         ),
         MissionQuestTemplate(
@@ -575,7 +590,9 @@ def test_journey_skill_progression_to_master(db_session):
         db_session.get(TitleTemplate, user_title.title_template_id).name
         for user_title in owned_titles
     }
-    assert {"Amateur Spark", "Expert Forge", "Master Architect"}.issubset(owned_title_names)
+    assert {"Amateur Spark", "Expert Forge", "Master Architect"}.issubset(
+        owned_title_names
+    )
 
     breakdown = skill.skill_metadata.get("xp_breakdown", {})
     assert breakdown.get("practice", 0) > breakdown.get("journal", 0)
@@ -611,21 +628,32 @@ def test_journey_quest_completionist(db_session):
         templates.append(
             MissionQuestTemplate(
                 name=f"Accum {i}",
-                completion_condition={"type": "accumulation", "target": 30, "unit": "minutes"},
+                completion_condition={
+                    "type": "accumulation",
+                    "target": 30,
+                    "unit": "minutes",
+                },
                 reward_xp=40,
             )
         )
         templates.append(
             MissionQuestTemplate(
                 name=f"Frequency {i}",
-                completion_condition={"type": "frequency", "target": 3, "period": "week"},
+                completion_condition={
+                    "type": "frequency",
+                    "target": 3,
+                    "period": "week",
+                },
                 reward_xp=30,
             )
         )
         templates.append(
             MissionQuestTemplate(
                 name=f"Keyword {i}",
-                completion_condition={"type": "keyword_match", "keywords": [f"keyword{i}"]},
+                completion_condition={
+                    "type": "keyword_match",
+                    "keywords": [f"keyword{i}"],
+                },
                 reward_xp=20,
             )
         )
@@ -672,7 +700,9 @@ def test_journey_quest_completionist(db_session):
 
     completed_quests = (
         db_session.query(UserMissionQuest)
-        .filter(UserMissionQuest.user_id == user.id, UserMissionQuest.status == "completed")
+        .filter(
+            UserMissionQuest.user_id == user.id, UserMissionQuest.status == "completed"
+        )
         .all()
     )
     assert len(completed_quests) == 20
@@ -682,7 +712,9 @@ def test_journey_quest_completionist(db_session):
 
     title_names = {
         db_session.get(TitleTemplate, user_title.title_template_id).name
-        for user_title in db_session.query(UserTitle).filter(UserTitle.user_id == user.id).all()
+        for user_title in db_session.query(UserTitle)
+        .filter(UserTitle.user_id == user.id)
+        .all()
     }
     assert "Quest Master" in title_names
 

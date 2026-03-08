@@ -10,6 +10,7 @@ Tests cover:
 
 Follows the AAA pattern: Arrange, Act, Assert
 """
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 
@@ -330,9 +331,9 @@ class TestUserModel:
         # Assert
         from app.models.theme import Theme
 
-        remaining_themes = db_session.query(Theme).filter(
-            Theme.user_id == user_id
-        ).all()
+        remaining_themes = (
+            db_session.query(Theme).filter(Theme.user_id == user_id).all()
+        )
         assert len(remaining_themes) == 0
 
     # =========================================================================
@@ -447,9 +448,7 @@ class TestUserModel:
         db_session.commit()
 
         # Assert
-        remaining = db_session.query(EventLog).filter(
-            EventLog.user_id == user_id
-        ).all()
+        remaining = db_session.query(EventLog).filter(EventLog.user_id == user_id).all()
         assert len(remaining) == 0
 
     def test_user_deletion_cascades_to_items(self, db_session, sample_user):
@@ -474,7 +473,5 @@ class TestUserModel:
         db_session.commit()
 
         # Assert
-        remaining = db_session.query(UserItem).filter(
-            UserItem.user_id == user_id
-        ).all()
+        remaining = db_session.query(UserItem).filter(UserItem.user_id == user_id).all()
         assert len(remaining) == 0

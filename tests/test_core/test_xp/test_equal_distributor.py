@@ -1,6 +1,7 @@
 """
 Tests for EqualDistributor XP strategy.
 """
+
 import pytest
 
 from app.core.xp.strategies.equal_distributor import EqualDistributor

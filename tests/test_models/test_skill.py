@@ -10,6 +10,7 @@ Tests cover:
 
 Follows the AAA pattern: Arrange, Act, Assert
 """
+
 import pytest
 
 from app.models.skill import Skill
@@ -26,10 +27,7 @@ class TestSkillModel:
         """Should progress from Beginner to Amateur at level 5."""
         # Arrange
         skill = Skill(
-            user_id=sample_user.id,
-            name="Test Skill",
-            level=0,
-            rank="Beginner"
+            user_id=sample_user.id, name="Test Skill", level=0, rank="Beginner"
         )
         db_session.add(skill)
         db_session.commit()
@@ -110,9 +108,7 @@ class TestSkillModel:
         """Adding practice time should increment total practice_time_minutes."""
         # Arrange
         skill = Skill(
-            user_id=sample_user.id,
-            name="Test Skill",
-            practice_time_minutes=0
+            user_id=sample_user.id, name="Test Skill", practice_time_minutes=0
         )
         db_session.add(skill)
         db_session.commit()
@@ -165,9 +161,7 @@ class TestSkillModel:
 
         # Act
         child_skill = Skill(
-            user_id=sample_user.id,
-            name="Python",
-            parent_skill_id=parent_skill.id
+            user_id=sample_user.id, name="Python", parent_skill_id=parent_skill.id
         )
         db_session.add(child_skill)
         db_session.commit()
@@ -186,15 +180,9 @@ class TestSkillModel:
         db_session.commit()
 
         # Act
-        child1 = Skill(
-            user_id=sample_user.id,
-            name="Python",
-            parent_skill_id=parent.id
-        )
+        child1 = Skill(user_id=sample_user.id, name="Python", parent_skill_id=parent.id)
         child2 = Skill(
-            user_id=sample_user.id,
-            name="JavaScript",
-            parent_skill_id=parent.id
+            user_id=sample_user.id, name="JavaScript", parent_skill_id=parent.id
         )
         db_session.add_all([child1, child2])
         db_session.commit()
@@ -210,7 +198,9 @@ class TestSkillModel:
     # CREATION TESTS
     # =========================================================================
 
-    def test_skill_creation_with_valid_data(self, db_session, sample_user, sample_theme):
+    def test_skill_creation_with_valid_data(
+        self, db_session, sample_user, sample_theme
+    ):
         """Should create skill with all required fields populated correctly."""
         # Arrange
         name = "Python Programming"
@@ -221,7 +211,7 @@ class TestSkillModel:
             user_id=sample_user.id,
             theme_id=sample_theme.id,
             name=name,
-            description=description
+            description=description,
         )
         db_session.add(skill)
         db_session.commit()
@@ -279,7 +269,7 @@ class TestSkillModel:
             name="Test Skill",
             xp=0,
             level=0,
-            xp_to_next_level=50
+            xp_to_next_level=50,
         )
         db_session.add(skill)
         db_session.commit()
@@ -300,7 +290,7 @@ class TestSkillModel:
             name="Test Skill",
             xp=0,
             level=0,
-            xp_to_next_level=50
+            xp_to_next_level=50,
         )
         db_session.add(skill)
         db_session.commit()
@@ -322,7 +312,7 @@ class TestSkillModel:
             name="Test Skill",
             xp=0,
             level=0,
-            xp_to_next_level=50
+            xp_to_next_level=50,
         )
         db_session.add(skill)
         db_session.commit()
@@ -351,8 +341,8 @@ class TestSkillModel:
 
         # Assert
         assert xp_level_0 == 50.0  # 50 * 1.2^0 = 50
-        assert abs(xp_level_5 - 50 * (1.2 ** 5)) < 0.01  # ~124.4
-        assert abs(xp_level_10 - 50 * (1.2 ** 10)) < 0.01  # ~309.6
+        assert abs(xp_level_5 - 50 * (1.2**5)) < 0.01  # ~124.4
+        assert abs(xp_level_10 - 50 * (1.2**10)) < 0.01  # ~309.6
         assert xp_level_10 > xp_level_5 > xp_level_0
 
     # =========================================================================
@@ -368,7 +358,7 @@ class TestSkillModel:
             level=4,
             xp=0,
             xp_to_next_level=50,
-            rank="Beginner"
+            rank="Beginner",
         )
         db_session.add(skill)
         db_session.commit()
@@ -402,9 +392,7 @@ class TestSkillModel:
         """Skill should have bidirectional relationship with theme."""
         # Arrange & Act
         skill = Skill(
-            user_id=sample_user.id,
-            theme_id=sample_theme.id,
-            name="Test Skill"
+            user_id=sample_user.id, theme_id=sample_theme.id, name="Test Skill"
         )
         db_session.add(skill)
         db_session.commit()
@@ -444,7 +432,9 @@ class TestSkillModel:
 
         assert "cannot be negative" in str(exc_info.value)
 
-    def test_skill_add_practice_time_negative_raises_error(self, db_session, sample_user):
+    def test_skill_add_practice_time_negative_raises_error(
+        self, db_session, sample_user
+    ):
         """Adding negative practice time should raise ValueError."""
         # Arrange
         skill = Skill(user_id=sample_user.id, name="Test Skill")
@@ -461,10 +451,7 @@ class TestSkillModel:
         """Multiple practice sessions should accumulate time and XP."""
         # Arrange
         skill = Skill(
-            user_id=sample_user.id,
-            name="Test Skill",
-            practice_time_minutes=0,
-            xp=0
+            user_id=sample_user.id, name="Test Skill", practice_time_minutes=0, xp=0
         )
         db_session.add(skill)
         db_session.commit()
@@ -479,7 +466,9 @@ class TestSkillModel:
         assert skill.practice_time_minutes == 60  # Total 60 minutes
         assert skill.xp == 30.0  # Total 30 XP
 
-    def test_skill_add_practice_time_with_zero_multiplier(self, db_session, sample_user):
+    def test_skill_add_practice_time_with_zero_multiplier(
+        self, db_session, sample_user
+    ):
         """Zero multiplier should add time but not XP."""
         # Arrange
         skill = Skill(user_id=sample_user.id, name="Test Skill", xp=10)
@@ -543,7 +532,9 @@ class TestSkillModel:
         assert skill.xp == 10
         assert skill.xp_to_next_level > 50
 
-    def test_skill_calculate_next_level_xp_negative_level(self, db_session, sample_user):
+    def test_skill_calculate_next_level_xp_negative_level(
+        self, db_session, sample_user
+    ):
         """Negative level should still calculate XP (no validation enforced)."""
         # Arrange
         skill = Skill(user_id=sample_user.id, name="Test Skill", level=-1)
@@ -554,7 +545,7 @@ class TestSkillModel:
         xp_required = skill.calculate_next_level_xp()
 
         # Assert
-        assert xp_required == 50.0 * (1.2 ** -1)
+        assert xp_required == 50.0 * (1.2**-1)
 
     def test_skill_update_rank_with_manual_level(self, db_session, sample_user):
         """update_rank should map ranks correctly for manual level changes."""
@@ -576,12 +567,7 @@ class TestSkillModel:
     def test_skill_repr(self, db_session, sample_user):
         """Should return readable string representation."""
         # Arrange
-        skill = Skill(
-            user_id=sample_user.id,
-            name="Python",
-            level=5,
-            rank="Amateur"
-        )
+        skill = Skill(user_id=sample_user.id, name="Python", level=5, rank="Amateur")
 
         # Act
         repr_string = repr(skill)
@@ -600,19 +586,13 @@ class TestSkillModel:
         db_session.add(level1)
         db_session.commit()
 
-        level2 = Skill(
-            user_id=sample_user.id,
-            name="Python",
-            parent_skill_id=level1.id
-        )
+        level2 = Skill(user_id=sample_user.id, name="Python", parent_skill_id=level1.id)
         db_session.add(level2)
         db_session.commit()
 
         # Act
         level3 = Skill(
-            user_id=sample_user.id,
-            name="Data Analysis",
-            parent_skill_id=level2.id
+            user_id=sample_user.id, name="Data Analysis", parent_skill_id=level2.id
         )
         db_session.add(level3)
         db_session.commit()

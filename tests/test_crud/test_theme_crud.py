@@ -12,6 +12,7 @@ This module tests all CRUD functions in app/crud/theme.py:
 
 Uses db_session and sample_user fixtures from conftest.py.
 """
+
 import pytest
 from pydantic import ValidationError  # type: ignore[import-not-found]
 
@@ -24,7 +25,6 @@ from app.crud.theme import (
     get_user_themes,
     update_theme,
 )
-from app.models.theme import Theme
 from app.models.skill import Skill
 from app.schemas.theme import ThemeCreate, ThemeUpdate
 
@@ -219,7 +219,9 @@ class TestThemeCRUD:
         # Assert
         assert result == []
 
-    def test_get_user_themes_only_returns_user_themes(self, db_session, sample_user, fake):
+    def test_get_user_themes_only_returns_user_themes(
+        self, db_session, sample_user, fake
+    ):
         """Should only return themes for the specified user."""
         # Arrange - Create another user with themes
         from app.models.user import User
@@ -270,7 +272,9 @@ class TestThemeCRUD:
         child_names = {c.name for c in result.sub_themes}
         assert child_names == {"Child 1", "Child 2"}
 
-    def test_get_theme_with_subthemes_only_direct_children(self, db_session, sample_user):
+    def test_get_theme_with_subthemes_only_direct_children(
+        self, db_session, sample_user
+    ):
         """Should include only direct children, not grandchildren."""
         # Arrange - Create parent -> child -> grandchild
         parent = create_theme(
@@ -631,11 +635,15 @@ class TestThemeCRUD:
 
         child1 = create_theme(
             db_session,
-            ThemeCreate(name="Child 1", user_id=sample_user.id, parent_theme_id=parent.id),
+            ThemeCreate(
+                name="Child 1", user_id=sample_user.id, parent_theme_id=parent.id
+            ),
         )
         child2 = create_theme(
             db_session,
-            ThemeCreate(name="Child 2", user_id=sample_user.id, parent_theme_id=parent.id),
+            ThemeCreate(
+                name="Child 2", user_id=sample_user.id, parent_theme_id=parent.id
+            ),
         )
 
         parent_id = parent.id
@@ -668,11 +676,15 @@ class TestThemeCRUD:
 
         child1 = create_theme(
             db_session,
-            ThemeCreate(name="Child 1", user_id=sample_user.id, parent_theme_id=parent.id),
+            ThemeCreate(
+                name="Child 1", user_id=sample_user.id, parent_theme_id=parent.id
+            ),
         )
         child2 = create_theme(
             db_session,
-            ThemeCreate(name="Child 2", user_id=sample_user.id, parent_theme_id=parent.id),
+            ThemeCreate(
+                name="Child 2", user_id=sample_user.id, parent_theme_id=parent.id
+            ),
         )
 
         parent_id = parent.id
@@ -700,7 +712,9 @@ class TestThemeCRUD:
         assert child1_after.parent_theme_id is None
         assert child2_after.parent_theme_id is None
 
-    def test_delete_parent_with_grandchildren_orphans_children_only(self, db_session, sample_user):
+    def test_delete_parent_with_grandchildren_orphans_children_only(
+        self, db_session, sample_user
+    ):
         """Deleting parent should orphan children while preserving grandchild links."""
         # Arrange
         parent = create_theme(

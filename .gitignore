@@ -21,6 +21,8 @@ ENV/
 data/*.db
 data/*.sqlite
 data/*.sqlite3
+data/qdrant_local/
+data/qdrant_local_test/
 data/backups/*
 data/voice_uploads/*
 logs/*

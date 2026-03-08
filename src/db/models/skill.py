@@ -6,6 +6,7 @@ Tables:
     themes               — 12 broad life themes (progress ~1000x slower)
     skill_theme_mappings — many-to-many between skills and themes (Q22)
 """
+
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
@@ -98,27 +99,41 @@ class Skill(Base):
     # Decay tracking
     # ------------------------------------------------------------------
     staleness: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    last_activity_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_activity_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
     decay_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # ------------------------------------------------------------------
     # Q35: Post-MVP specialist branching
     # ------------------------------------------------------------------
-    is_specialist_track: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    branch_unlocked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    is_specialist_track: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    branch_unlocked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True
+    )
 
     # ------------------------------------------------------------------
     # Global KB link (nullable — populated when skill is matched to KB)
-    # FK to global_skills.id will be added when that table is implemented
     # ------------------------------------------------------------------
-    global_skill_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    global_skill_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("global_skills.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # ------------------------------------------------------------------
     # Timestamps
     # ------------------------------------------------------------------
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     # ------------------------------------------------------------------
@@ -144,7 +159,9 @@ class Skill(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "id", name="uq_skills_user_id"),
-        UniqueConstraint("user_id", "canonical_name", name="uq_skills_user_canonical_name"),
+        UniqueConstraint(
+            "user_id", "canonical_name", name="uq_skills_user_canonical_name"
+        ),
         Index("idx_skills_user", "user_id"),
         Index("idx_skills_user_level", "user_id", "level"),
         Index("idx_skills_user_rank", "user_id", "rank"),
@@ -198,9 +215,14 @@ class Theme(Base):
     rank: Mapped[str] = mapped_column(String(3), nullable=False, default="F")
     xp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+        DateTime,
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     # ------------------------------------------------------------------
@@ -266,7 +288,9 @@ class SkillThemeMapping(Base):
     skill_id: Mapped[str] = mapped_column(String(36), nullable=False)
     theme_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
 
     # ------------------------------------------------------------------
     # Relationships
@@ -301,7 +325,9 @@ class SkillThemeMapping(Base):
             name="fk_skill_theme_mappings_theme",
         ),
         UniqueConstraint(
-            "user_id", "skill_id", "theme_id",
+            "user_id",
+            "skill_id",
+            "theme_id",
             name="uq_skill_theme_mappings_user_skill_theme",
         ),
         Index("idx_skill_theme_user_skill", "user_id", "skill_id"),
@@ -309,4 +335,6 @@ class SkillThemeMapping(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<SkillThemeMapping skill_id={self.skill_id!r} theme_id={self.theme_id!r}>"
+        return (
+            f"<SkillThemeMapping skill_id={self.skill_id!r} theme_id={self.theme_id!r}>"
+        )

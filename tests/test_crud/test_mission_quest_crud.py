@@ -7,6 +7,7 @@ This module tests all CRUD functions in app/crud/mission_quest.py:
 
 Uses db_session and sample_user fixtures from conftest.py.
 """
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -25,7 +26,6 @@ from app.crud.mission_quest import (
     update_mq_progress,
     update_user_mq,
 )
-from app.models.mission_quest import MissionQuestTemplate, UserMissionQuest
 from app.models.user import User
 from app.schemas.mission_quest import (
     MQTemplateCreate,
@@ -349,11 +349,15 @@ class TestUserMissionQuestCRUD:
         # Arrange
         create_user_mq(
             db_session,
-            UserMQCreate(name="Not Started", user_id=sample_user.id, status="not_started"),
+            UserMQCreate(
+                name="Not Started", user_id=sample_user.id, status="not_started"
+            ),
         )
         create_user_mq(
             db_session,
-            UserMQCreate(name="In Progress", user_id=sample_user.id, status="in_progress"),
+            UserMQCreate(
+                name="In Progress", user_id=sample_user.id, status="in_progress"
+            ),
         )
 
         # Act
@@ -397,11 +401,15 @@ class TestUserMissionQuestCRUD:
         )
         create_user_mq(
             db_session,
-            UserMQCreate(name="Child 1", user_id=sample_user.id, parent_mq_id=parent.id),
+            UserMQCreate(
+                name="Child 1", user_id=sample_user.id, parent_mq_id=parent.id
+            ),
         )
         create_user_mq(
             db_session,
-            UserMQCreate(name="Child 2", user_id=sample_user.id, parent_mq_id=parent.id),
+            UserMQCreate(
+                name="Child 2", user_id=sample_user.id, parent_mq_id=parent.id
+            ),
         )
 
         # Act
@@ -426,7 +434,9 @@ class TestUserMissionQuestCRUD:
         )
         create_user_mq(
             db_session,
-            UserMQCreate(name="Grandchild", user_id=sample_user.id, parent_mq_id=child.id),
+            UserMQCreate(
+                name="Grandchild", user_id=sample_user.id, parent_mq_id=child.id
+            ),
         )
 
         # Act
@@ -533,7 +543,10 @@ class TestUserMissionQuestCRUD:
 
         assert result is not None
         assert result.autostart is True
-        assert result.autostart_condition == {"type": "keyword_match", "keywords": ["gym"]}
+        assert result.autostart_condition == {
+            "type": "keyword_match",
+            "keywords": ["gym"],
+        }
 
     def test_update_user_mq_empty_update(self, db_session, sample_user):
         """Should allow empty update with no changes."""
@@ -602,11 +615,15 @@ class TestUserMissionQuestCRUD:
         )
         child1 = create_user_mq(
             db_session,
-            UserMQCreate(name="Child 1", user_id=sample_user.id, parent_mq_id=parent.id),
+            UserMQCreate(
+                name="Child 1", user_id=sample_user.id, parent_mq_id=parent.id
+            ),
         )
         child2 = create_user_mq(
             db_session,
-            UserMQCreate(name="Child 2", user_id=sample_user.id, parent_mq_id=parent.id),
+            UserMQCreate(
+                name="Child 2", user_id=sample_user.id, parent_mq_id=parent.id
+            ),
         )
 
         # Act
@@ -650,7 +667,9 @@ class TestUserMissionQuestCRUD:
         # Assert
         assert result is False
 
-    def test_delete_user_mq_already_deleted_returns_false(self, db_session, sample_user):
+    def test_delete_user_mq_already_deleted_returns_false(
+        self, db_session, sample_user
+    ):
         """Should return False when deleting quest twice."""
         # Arrange
         user_mq = create_user_mq(

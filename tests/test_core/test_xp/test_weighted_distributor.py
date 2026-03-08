@@ -1,6 +1,7 @@
 """
 Tests for WeightedDistributor XP strategy.
 """
+
 import pytest
 
 from app.core.xp.strategies.weighted_distributor import WeightedDistributor
@@ -10,7 +11,10 @@ class TestWeightedDistributor:
     def test_weighted_distribution_by_confidence(self) -> None:
         strategy = WeightedDistributor()
         categories = {
-            "themes": [{"id": "t1", "confidence": 0.9}, {"id": "t2", "confidence": 0.6}],
+            "themes": [
+                {"id": "t1", "confidence": 0.9},
+                {"id": "t2", "confidence": 0.6},
+            ],
             "skills": [{"id": "s1", "confidence": 0.7}],
         }
 
@@ -33,7 +37,9 @@ class TestWeightedDistributor:
         assert result["theme:t1"] == pytest.approx(80.0 * (1.0 / total_weight))
         assert result["skill:s1"] == pytest.approx(80.0 * (3.0 / total_weight))
 
-    def test_weighted_distribution_all_equal_confidence_equals_equal_distribution(self) -> None:
+    def test_weighted_distribution_all_equal_confidence_equals_equal_distribution(
+        self,
+    ) -> None:
         strategy = WeightedDistributor()
         categories = {
             "themes": [{"id": "t1", "confidence": 1.0}],
@@ -47,7 +53,10 @@ class TestWeightedDistributor:
     def test_weighted_distribution_preserves_total_xp(self) -> None:
         strategy = WeightedDistributor()
         categories = {
-            "themes": [{"id": "t1", "confidence": 0.2}, {"id": "t2", "confidence": 0.8}],
+            "themes": [
+                {"id": "t1", "confidence": 0.2},
+                {"id": "t2", "confidence": 0.8},
+            ],
             "skills": [{"id": "s1", "confidence": 0.5}],
         }
 

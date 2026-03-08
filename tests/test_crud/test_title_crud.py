@@ -7,6 +7,7 @@ This module tests all CRUD functions in app/crud/title.py:
 
 Uses db_session and sample_user fixtures from conftest.py.
 """
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -25,7 +26,6 @@ from app.crud.title import (
     remove_user_title,
     unequip_title,
 )
-from app.models.title import TitleTemplate, UserTitle
 from app.models.user import User
 from app.schemas.title import TitleTemplateCreate, UserTitleCreate
 
@@ -115,13 +115,15 @@ class TestTitleTemplateCRUD:
         """Should raise ValidationError for extra fields."""
         # Act & Assert
         with pytest.raises(ValidationError):
-            TitleTemplateCreate.model_validate({
-                "name": "Valid",
-                "description_template": "desc",
-                "effect": {},
-                "unlock_condition": {},
-                "extra": "field",
-            })
+            TitleTemplateCreate.model_validate(
+                {
+                    "name": "Valid",
+                    "description_template": "desc",
+                    "effect": {},
+                    "unlock_condition": {},
+                    "extra": "field",
+                }
+            )
 
     # =========================================================================
     # READ TESTS
@@ -326,7 +328,9 @@ class TestUserTitleCRUD:
         with pytest.raises(ValidationError):
             UserTitleCreate(user_id="not-a-uuid", title_template_id=template.id)
 
-    def test_award_title_invalid_template_id_raises_validation_error(self, db_session, sample_user):
+    def test_award_title_invalid_template_id_raises_validation_error(
+        self, db_session, sample_user
+    ):
         """Should raise ValidationError for invalid title_template_id UUID."""
         # Act & Assert
         with pytest.raises(ValidationError):
@@ -426,7 +430,7 @@ class TestUserTitleCRUD:
             db_session,
             UserTitleCreate(user_id=sample_user.id, title_template_id=template1.id),
         )
-        t2 = award_title_to_user(
+        award_title_to_user(
             db_session,
             UserTitleCreate(
                 user_id=sample_user.id,
@@ -443,7 +447,9 @@ class TestUserTitleCRUD:
         assert result[0].id == t1.id
         assert result[0].is_equipped is True
 
-    def test_get_user_titles_only_returns_user_titles(self, db_session, sample_user, fake):
+    def test_get_user_titles_only_returns_user_titles(
+        self, db_session, sample_user, fake
+    ):
         """Should only return titles for the specified user."""
         # Arrange - Create another user
         other_user = User(username=fake.user_name(), email=fake.email())
@@ -628,7 +634,9 @@ class TestUserTitleCRUD:
         # Assert
         assert result is False
 
-    def test_remove_user_title_already_removed_returns_false(self, db_session, sample_user):
+    def test_remove_user_title_already_removed_returns_false(
+        self, db_session, sample_user
+    ):
         """Should return False when removing title twice."""
         # Arrange
         template = create_title_template(

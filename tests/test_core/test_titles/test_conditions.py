@@ -1,6 +1,7 @@
 """
 Tests for concrete title unlock condition evaluators.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -45,7 +46,9 @@ def _create_user(db_session) -> User:
     return user
 
 
-def _create_journal_entry(db_session, user_id: str, created_at: datetime | None = None) -> JournalEntry:
+def _create_journal_entry(
+    db_session, user_id: str, created_at: datetime | None = None
+) -> JournalEntry:
     entry = JournalEntry(
         user_id=user_id,
         content="Entry",
@@ -56,7 +59,9 @@ def _create_journal_entry(db_session, user_id: str, created_at: datetime | None 
     return entry
 
 
-def _create_quest(db_session, user_id: str, status: str = "completed") -> UserMissionQuest:
+def _create_quest(
+    db_session, user_id: str, status: str = "completed"
+) -> UserMissionQuest:
     quest = UserMissionQuest(
         user_id=user_id,
         name=f"Quest {uuid4().hex[:6]}",
@@ -102,7 +107,9 @@ class TestJournalStreakCondition:
         evaluator = JournalStreakCondition()
         start = datetime(2025, 1, 1)
         for offset in range(7):
-            _create_journal_entry(db_session, sample_user.id, start + timedelta(days=offset))
+            _create_journal_entry(
+                db_session, sample_user.id, start + timedelta(days=offset)
+            )
 
         condition = {"type": "journal_streak", "value": 7}
 
@@ -112,7 +119,9 @@ class TestJournalStreakCondition:
         evaluator = JournalStreakCondition()
         start = datetime(2025, 1, 1)
         for offset in range(3):
-            _create_journal_entry(db_session, sample_user.id, start + timedelta(days=offset))
+            _create_journal_entry(
+                db_session, sample_user.id, start + timedelta(days=offset)
+            )
 
         condition = {"type": "journal_streak", "value": 7}
 
@@ -122,7 +131,9 @@ class TestJournalStreakCondition:
         evaluator = JournalStreakCondition()
         start = datetime(2025, 2, 1)
         for offset in range(5):
-            _create_journal_entry(db_session, sample_user.id, start + timedelta(days=offset))
+            _create_journal_entry(
+                db_session, sample_user.id, start + timedelta(days=offset)
+            )
 
         condition = {"type": "journal_streak", "value": 5}
 
@@ -133,13 +144,17 @@ class TestConditionHelpers:
     def test_max_consecutive_streak_empty_list(self) -> None:
         assert _max_consecutive_streak([]) == 0
 
-    def test_journal_streak_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_journal_streak_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = JournalStreakCondition()
         condition = {"type": "journal_streak", "value": 1}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_journal_streak_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_journal_streak_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = JournalStreakCondition()
         with pytest.raises(KeyError):
             evaluator.evaluate(db_session, sample_user.id, {"type": "journal_streak"})
@@ -148,7 +163,9 @@ class TestConditionHelpers:
         evaluator = JournalStreakCondition()
         start = datetime(2025, 3, 1)
         for offset in range(3):
-            _create_journal_entry(db_session, sample_user.id, start + timedelta(days=offset))
+            _create_journal_entry(
+                db_session, sample_user.id, start + timedelta(days=offset)
+            )
         _create_journal_entry(db_session, sample_user.id, start + timedelta(days=4))
         _create_journal_entry(db_session, sample_user.id, start + timedelta(days=5))
 
@@ -172,7 +189,9 @@ class TestConditionHelpers:
         other_user = _create_user(db_session)
         start = datetime(2025, 5, 1)
         for offset in range(4):
-            _create_journal_entry(db_session, other_user.id, start + timedelta(days=offset))
+            _create_journal_entry(
+                db_session, other_user.id, start + timedelta(days=offset)
+            )
 
         condition = {"type": "journal_streak", "value": 3}
 
@@ -198,7 +217,9 @@ class TestThemeLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_theme_level_exact_threshold(self, db_session, sample_user, sample_theme) -> None:
+    def test_theme_level_exact_threshold(
+        self, db_session, sample_user, sample_theme
+    ) -> None:
         evaluator = ThemeLevelCondition()
         sample_theme.level = 7
         db_session.commit()
@@ -207,16 +228,24 @@ class TestThemeLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_theme_level_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_theme_level_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = ThemeLevelCondition()
         condition = {"type": "theme_level", "theme": "Missing", "value": 1}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_theme_level_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_theme_level_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = ThemeLevelCondition()
         with pytest.raises(KeyError):
-            evaluator.evaluate(db_session, sample_user.id, {"type": "theme_level", "theme": "Education"})
+            evaluator.evaluate(
+                db_session,
+                sample_user.id,
+                {"type": "theme_level", "theme": "Education"},
+            )
 
     def test_theme_level_edge_case_1(self, db_session, sample_user) -> None:
         evaluator = ThemeLevelCondition()
@@ -229,7 +258,9 @@ class TestThemeLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_theme_level_edge_case_2(self, db_session, sample_user, sample_theme) -> None:
+    def test_theme_level_edge_case_2(
+        self, db_session, sample_user, sample_theme
+    ) -> None:
         evaluator = ThemeLevelCondition()
         sample_theme.level = 0
         db_session.commit()
@@ -238,7 +269,9 @@ class TestThemeLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_theme_level_with_multiple_users(self, db_session, sample_user, sample_theme) -> None:
+    def test_theme_level_with_multiple_users(
+        self, db_session, sample_user, sample_theme
+    ) -> None:
         evaluator = ThemeLevelCondition()
         sample_theme.level = 1
         other_user = _create_user(db_session)
@@ -250,7 +283,9 @@ class TestThemeLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_theme_level_does_not_mutate_condition(self, db_session, sample_user, sample_theme) -> None:
+    def test_theme_level_does_not_mutate_condition(
+        self, db_session, sample_user, sample_theme
+    ) -> None:
         evaluator = ThemeLevelCondition()
         sample_theme.level = 2
         db_session.commit()
@@ -282,7 +317,9 @@ class TestSkillLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_skill_level_exact_threshold(self, db_session, sample_user, sample_skill) -> None:
+    def test_skill_level_exact_threshold(
+        self, db_session, sample_user, sample_skill
+    ) -> None:
         evaluator = SkillLevelCondition()
         sample_skill.level = 9
         db_session.commit()
@@ -291,16 +328,22 @@ class TestSkillLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_skill_level_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_skill_level_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = SkillLevelCondition()
         condition = {"type": "skill_level", "skill": "Missing", "value": 1}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_skill_level_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_skill_level_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = SkillLevelCondition()
         with pytest.raises(KeyError):
-            evaluator.evaluate(db_session, sample_user.id, {"type": "skill_level", "skill": "Python"})
+            evaluator.evaluate(
+                db_session, sample_user.id, {"type": "skill_level", "skill": "Python"}
+            )
 
     def test_skill_level_edge_case_1(self, db_session, sample_user) -> None:
         evaluator = SkillLevelCondition()
@@ -313,7 +356,9 @@ class TestSkillLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_skill_level_edge_case_2(self, db_session, sample_user, sample_skill) -> None:
+    def test_skill_level_edge_case_2(
+        self, db_session, sample_user, sample_skill
+    ) -> None:
         evaluator = SkillLevelCondition()
         sample_skill.level = 0
         db_session.commit()
@@ -322,7 +367,9 @@ class TestSkillLevelCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_skill_level_with_multiple_users(self, db_session, sample_user, sample_skill) -> None:
+    def test_skill_level_with_multiple_users(
+        self, db_session, sample_user, sample_skill
+    ) -> None:
         evaluator = SkillLevelCondition()
         sample_skill.level = 1
         other_user = _create_user(db_session)
@@ -358,7 +405,9 @@ class TestTotalXPCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_total_xp_exact_threshold(self, db_session, sample_user, sample_theme) -> None:
+    def test_total_xp_exact_threshold(
+        self, db_session, sample_user, sample_theme
+    ) -> None:
         evaluator = TotalXPCondition()
         sample_theme.xp = 25.0
         extra_theme = Theme(user_id=sample_user.id, name="Second", xp=75.0)
@@ -376,7 +425,9 @@ class TestTotalXPCondition:
 
         assert evaluator.evaluate(db_session, other_user.id, condition) is False
 
-    def test_total_xp_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_total_xp_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = TotalXPCondition()
         with pytest.raises(KeyError):
             evaluator.evaluate(db_session, sample_user.id, {"type": "total_xp"})
@@ -404,7 +455,9 @@ class TestTotalXPCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_total_xp_with_multiple_users(self, db_session, sample_user, sample_theme) -> None:
+    def test_total_xp_with_multiple_users(
+        self, db_session, sample_user, sample_theme
+    ) -> None:
         evaluator = TotalXPCondition()
         sample_theme.xp = 10.0
         other_user = _create_user(db_session)
@@ -436,7 +489,9 @@ class TestThemeXPCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_theme_xp_exact_threshold(self, db_session, sample_user, sample_theme) -> None:
+    def test_theme_xp_exact_threshold(
+        self, db_session, sample_user, sample_theme
+    ) -> None:
         evaluator = ThemeXPCondition()
         sample_theme.xp = 250.0
         db_session.commit()
@@ -445,16 +500,22 @@ class TestThemeXPCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_theme_xp_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_theme_xp_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = ThemeXPCondition()
         condition = {"type": "theme_xp", "theme": "Missing", "value": 1}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_theme_xp_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_theme_xp_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = ThemeXPCondition()
         with pytest.raises(KeyError):
-            evaluator.evaluate(db_session, sample_user.id, {"type": "theme_xp", "value": 10})
+            evaluator.evaluate(
+                db_session, sample_user.id, {"type": "theme_xp", "value": 10}
+            )
 
     def test_theme_xp_edge_case_1(self, db_session, sample_user, sample_theme) -> None:
         evaluator = ThemeXPCondition()
@@ -477,7 +538,9 @@ class TestThemeXPCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_theme_xp_with_multiple_users(self, db_session, sample_user, sample_theme) -> None:
+    def test_theme_xp_with_multiple_users(
+        self, db_session, sample_user, sample_theme
+    ) -> None:
         evaluator = ThemeXPCondition()
         sample_theme.xp = 25.0
         other_user = _create_user(db_session)
@@ -508,7 +571,9 @@ class TestQuestCompletionCountCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_quest_completion_count_exact_threshold(self, db_session, sample_user) -> None:
+    def test_quest_completion_count_exact_threshold(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = QuestCompletionCountCondition()
         for _ in range(3):
             _create_quest(db_session, sample_user.id, status="completed")
@@ -517,17 +582,23 @@ class TestQuestCompletionCountCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_quest_completion_count_entity_not_found_returns_false(self, db_session) -> None:
+    def test_quest_completion_count_entity_not_found_returns_false(
+        self, db_session
+    ) -> None:
         evaluator = QuestCompletionCountCondition()
         other_user = _create_user(db_session)
         condition = {"type": "quest_completion_count", "value": 1}
 
         assert evaluator.evaluate(db_session, other_user.id, condition) is False
 
-    def test_quest_completion_count_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_quest_completion_count_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = QuestCompletionCountCondition()
         with pytest.raises(KeyError):
-            evaluator.evaluate(db_session, sample_user.id, {"type": "quest_completion_count"})
+            evaluator.evaluate(
+                db_session, sample_user.id, {"type": "quest_completion_count"}
+            )
 
     def test_quest_completion_count_edge_case_1(self, db_session, sample_user) -> None:
         evaluator = QuestCompletionCountCondition()
@@ -549,7 +620,9 @@ class TestQuestCompletionCountCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_quest_completion_count_with_multiple_users(self, db_session, sample_user) -> None:
+    def test_quest_completion_count_with_multiple_users(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = QuestCompletionCountCondition()
         _create_quest(db_session, sample_user.id, status="completed")
         other_user = _create_user(db_session)
@@ -578,7 +651,9 @@ class TestSpecificQuestCompletedCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_specific_quest_completed_exact_threshold(self, db_session, sample_user) -> None:
+    def test_specific_quest_completed_exact_threshold(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = SpecificQuestCompletedCondition()
         quest = _create_quest(db_session, sample_user.id, status="completed")
 
@@ -586,18 +661,26 @@ class TestSpecificQuestCompletedCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_specific_quest_completed_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_specific_quest_completed_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = SpecificQuestCompletedCondition()
         condition = {"type": "specific_quest_completed", "quest_id": "missing"}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_specific_quest_completed_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_specific_quest_completed_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = SpecificQuestCompletedCondition()
         with pytest.raises(KeyError):
-            evaluator.evaluate(db_session, sample_user.id, {"type": "specific_quest_completed"})
+            evaluator.evaluate(
+                db_session, sample_user.id, {"type": "specific_quest_completed"}
+            )
 
-    def test_specific_quest_completed_edge_case_1(self, db_session, sample_user) -> None:
+    def test_specific_quest_completed_edge_case_1(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = SpecificQuestCompletedCondition()
         other_user = _create_user(db_session)
         quest = _create_quest(db_session, other_user.id, status="completed")
@@ -606,7 +689,9 @@ class TestSpecificQuestCompletedCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_specific_quest_completed_edge_case_2(self, db_session, sample_user) -> None:
+    def test_specific_quest_completed_edge_case_2(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = SpecificQuestCompletedCondition()
         quest = _create_quest(db_session, sample_user.id, status="COMPLETED")
 
@@ -614,7 +699,9 @@ class TestSpecificQuestCompletedCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_specific_quest_completed_with_multiple_users(self, db_session, sample_user) -> None:
+    def test_specific_quest_completed_with_multiple_users(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = SpecificQuestCompletedCondition()
         quest = _create_quest(db_session, sample_user.id, status="completed")
         other_user = _create_user(db_session)
@@ -644,7 +731,9 @@ class TestSkillRankCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_skill_rank_exact_threshold(self, db_session, sample_user, sample_skill) -> None:
+    def test_skill_rank_exact_threshold(
+        self, db_session, sample_user, sample_skill
+    ) -> None:
         evaluator = SkillRankCondition()
         sample_skill.rank = "Intermediate"
         db_session.commit()
@@ -671,12 +760,16 @@ class TestSkillRankCondition:
 
         assert evaluator.evaluate(db_session, other_user.id, condition) is False
 
-    def test_skill_rank_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_skill_rank_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = SkillRankCondition()
         with pytest.raises(KeyError):
             evaluator.evaluate(db_session, sample_user.id, {"type": "skill_rank"})
 
-    def test_skill_rank_edge_case_1(self, db_session, sample_user, sample_skill) -> None:
+    def test_skill_rank_edge_case_1(
+        self, db_session, sample_user, sample_skill
+    ) -> None:
         evaluator = SkillRankCondition()
         sample_skill.rank = "Beginner"
         extra_skill = Skill(user_id=sample_user.id, name="Extra", rank="Master")
@@ -687,7 +780,9 @@ class TestSkillRankCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_skill_rank_edge_case_2(self, db_session, sample_user, sample_skill) -> None:
+    def test_skill_rank_edge_case_2(
+        self, db_session, sample_user, sample_skill
+    ) -> None:
         evaluator = SkillRankCondition()
         sample_skill.rank = "Expert"
         db_session.commit()
@@ -696,7 +791,9 @@ class TestSkillRankCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_skill_rank_with_multiple_users(self, db_session, sample_user, sample_skill) -> None:
+    def test_skill_rank_with_multiple_users(
+        self, db_session, sample_user, sample_skill
+    ) -> None:
         evaluator = SkillRankCondition()
         sample_skill.rank = "Beginner"
         other_user = _create_user(db_session)
@@ -708,7 +805,9 @@ class TestSkillRankCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_skill_rank_invalid_rank_returns_false(self, db_session, sample_user, sample_skill) -> None:
+    def test_skill_rank_invalid_rank_returns_false(
+        self, db_session, sample_user, sample_skill
+    ) -> None:
         evaluator = SkillRankCondition()
         sample_skill.rank = "Expert"
         db_session.commit()
@@ -745,13 +844,17 @@ class TestJournalCountCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_journal_count_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_journal_count_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = JournalCountCondition()
         condition = {"type": "journal_count", "value": 1}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_journal_count_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_journal_count_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = JournalCountCondition()
         with pytest.raises(KeyError):
             evaluator.evaluate(db_session, sample_user.id, {"type": "journal_count"})
@@ -823,13 +926,17 @@ class TestTimeBasedCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_time_based_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_time_based_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = TimeBasedCondition()
         condition = {"type": "time_based", "days_active": 1}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_time_based_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_time_based_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = TimeBasedCondition()
         with pytest.raises(KeyError):
             evaluator.evaluate(db_session, sample_user.id, {"type": "time_based"})
@@ -877,7 +984,11 @@ class TestCorrosionLevelCondition:
         db_session.add(theme)
         db_session.commit()
 
-        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Rusty"}
+        condition = {
+            "type": "corrosion_level",
+            "theme": "Education",
+            "min_level": "Rusty",
+        }
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
@@ -887,7 +998,11 @@ class TestCorrosionLevelCondition:
         db_session.add(theme)
         db_session.commit()
 
-        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Dusty"}
+        condition = {
+            "type": "corrosion_level",
+            "theme": "Education",
+            "min_level": "Dusty",
+        }
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
@@ -897,20 +1012,36 @@ class TestCorrosionLevelCondition:
         db_session.add(theme)
         db_session.commit()
 
-        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Dusty"}
+        condition = {
+            "type": "corrosion_level",
+            "theme": "Education",
+            "min_level": "Dusty",
+        }
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_corrosion_level_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_corrosion_level_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = CorrosionLevelCondition()
-        condition = {"type": "corrosion_level", "theme": "Missing", "min_level": "Rusty"}
+        condition = {
+            "type": "corrosion_level",
+            "theme": "Missing",
+            "min_level": "Rusty",
+        }
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_corrosion_level_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_corrosion_level_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = CorrosionLevelCondition()
         with pytest.raises(KeyError):
-            evaluator.evaluate(db_session, sample_user.id, {"type": "corrosion_level", "theme": "Education"})
+            evaluator.evaluate(
+                db_session,
+                sample_user.id,
+                {"type": "corrosion_level", "theme": "Education"},
+            )
 
     def test_corrosion_level_edge_case_1(self, db_session, sample_user) -> None:
         evaluator = CorrosionLevelCondition()
@@ -918,28 +1049,44 @@ class TestCorrosionLevelCondition:
         db_session.add(theme)
         db_session.commit()
 
-        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Unknown"}
+        condition = {
+            "type": "corrosion_level",
+            "theme": "Education",
+            "min_level": "Unknown",
+        }
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
     def test_corrosion_level_edge_case_2(self, db_session, sample_user) -> None:
         evaluator = CorrosionLevelCondition()
-        theme = Theme(user_id=sample_user.id, name="Education", corrosion_level="Broken")
+        theme = Theme(
+            user_id=sample_user.id, name="Education", corrosion_level="Broken"
+        )
         db_session.add(theme)
         db_session.commit()
 
-        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Familiar"}
+        condition = {
+            "type": "corrosion_level",
+            "theme": "Education",
+            "min_level": "Familiar",
+        }
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
     def test_corrosion_level_with_multiple_users(self, db_session, sample_user) -> None:
         evaluator = CorrosionLevelCondition()
         other_user = _create_user(db_session)
-        other_theme = Theme(user_id=other_user.id, name="Education", corrosion_level="Forgotten")
+        other_theme = Theme(
+            user_id=other_user.id, name="Education", corrosion_level="Forgotten"
+        )
         db_session.add(other_theme)
         db_session.commit()
 
-        condition = {"type": "corrosion_level", "theme": "Education", "min_level": "Rusty"}
+        condition = {
+            "type": "corrosion_level",
+            "theme": "Education",
+            "min_level": "Rusty",
+        }
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
@@ -969,13 +1116,17 @@ class TestQuestFailedCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_quest_failed_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_quest_failed_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = QuestFailedCondition()
         condition = {"type": "quest_failed", "quest_id": "missing"}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_quest_failed_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_quest_failed_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = QuestFailedCondition()
         with pytest.raises(KeyError):
             evaluator.evaluate(db_session, sample_user.id, {"type": "quest_failed"})
@@ -1036,13 +1187,17 @@ class TestItemEquippedCondition:
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is True
 
-    def test_item_equipped_entity_not_found_returns_false(self, db_session, sample_user) -> None:
+    def test_item_equipped_entity_not_found_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = ItemEquippedCondition()
         condition = {"type": "item_equipped", "item_type": "cursed_item"}
 
         assert evaluator.evaluate(db_session, sample_user.id, condition) is False
 
-    def test_item_equipped_missing_required_field_raises_error(self, db_session, sample_user) -> None:
+    def test_item_equipped_missing_required_field_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = ItemEquippedCondition()
         with pytest.raises(KeyError):
             evaluator.evaluate(db_session, sample_user.id, {"type": "item_equipped"})
@@ -1383,7 +1538,9 @@ class TestCompoundCondition:
         )
         assert result is False
 
-    def test_unknown_primitive_type_returns_false(self, db_session, sample_user) -> None:
+    def test_unknown_primitive_type_returns_false(
+        self, db_session, sample_user
+    ) -> None:
         """Unknown primitive types in sub-conditions return False."""
         evaluator = CompoundCondition()
         result = evaluator.evaluate(
@@ -1396,12 +1553,16 @@ class TestCompoundCondition:
         )
         assert result is False
 
-    def test_missing_type_in_condition_raises_error(self, db_session, sample_user) -> None:
+    def test_missing_type_in_condition_raises_error(
+        self, db_session, sample_user
+    ) -> None:
         evaluator = CompoundCondition()
         with pytest.raises(KeyError):
             evaluator.evaluate(db_session, sample_user.id, {"conditions": []})
 
-    def test_compound_condition_delegates_to_evaluator(self, db_session, sample_user, sample_theme) -> None:
+    def test_compound_condition_delegates_to_evaluator(
+        self, db_session, sample_user, sample_theme
+    ) -> None:
         evaluator = CompoundCondition()
         sample_theme.xp = 250.0
         db_session.commit()

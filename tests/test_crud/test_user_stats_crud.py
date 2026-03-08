@@ -1,6 +1,7 @@
 """
 CRUD tests for UserStats.
 """
+
 from datetime import datetime
 
 import pytest

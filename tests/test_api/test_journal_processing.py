@@ -23,7 +23,9 @@ from app.utils.database import Base, get_db
 class StubOrchestrator:
     """Simple orchestrator stub used for deterministic API tests."""
 
-    def __init__(self, result: dict | None = None, raises: Exception | None = None) -> None:
+    def __init__(
+        self, result: dict | None = None, raises: Exception | None = None
+    ) -> None:
         self._result = result or {
             "entry_id": "stub-entry-id",
             "status": "completed",
@@ -235,8 +237,12 @@ def test_create_entry_matches_quests(client, api_db_session, user):
     assert quests[0]["quest_id"] == quest.id
 
 
-def test_create_entry_processing_error_still_creates_entry(client, api_db_session, user):
-    client.app.state.orchestrator = StubOrchestrator(raises=RuntimeError("processing exploded"))
+def test_create_entry_processing_error_still_creates_entry(
+    client, api_db_session, user
+):
+    client.app.state.orchestrator = StubOrchestrator(
+        raises=RuntimeError("processing exploded")
+    )
 
     response = client.post(
         "/api/v1/journal/entry",
@@ -251,7 +257,9 @@ def test_create_entry_processing_error_still_creates_entry(client, api_db_sessio
     payload = response.json()
     entry_id = payload["entry"]["id"]
 
-    created = api_db_session.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
+    created = (
+        api_db_session.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
+    )
     assert created is not None
     assert created.content == "This entry should still be persisted."
 

@@ -7,6 +7,7 @@ This module tests the complete "character sheet" creation flow, verifying:
 - Cascade delete properly removes all related records
 - The full user ecosystem functions as a cohesive unit
 """
+
 import pytest
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
@@ -41,10 +42,7 @@ class TestFullModelIntegration:
         # =================================================================
         # STEP 1: Create User
         # =================================================================
-        user = User(
-            username=fake.user_name(),
-            email=fake.email()
-        )
+        user = User(username=fake.user_name(), email=fake.email())
         db_session.add(user)
         db_session.commit()
         db_session.refresh(user)
@@ -63,7 +61,7 @@ class TestFullModelIntegration:
             description="Professional growth and work skills",
             level=5,
             xp=250.0,
-            corrosion_level="Fresh"
+            corrosion_level="Fresh",
         )
         db_session.add(theme)
         db_session.commit()
@@ -90,7 +88,7 @@ class TestFullModelIntegration:
             xp=500.0,
             rank="Intermediate",
             practice_time_minutes=1200,
-            difficulty="Medium"
+            difficulty="Medium",
         )
         db_session.add(skill)
         db_session.commit()
@@ -115,11 +113,20 @@ class TestFullModelIntegration:
         title_template = TitleTemplate(
             name="Code Warrior",
             description_template="Awarded to {user_name} for programming excellence",
-            effect={"type": "xp_multiplier", "scope": "skill", "target": "Programming", "value": 1.15},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "skill",
+                "target": "Programming",
+                "value": 1.15,
+            },
             rank="B",
-            unlock_condition={"type": "skill_level", "skill": "Python Programming", "value": 15},
+            unlock_condition={
+                "type": "skill_level",
+                "skill": "Python Programming",
+                "value": 15,
+            },
             category="Skills",
-            is_hidden=False
+            is_hidden=False,
         )
         db_session.add(title_template)
         db_session.commit()
@@ -133,7 +140,7 @@ class TestFullModelIntegration:
             user_id=user.id,
             title_template_id=title_template.id,
             is_equipped=True,
-            personalized_description=f"Awarded to {user.username} for reaching Intermediate rank in Python"
+            personalized_description=f"Awarded to {user.username} for reaching Intermediate rank in Python",
         )
         db_session.add(user_title)
         db_session.commit()
@@ -163,7 +170,7 @@ class TestFullModelIntegration:
             reward_xp=500,
             reward_coins=50,
             difficulty="hard",
-            category="Learning"
+            category="Learning",
         )
         db_session.add(mq_template)
         db_session.commit()
@@ -181,7 +188,7 @@ class TestFullModelIntegration:
             status="in_progress",
             completion_progress=45,
             completion_target=100,
-            deadline=datetime.utcnow() + timedelta(days=30)
+            deadline=datetime.utcnow() + timedelta(days=30),
         )
         db_session.add(user_mq)
         db_session.commit()
@@ -206,22 +213,22 @@ class TestFullModelIntegration:
         journal_entry = JournalEntry(
             user_id=user.id,
             content="Today I made great progress learning FastAPI. "
-                    "I completed the routing chapter and built my first endpoint. "
-                    "Feeling accomplished and motivated to continue tomorrow.",
+            "I completed the routing chapter and built my first endpoint. "
+            "Feeling accomplished and motivated to continue tomorrow.",
             entry_type="text",
             ai_categories={
                 "themes": ["Career Development"],
                 "skills": ["Python Programming"],
                 "sentiment": "positive",
-                "energy_level": "high"
+                "energy_level": "high",
             },
             ai_suggested_quests=[
                 {"name": "Complete API documentation", "priority": "medium"},
-                {"name": "Build a CRUD endpoint", "priority": "high"}
+                {"name": "Build a CRUD endpoint", "priority": "high"},
             ],
             ai_processed=True,
             manual_theme_ids=[theme.id],
-            manual_skill_ids=[skill.id]
+            manual_skill_ids=[skill.id],
         )
         db_session.add(journal_entry)
         db_session.commit()
@@ -247,7 +254,7 @@ class TestFullModelIntegration:
             mental_health=85,
             physical_health=70,
             relationship_quality=65,
-            socialization_level=55
+            socialization_level=55,
         )
         db_session.add(user_stats)
         db_session.commit()
@@ -314,28 +321,44 @@ class TestFullModelIntegration:
         deleted_skill = db_session.query(Skill).filter(Skill.id == skill_id).first()
         assert deleted_skill is None
 
-        deleted_user_title = db_session.query(UserTitle).filter(UserTitle.id == user_title_id).first()
+        deleted_user_title = (
+            db_session.query(UserTitle).filter(UserTitle.id == user_title_id).first()
+        )
         assert deleted_user_title is None
 
-        deleted_user_mq = db_session.query(UserMissionQuest).filter(UserMissionQuest.id == user_mq_id).first()
+        deleted_user_mq = (
+            db_session.query(UserMissionQuest)
+            .filter(UserMissionQuest.id == user_mq_id)
+            .first()
+        )
         assert deleted_user_mq is None
 
-        deleted_journal = db_session.query(JournalEntry).filter(JournalEntry.id == journal_entry_id).first()
+        deleted_journal = (
+            db_session.query(JournalEntry)
+            .filter(JournalEntry.id == journal_entry_id)
+            .first()
+        )
         assert deleted_journal is None
 
-        deleted_stats = db_session.query(UserStats).filter(UserStats.id == user_stats_id).first()
+        deleted_stats = (
+            db_session.query(UserStats).filter(UserStats.id == user_stats_id).first()
+        )
         assert deleted_stats is None
 
         # Verify templates are NOT deleted (global resources)
-        remaining_title_template = db_session.query(TitleTemplate).filter(
-            TitleTemplate.id == title_template_id
-        ).first()
+        remaining_title_template = (
+            db_session.query(TitleTemplate)
+            .filter(TitleTemplate.id == title_template_id)
+            .first()
+        )
         assert remaining_title_template is not None
         assert remaining_title_template.name == "Code Warrior"
 
-        remaining_mq_template = db_session.query(MissionQuestTemplate).filter(
-            MissionQuestTemplate.id == mq_template_id
-        ).first()
+        remaining_mq_template = (
+            db_session.query(MissionQuestTemplate)
+            .filter(MissionQuestTemplate.id == mq_template_id)
+            .first()
+        )
         assert remaining_mq_template is not None
         assert remaining_mq_template.name == "Learn a New Framework"
 
@@ -356,7 +379,7 @@ class TestFullModelIntegration:
             user_id=user.id,
             theme_id=None,  # No theme
             name="General Communication",
-            description="Speaking and writing skills"
+            description="Speaking and writing skills",
         )
         db_session.add(skill)
         db_session.commit()
@@ -375,9 +398,7 @@ class TestFullModelIntegration:
 
         # Create parent quest (Story Arc)
         story_arc = UserMissionQuest(
-            user_id=user.id,
-            name="Master Python Development",
-            status="in_progress"
+            user_id=user.id, name="Master Python Development", status="in_progress"
         )
         db_session.add(story_arc)
         db_session.commit()
@@ -387,7 +408,7 @@ class TestFullModelIntegration:
             user_id=user.id,
             parent_mq_id=story_arc.id,
             name="Learn Web Frameworks",
-            status="in_progress"
+            status="in_progress",
         )
         db_session.add(mission)
         db_session.commit()
@@ -397,7 +418,7 @@ class TestFullModelIntegration:
             user_id=user.id,
             parent_mq_id=mission.id,
             name="Complete FastAPI Tutorial",
-            status="not_started"
+            status="not_started",
         )
         db_session.add(sub_quest)
         db_session.commit()
@@ -422,23 +443,16 @@ class TestFullModelIntegration:
         db_session.commit()
 
         # Create parent theme
-        parent_theme = Theme(
-            user_id=user.id,
-            name="Health & Wellness"
-        )
+        parent_theme = Theme(user_id=user.id, name="Health & Wellness")
         db_session.add(parent_theme)
         db_session.commit()
 
         # Create sub-themes
         sub_theme1 = Theme(
-            user_id=user.id,
-            parent_theme_id=parent_theme.id,
-            name="Physical Fitness"
+            user_id=user.id, parent_theme_id=parent_theme.id, name="Physical Fitness"
         )
         sub_theme2 = Theme(
-            user_id=user.id,
-            parent_theme_id=parent_theme.id,
-            name="Mental Health"
+            user_id=user.id, parent_theme_id=parent_theme.id, name="Mental Health"
         )
         db_session.add_all([sub_theme1, sub_theme2])
         db_session.commit()
@@ -461,23 +475,18 @@ class TestFullModelIntegration:
         db_session.commit()
 
         # Create parent skill
-        parent_skill = Skill(
-            user_id=user.id,
-            name="Programming"
-        )
+        parent_skill = Skill(user_id=user.id, name="Programming")
         db_session.add(parent_skill)
         db_session.commit()
 
         # Create child skills
         child_skill1 = Skill(
-            user_id=user.id,
-            parent_skill_id=parent_skill.id,
-            name="Backend Development"
+            user_id=user.id, parent_skill_id=parent_skill.id, name="Backend Development"
         )
         child_skill2 = Skill(
             user_id=user.id,
             parent_skill_id=parent_skill.id,
-            name="Frontend Development"
+            name="Frontend Development",
         )
         db_session.add_all([child_skill1, child_skill2])
         db_session.commit()
@@ -538,7 +547,7 @@ class TestFullModelIntegration:
         template = TitleTemplate(
             name="Early Adopter",
             description_template="Awarded to {user_name} for joining early",
-            rank="C"
+            rank="C",
         )
         db_session.add(template)
         db_session.commit()
@@ -551,10 +560,7 @@ class TestFullModelIntegration:
             db_session.commit()
             users.append(user)
 
-            user_title = UserTitle(
-                user_id=user.id,
-                title_template_id=template.id
-            )
+            user_title = UserTitle(user_id=user.id, title_template_id=template.id)
             db_session.add(user_title)
 
         db_session.commit()
@@ -582,7 +588,7 @@ class TestFullModelIntegration:
             name="Complete 10 journal entries",
             status="not_started",
             completion_progress=0,
-            completion_target=10
+            completion_target=10,
         )
         db_session.add(quest)
         db_session.commit()
@@ -650,15 +656,15 @@ class TestFullModelIntegration:
                 "themes": ["Work"],
                 "skills": ["Project Management", "Communication"],
                 "sentiment": "positive",
-                "keywords": ["meeting", "project", "milestones"]
+                "keywords": ["meeting", "project", "milestones"],
             },
             ai_suggested_quests=[
                 {"name": "Follow up on action items", "priority": "high"},
-                {"name": "Update project timeline", "priority": "medium"}
+                {"name": "Update project timeline", "priority": "medium"},
             ],
             ai_processed=True,
             manual_theme_ids=[theme.id],
-            manual_skill_ids=[skill.id]
+            manual_skill_ids=[skill.id],
         )
         db_session.add(entry)
         db_session.commit()
@@ -684,8 +690,14 @@ class TestFullModelIntegration:
             db_session.commit()
             users.append(user)
 
-            db_session.add(UserTitle(user_id=user.id, title_template_id=title_template.id))
-            db_session.add(UserMissionQuest(user_id=user.id, template_id=mq_template.id, name="Shared Quest"))
+            db_session.add(
+                UserTitle(user_id=user.id, title_template_id=title_template.id)
+            )
+            db_session.add(
+                UserMissionQuest(
+                    user_id=user.id, template_id=mq_template.id, name="Shared Quest"
+                )
+            )
 
         db_session.commit()
         db_session.refresh(title_template)
@@ -730,7 +742,9 @@ class TestFullModelIntegration:
         db_session.add(user)
         db_session.commit()
 
-        quest = UserMissionQuest(user_id=user.id, name="Repeat Complete Quest", completion_target=5)
+        quest = UserMissionQuest(
+            user_id=user.id, name="Repeat Complete Quest", completion_target=5
+        )
         db_session.add(quest)
         db_session.commit()
 
@@ -753,7 +767,9 @@ class TestFullModelIntegration:
         db_session.add(user)
         db_session.commit()
 
-        quest = UserMissionQuest(user_id=user.id, name="Post Completion Quest", completion_target=5)
+        quest = UserMissionQuest(
+            user_id=user.id, name="Post Completion Quest", completion_target=5
+        )
         db_session.add(quest)
         db_session.commit()
 
@@ -775,7 +791,9 @@ class TestFullModelIntegration:
         db_session.add(user)
         db_session.commit()
 
-        quest = UserMissionQuest(user_id=user.id, name="Zero Negative Quest", completion_target=10)
+        quest = UserMissionQuest(
+            user_id=user.id, name="Zero Negative Quest", completion_target=10
+        )
         db_session.add(quest)
         db_session.commit()
 
@@ -797,14 +815,20 @@ class TestFullModelIntegration:
         db_session.add(parent)
         db_session.commit()
 
-        child = UserMissionQuest(user_id=user.id, name="Child Quest", parent_mq_id=parent.id)
+        child = UserMissionQuest(
+            user_id=user.id, name="Child Quest", parent_mq_id=parent.id
+        )
         db_session.add(child)
         db_session.commit()
 
         db_session.delete(parent)
         db_session.commit()
 
-        remaining_child = db_session.query(UserMissionQuest).filter(UserMissionQuest.id == child.id).first()
+        remaining_child = (
+            db_session.query(UserMissionQuest)
+            .filter(UserMissionQuest.id == child.id)
+            .first()
+        )
         assert remaining_child is not None
         assert remaining_child.parent_mq is None
         assert remaining_child.parent_mq_id is None
@@ -858,7 +882,9 @@ class TestFullModelIntegration:
 
         themes = [Theme(user_id=user.id, name=f"Theme {i}") for i in range(3)]
         skills = [Skill(user_id=user.id, name=f"Skill {i}") for i in range(4)]
-        quests = [UserMissionQuest(user_id=user.id, name=f"Quest {i}") for i in range(2)]
+        quests = [
+            UserMissionQuest(user_id=user.id, name=f"Quest {i}") for i in range(2)
+        ]
 
         db_session.add_all(themes + skills + quests)
         db_session.commit()
@@ -898,7 +924,9 @@ class TestFullModelIntegration:
         db_session.commit()
 
         user_title = UserTitle(user_id=user.id, title_template_id=title_template.id)
-        user_mq = UserMissionQuest(user_id=user.id, template_id=mq_template.id, name="Temp Quest")
+        user_mq = UserMissionQuest(
+            user_id=user.id, template_id=mq_template.id, name="Temp Quest"
+        )
         db_session.add_all([user_title, user_mq])
         db_session.commit()
 
@@ -909,8 +937,16 @@ class TestFullModelIntegration:
         db_session.delete(mq_template)
         db_session.commit()
 
-        remaining_titles = db_session.query(UserTitle).filter(UserTitle.title_template_id == title_id).all()
-        remaining_mq = db_session.query(UserMissionQuest).filter(UserMissionQuest.template_id == mq_id).all()
+        remaining_titles = (
+            db_session.query(UserTitle)
+            .filter(UserTitle.title_template_id == title_id)
+            .all()
+        )
+        remaining_mq = (
+            db_session.query(UserMissionQuest)
+            .filter(UserMissionQuest.template_id == mq_id)
+            .all()
+        )
 
         assert len(remaining_titles) == 0
         assert len(remaining_mq) == 0
@@ -921,7 +957,9 @@ class TestFullModelIntegration:
         db_session.add(user)
         db_session.commit()
 
-        quest = UserMissionQuest(user_id=user.id, name="Timed Quest", completion_target=1)
+        quest = UserMissionQuest(
+            user_id=user.id, name="Timed Quest", completion_target=1
+        )
         db_session.add(quest)
         db_session.commit()
 

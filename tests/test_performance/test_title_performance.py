@@ -75,7 +75,12 @@ def create_title_templates(db_session, count: int) -> list[TitleTemplate]:
         template = TitleTemplate(
             name=f"Test Title {i + 1}",
             description_template=f"Description for title {i + 1}",
-            effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.01},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "all",
+                "target": "all",
+                "value": 1.01,
+            },
             rank=["D", "C", "B", "A", "S"][i % 5],
             unlock_condition=condition,
         )
@@ -86,7 +91,9 @@ def create_title_templates(db_session, count: int) -> list[TitleTemplate]:
     return templates
 
 
-def award_titles_to_user(db_session, user_id: str, templates: list[TitleTemplate], count: int) -> list[UserTitle]:
+def award_titles_to_user(
+    db_session, user_id: str, templates: list[TitleTemplate], count: int
+) -> list[UserTitle]:
     """Award a subset of titles to a user."""
     user_titles = []
     for i, template in enumerate(templates[:count]):
@@ -149,7 +156,9 @@ class TestTitleCheckPerformance:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
         # Assert performance
-        assert elapsed_ms < 100, f"Title check took {elapsed_ms:.2f}ms, expected < 100ms"
+        assert (
+            elapsed_ms < 100
+        ), f"Title check took {elapsed_ms:.2f}ms, expected < 100ms"
 
         # Verify result is valid (list of UserTitle)
         assert isinstance(result, list)
@@ -256,7 +265,9 @@ class TestTitleCheckPerformance:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
         # Assert performance
-        assert elapsed_ms < 200, f"Title check took {elapsed_ms:.2f}ms, expected < 200ms"
+        assert (
+            elapsed_ms < 200
+        ), f"Title check took {elapsed_ms:.2f}ms, expected < 200ms"
 
         # Verify result is valid
         assert isinstance(result, list)
@@ -296,7 +307,9 @@ class TestTitleCheckPerformance:
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
         # Assert performance (should skip owned titles quickly)
-        assert elapsed_ms < 100, f"Title check took {elapsed_ms:.2f}ms, expected < 100ms"
+        assert (
+            elapsed_ms < 100
+        ), f"Title check took {elapsed_ms:.2f}ms, expected < 100ms"
 
         # Should only evaluate 20 unowned titles
         assert isinstance(result, list)
@@ -381,7 +394,9 @@ class TestTitleCheckBenchmark:
         # Verify result
         assert isinstance(result, list)
 
-    def test_title_check_benchmark_compound_conditions(self, db_session, fake, benchmark):
+    def test_title_check_benchmark_compound_conditions(
+        self, db_session, fake, benchmark
+    ):
         """Benchmark title checking with many compound conditions."""
         # Setup
         user = User(username=fake.user_name(), email=fake.email())
@@ -402,7 +417,11 @@ class TestTitleCheckBenchmark:
                     {
                         "type": "and",
                         "conditions": [
-                            {"type": "theme_level", "theme": "Education", "value": i + 5},
+                            {
+                                "type": "theme_level",
+                                "theme": "Education",
+                                "value": i + 5,
+                            },
                             {"type": "skill_rank", "rank": "Intermediate"},
                         ],
                     },
@@ -417,7 +436,12 @@ class TestTitleCheckBenchmark:
             }
             template = TitleTemplate(
                 name=f"Compound Title {i + 1}",
-                effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.05},
+                effect={
+                    "type": "xp_multiplier",
+                    "scope": "all",
+                    "target": "all",
+                    "value": 1.05,
+                },
                 rank="B",
                 unlock_condition=condition,
             )
@@ -468,7 +492,6 @@ class TestPerformanceRegression:
 
         # Calculate statistics
         avg_time = sum(times) / len(times)
-        max_time = max(times)
 
         # First run may be slower, so compare avg vs max of later runs
         later_times = times[2:]  # Skip first 2 warm-up runs
@@ -476,7 +499,9 @@ class TestPerformanceRegression:
         later_max = max(later_times)
 
         # Max should not be more than 3x the average (allows for some variance)
-        assert later_max < later_avg * 3, f"Inconsistent timing: avg={later_avg:.2f}ms, max={later_max:.2f}ms"
+        assert (
+            later_max < later_avg * 3
+        ), f"Inconsistent timing: avg={later_avg:.2f}ms, max={later_max:.2f}ms"
 
         # Overall should still be fast
         assert avg_time < 100, f"Average time {avg_time:.2f}ms exceeds 100ms threshold"

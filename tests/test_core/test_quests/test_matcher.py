@@ -3,7 +3,6 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import pytest
 
 from app.core.quests.matcher import QuestMatcher
 from app.models.journal_entry import JournalEntry
@@ -76,7 +75,9 @@ def test_quest_matcher_processes_active_quests(db_session, sample_user) -> None:
     matcher = QuestMatcher(event_bus)
     template = _create_template(db_session, {"type": "yes_no"})
     _create_user_quest(db_session, sample_user.id, template=template)
-    entry = _create_entry(db_session, sample_user.id, "Did it.", {"manual_completion": True})
+    entry = _create_entry(
+        db_session, sample_user.id, "Did it.", {"manual_completion": True}
+    )
 
     updated = matcher.match_journal_entry(db_session, entry)
 
@@ -87,8 +88,12 @@ def test_quest_matcher_skips_completed_quests(db_session, sample_user) -> None:
     event_bus = _make_event_bus()
     matcher = QuestMatcher(event_bus)
     template = _create_template(db_session, {"type": "yes_no"})
-    _create_user_quest(db_session, sample_user.id, template=template, status="completed")
-    entry = _create_entry(db_session, sample_user.id, "Did it.", {"manual_completion": True})
+    _create_user_quest(
+        db_session, sample_user.id, template=template, status="completed"
+    )
+    entry = _create_entry(
+        db_session, sample_user.id, "Did it.", {"manual_completion": True}
+    )
 
     updated = matcher.match_journal_entry(db_session, entry)
 
@@ -153,7 +158,9 @@ def test_quest_matcher_emits_quest_completed_event(db_session, sample_user) -> N
     matcher = QuestMatcher(event_bus)
     template = _create_template(db_session, {"type": "yes_no"})
     _create_user_quest(db_session, sample_user.id, template=template)
-    entry = _create_entry(db_session, sample_user.id, "Did it.", {"manual_completion": True})
+    entry = _create_entry(
+        db_session, sample_user.id, "Did it.", {"manual_completion": True}
+    )
 
     matcher.match_journal_entry(db_session, entry)
 
@@ -162,7 +169,9 @@ def test_quest_matcher_emits_quest_completed_event(db_session, sample_user) -> N
     assert args[0] == "quest.completed"
 
 
-def test_quest_matcher_autostart_ignores_unmatched_entry(db_session, sample_user) -> None:
+def test_quest_matcher_autostart_ignores_unmatched_entry(
+    db_session, sample_user
+) -> None:
     event_bus = _make_event_bus()
     matcher = QuestMatcher(event_bus)
     template = _create_template(
@@ -209,7 +218,9 @@ def test_quest_matcher_autostart_starts_on_progress(db_session, sample_user) -> 
     assert quest.completion_progress == 15
 
 
-def test_quest_matcher_autostart_can_complete_immediately(db_session, sample_user) -> None:
+def test_quest_matcher_autostart_can_complete_immediately(
+    db_session, sample_user
+) -> None:
     event_bus = _make_event_bus()
     matcher = QuestMatcher(event_bus)
     template = _create_template(
@@ -225,7 +236,9 @@ def test_quest_matcher_autostart_can_complete_immediately(db_session, sample_use
         status="not_started",
         autostart=True,
     )
-    entry = _create_entry(db_session, sample_user.id, "Did it.", {"manual_completion": True})
+    entry = _create_entry(
+        db_session, sample_user.id, "Did it.", {"manual_completion": True}
+    )
 
     updated = matcher.match_journal_entry(db_session, entry)
 
@@ -258,7 +271,9 @@ def test_quest_matcher_autostart_without_condition_does_not_start(
     assert quest.status == "not_started"
 
 
-def test_quest_matcher_autostart_condition_blocks_start(db_session, sample_user) -> None:
+def test_quest_matcher_autostart_condition_blocks_start(
+    db_session, sample_user
+) -> None:
     event_bus = _make_event_bus()
     matcher = QuestMatcher(event_bus)
     template = _create_template(
@@ -282,7 +297,9 @@ def test_quest_matcher_autostart_condition_blocks_start(db_session, sample_user)
     assert quest.status == "not_started"
 
 
-def test_quest_matcher_autostart_condition_allows_start(db_session, sample_user) -> None:
+def test_quest_matcher_autostart_condition_allows_start(
+    db_session, sample_user
+) -> None:
     event_bus = _make_event_bus()
     matcher = QuestMatcher(event_bus)
     template = _create_template(
@@ -307,7 +324,9 @@ def test_quest_matcher_autostart_condition_allows_start(db_session, sample_user)
     assert quest.completion_progress == 10
 
 
-def test_quest_matcher_handles_multiple_quests_in_one_entry(db_session, sample_user) -> None:
+def test_quest_matcher_handles_multiple_quests_in_one_entry(
+    db_session, sample_user
+) -> None:
     event_bus = _make_event_bus()
     matcher = QuestMatcher(event_bus)
     accumulation_template = _create_template(
@@ -327,7 +346,9 @@ def test_quest_matcher_handles_multiple_quests_in_one_entry(db_session, sample_u
     assert len(updated) == 2
 
 
-def test_quest_matcher_prepare_context_extracts_amounts(db_session, sample_user) -> None:
+def test_quest_matcher_prepare_context_extracts_amounts(
+    db_session, sample_user
+) -> None:
     matcher = QuestMatcher(_make_event_bus())
     entry = _create_entry(db_session, sample_user.id, "Walked 45 minutes 3 times.")
 
@@ -362,12 +383,16 @@ def test_quest_matcher_no_active_quests_returns_empty(db_session, sample_user) -
     assert updated == []
 
 
-def test_quest_matcher_handles_checker_exception_gracefully(db_session, sample_user) -> None:
+def test_quest_matcher_handles_checker_exception_gracefully(
+    db_session, sample_user
+) -> None:
     event_bus = _make_event_bus()
     matcher = QuestMatcher(event_bus)
     template = _create_template(db_session, {"type": "yes_no"})
     _create_user_quest(db_session, sample_user.id, template=template)
-    entry = _create_entry(db_session, sample_user.id, "Did it.", {"manual_completion": True})
+    entry = _create_entry(
+        db_session, sample_user.id, "Did it.", {"manual_completion": True}
+    )
 
     class FailingChecker:
         def check_completion(self, db, user_quest, context):
@@ -381,7 +406,9 @@ def test_quest_matcher_handles_checker_exception_gracefully(db_session, sample_u
     assert event_bus.emit.call_count == 0
 
 
-def test_frequency_checker_ignores_invalid_occurrence_dates(db_session, sample_user) -> None:
+def test_frequency_checker_ignores_invalid_occurrence_dates(
+    db_session, sample_user
+) -> None:
     event_bus = _make_event_bus()
     matcher = QuestMatcher(event_bus)
     template = _create_template(

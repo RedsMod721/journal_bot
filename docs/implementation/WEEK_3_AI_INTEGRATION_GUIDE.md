@@ -25,12 +25,14 @@ This document provides **complete specifications** for Week 3: integrating AI ca
 
 **Required Before Starting Week 3:**
 - ✅ Development environment operational (Python 3.11+, dependencies)
-- ✅ Database schema implemented (38 tables)
+- ✅ Database schema implemented (52 canonical tables)
 - ✅ Core services functional (XP, quests, themes - no AI)
 - ✅ Test coverage ≥95% (core modules)
 - ✅ All validation gates passed
 
 **If Week 2.5 Incomplete:** STOP. Do not proceed until all validation gates are green.
+
+**Canonical execution note:** Use `docs/tooling/WEEK_3_GO_NO_GO_CHECKLIST.md` and `docs/specs/KB_SEED_CONTRACT.md` as the operational source for commands, seed windows, and pass/fail gate decisions.
 
 ### Success Criteria
 

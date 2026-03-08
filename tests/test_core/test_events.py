@@ -10,6 +10,7 @@ Tests:
 - Emit with invalid event type raises error
 - get_event_bus returns singleton
 """
+
 from unittest.mock import MagicMock
 
 import pytest
@@ -69,7 +70,16 @@ class TestSubscribeAndEmit:
         bus.subscribe("xp.awarded", callback)
         bus.subscribe("xp.awarded", callback)
 
-        results = bus.emit("xp.awarded", {"user_id": "u", "amount": 1, "source": "journal", "target_type": "theme", "target_id": "t"})
+        results = bus.emit(
+            "xp.awarded",
+            {
+                "user_id": "u",
+                "amount": 1,
+                "source": "journal",
+                "target_type": "theme",
+                "target_id": "t",
+            },
+        )
 
         callback.assert_called_once()
         assert results == ["ok"]

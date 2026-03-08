@@ -17,6 +17,7 @@ Tests 60+ edge cases organized by category:
 13. Realistic scenarios
 14. Boolean algebra verification
 """
+
 from datetime import datetime, timedelta
 import uuid
 
@@ -25,7 +26,9 @@ from app.models.journal_entry import JournalEntry
 from app.models.mission_quest import UserMissionQuest
 
 
-def _create_journal_entry(db_session, user_id: str, created_at: datetime) -> JournalEntry:
+def _create_journal_entry(
+    db_session, user_id: str, created_at: datetime
+) -> JournalEntry:
     entry = JournalEntry(user_id=user_id, content="Entry", created_at=created_at)
     db_session.add(entry)
     db_session.commit()
@@ -45,11 +48,21 @@ class TestEmptyAndMissingFields:
 
     def test_empty_and_returns_true(self, db_session, sample_user):
         evaluator = CompoundCondition()
-        assert evaluator.evaluate(db_session, sample_user.id, {"type": "and", "conditions": []}) is True
+        assert (
+            evaluator.evaluate(
+                db_session, sample_user.id, {"type": "and", "conditions": []}
+            )
+            is True
+        )
 
     def test_empty_or_returns_false(self, db_session, sample_user):
         evaluator = CompoundCondition()
-        assert evaluator.evaluate(db_session, sample_user.id, {"type": "or", "conditions": []}) is False
+        assert (
+            evaluator.evaluate(
+                db_session, sample_user.id, {"type": "or", "conditions": []}
+            )
+            is False
+        )
 
     def test_and_missing_conditions_raises_keyerror(self, db_session, sample_user):
         evaluator = CompoundCondition()
@@ -91,28 +104,48 @@ class TestSingleElement:
         evaluator = CompoundCondition()
         sample_theme.level = 10
         db_session.commit()
-        cond = {"type": "and", "conditions": [{"type": "theme_level", "theme": sample_theme.name, "value": 10}]}
+        cond = {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": sample_theme.name, "value": 10}
+            ],
+        }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is True
 
     def test_and_single_false(self, db_session, sample_user, sample_theme):
         evaluator = CompoundCondition()
         sample_theme.level = 0
         db_session.commit()
-        cond = {"type": "and", "conditions": [{"type": "theme_level", "theme": sample_theme.name, "value": 10}]}
+        cond = {
+            "type": "and",
+            "conditions": [
+                {"type": "theme_level", "theme": sample_theme.name, "value": 10}
+            ],
+        }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is False
 
     def test_or_single_true(self, db_session, sample_user, sample_theme):
         evaluator = CompoundCondition()
         sample_theme.level = 10
         db_session.commit()
-        cond = {"type": "or", "conditions": [{"type": "theme_level", "theme": sample_theme.name, "value": 10}]}
+        cond = {
+            "type": "or",
+            "conditions": [
+                {"type": "theme_level", "theme": sample_theme.name, "value": 10}
+            ],
+        }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is True
 
     def test_or_single_false(self, db_session, sample_user, sample_theme):
         evaluator = CompoundCondition()
         sample_theme.level = 0
         db_session.commit()
-        cond = {"type": "or", "conditions": [{"type": "theme_level", "theme": sample_theme.name, "value": 10}]}
+        cond = {
+            "type": "or",
+            "conditions": [
+                {"type": "theme_level", "theme": sample_theme.name, "value": 10}
+            ],
+        }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is False
 
 
@@ -141,36 +174,55 @@ class TestInvalidTypes:
     def test_type_with_spaces_returns_false(self, db_session, sample_user):
         """Type with spaces returns False (no match)."""
         evaluator = CompoundCondition()
-        result = evaluator.evaluate(db_session, sample_user.id, {"type": " journal_count "})
+        result = evaluator.evaluate(
+            db_session, sample_user.id, {"type": " journal_count "}
+        )
         assert result is False
 
 
 class TestDeeplyNested:
     """Category 4: Deeply Nested Structures"""
 
-    def test_five_level_nesting(self, db_session, sample_user, sample_theme, sample_skill):
+    def test_five_level_nesting(
+        self, db_session, sample_user, sample_theme, sample_skill
+    ):
         evaluator = CompoundCondition()
         sample_theme.level = 10
         sample_skill.rank = "Expert"
         db_session.commit()
         cond = {
             "type": "and",
-            "conditions": [{
-                "type": "or",
-                "conditions": [{
-                    "type": "and",
+            "conditions": [
+                {
+                    "type": "or",
                     "conditions": [
-                        {"type": "theme_level", "theme": sample_theme.name, "value": 10},
                         {
-                            "type": "or",
+                            "type": "and",
                             "conditions": [
-                                {"type": "skill_rank", "rank": "Expert"},
-                                {"type": "not", "condition": {"type": "total_xp", "value": 5000}},
+                                {
+                                    "type": "theme_level",
+                                    "theme": sample_theme.name,
+                                    "value": 10,
+                                },
+                                {
+                                    "type": "or",
+                                    "conditions": [
+                                        {"type": "skill_rank", "rank": "Expert"},
+                                        {
+                                            "type": "not",
+                                            "condition": {
+                                                "type": "total_xp",
+                                                "value": 5000,
+                                            },
+                                        },
+                                    ],
+                                },
                             ],
                         },
+                        {"type": "total_xp", "value": 5000},
                     ],
-                }, {"type": "total_xp", "value": 5000}],
-            }],
+                }
+            ],
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is True
 
@@ -180,22 +232,37 @@ class TestDeeplyNested:
         db_session.commit()
         cond = {
             "type": "and",
-            "conditions": [{
-                "type": "or",
-                "conditions": [{
-                    "type": "not",
-                    "condition": {
-                        "type": "and",
-                        "conditions": [{
-                            "type": "or",
-                            "conditions": [{
-                                "type": "not",
-                                "condition": {"type": "theme_level", "theme": sample_theme.name, "value": 10},
-                            }, {"type": "total_xp", "value": 5000}],
-                        }, {"type": "total_xp", "value": 5000}],
-                    },
-                }, {"type": "total_xp", "value": 5000}],
-            }],
+            "conditions": [
+                {
+                    "type": "or",
+                    "conditions": [
+                        {
+                            "type": "not",
+                            "condition": {
+                                "type": "and",
+                                "conditions": [
+                                    {
+                                        "type": "or",
+                                        "conditions": [
+                                            {
+                                                "type": "not",
+                                                "condition": {
+                                                    "type": "theme_level",
+                                                    "theme": sample_theme.name,
+                                                    "value": 10,
+                                                },
+                                            },
+                                            {"type": "total_xp", "value": 5000},
+                                        ],
+                                    },
+                                    {"type": "total_xp", "value": 5000},
+                                ],
+                            },
+                        },
+                        {"type": "total_xp", "value": 5000},
+                    ],
+                }
+            ],
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is True
 
@@ -205,16 +272,26 @@ class TestDeeplyNested:
         db_session.commit()
         cond = {
             "type": "and",
-            "conditions": [{
-                "type": "and",
-                "conditions": [{
+            "conditions": [
+                {
                     "type": "and",
                     "conditions": [
-                        {"type": "theme_level", "theme": sample_theme.name, "value": 10},
+                        {
+                            "type": "and",
+                            "conditions": [
+                                {
+                                    "type": "theme_level",
+                                    "theme": sample_theme.name,
+                                    "value": 10,
+                                },
+                                {"type": "total_xp", "value": 5000},
+                            ],
+                        },
                         {"type": "total_xp", "value": 5000},
                     ],
-                }, {"type": "total_xp", "value": 5000}],
-            }, {"type": "total_xp", "value": 5000}],
+                },
+                {"type": "total_xp", "value": 5000},
+            ],
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is False
 
@@ -234,7 +311,11 @@ class TestDeeplyNested:
                             "type": "or",
                             "conditions": [
                                 {"type": "total_xp", "value": 5000},
-                                {"type": "theme_level", "theme": sample_theme.name, "value": 10},
+                                {
+                                    "type": "theme_level",
+                                    "theme": sample_theme.name,
+                                    "value": 10,
+                                },
                             ],
                         },
                     ],
@@ -263,7 +344,8 @@ class TestLargeCollections:
         db_session.commit()
         cond = {
             "type": "and",
-            "conditions": [{"type": "total_xp", "value": 50}] * 9 + [{"type": "total_xp", "value": 200}],
+            "conditions": [{"type": "total_xp", "value": 50}] * 9
+            + [{"type": "total_xp", "value": 200}],
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is False
 
@@ -281,7 +363,8 @@ class TestLargeCollections:
         db_session.commit()
         cond = {
             "type": "or",
-            "conditions": [{"type": "total_xp", "value": 50}] + [{"type": "quest_completion_count", "value": 1}] * 9,
+            "conditions": [{"type": "total_xp", "value": 50}]
+            + [{"type": "quest_completion_count", "value": 1}] * 9,
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is True
 
@@ -295,7 +378,14 @@ class TestNOT:
         db_session.commit()
         cond = {
             "type": "not",
-            "condition": {"type": "not", "condition": {"type": "theme_level", "theme": sample_theme.name, "value": 10}},
+            "condition": {
+                "type": "not",
+                "condition": {
+                    "type": "theme_level",
+                    "theme": sample_theme.name,
+                    "value": 10,
+                },
+            },
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is True
 
@@ -307,7 +397,14 @@ class TestNOT:
             "type": "not",
             "condition": {
                 "type": "not",
-                "condition": {"type": "not", "condition": {"type": "theme_level", "theme": sample_theme.name, "value": 10}},
+                "condition": {
+                    "type": "not",
+                    "condition": {
+                        "type": "theme_level",
+                        "theme": sample_theme.name,
+                        "value": 10,
+                    },
+                },
             },
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is False
@@ -349,16 +446,26 @@ class TestNOT:
         db_session.commit()
         cond = {
             "type": "and",
-            "conditions": [{
-                "type": "not",
-                "condition": {
-                    "type": "or",
-                    "conditions": [
-                        {"type": "quest_completion_count", "value": 1},
-                        {"type": "not", "condition": {"type": "theme_level", "theme": sample_theme.name, "value": 10}},
-                    ],
+            "conditions": [
+                {
+                    "type": "not",
+                    "condition": {
+                        "type": "or",
+                        "conditions": [
+                            {"type": "quest_completion_count", "value": 1},
+                            {
+                                "type": "not",
+                                "condition": {
+                                    "type": "theme_level",
+                                    "theme": sample_theme.name,
+                                    "value": 10,
+                                },
+                            },
+                        ],
+                    },
                 },
-            }, {"type": "total_xp", "value": 5000}],
+                {"type": "total_xp", "value": 5000},
+            ],
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is False
 
@@ -374,8 +481,17 @@ class TestMixedOperators:
             "type": "and",
             "conditions": [
                 {"type": "total_xp", "value": 50},
-                {"type": "or", "conditions": [{"type": "total_xp", "value": 200}, {"type": "total_xp", "value": 50}]},
-                {"type": "not", "condition": {"type": "quest_completion_count", "value": 1}},
+                {
+                    "type": "or",
+                    "conditions": [
+                        {"type": "total_xp", "value": 200},
+                        {"type": "total_xp", "value": 50},
+                    ],
+                },
+                {
+                    "type": "not",
+                    "condition": {"type": "quest_completion_count", "value": 1},
+                },
             ],
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is True
@@ -386,8 +502,17 @@ class TestMixedOperators:
             "type": "or",
             "conditions": [
                 {"type": "quest_completion_count", "value": 1},
-                {"type": "and", "conditions": [{"type": "quest_completion_count", "value": 1}, {"type": "quest_completion_count", "value": 1}]},
-                {"type": "not", "condition": {"type": "quest_completion_count", "value": 1}},
+                {
+                    "type": "and",
+                    "conditions": [
+                        {"type": "quest_completion_count", "value": 1},
+                        {"type": "quest_completion_count", "value": 1},
+                    ],
+                },
+                {
+                    "type": "not",
+                    "condition": {"type": "quest_completion_count", "value": 1},
+                },
             ],
         }
         assert evaluator.evaluate(db_session, sample_user.id, cond) is True
@@ -396,7 +521,9 @@ class TestMixedOperators:
 class TestMixedConditionTypes:
     """Category 8: Mixed Condition Types"""
 
-    def test_and_multiple_types(self, db_session, sample_user, sample_theme, sample_skill):
+    def test_and_multiple_types(
+        self, db_session, sample_user, sample_theme, sample_skill
+    ):
         evaluator = CompoundCondition()
         sample_theme.level = 10
         sample_skill.rank = "Expert"
@@ -534,11 +661,20 @@ class TestBooleanAlgebra:
         cond2 = {
             "type": "or",
             "conditions": [
-                {"type": "not", "condition": {"type": "theme_level", "theme": sample_theme.name, "value": 10}},
+                {
+                    "type": "not",
+                    "condition": {
+                        "type": "theme_level",
+                        "theme": sample_theme.name,
+                        "value": 10,
+                    },
+                },
                 {"type": "not", "condition": {"type": "skill_rank", "rank": "Expert"}},
             ],
         }
-        assert evaluator.evaluate(db_session, sample_user.id, cond1) == evaluator.evaluate(db_session, sample_user.id, cond2)
+        assert evaluator.evaluate(
+            db_session, sample_user.id, cond1
+        ) == evaluator.evaluate(db_session, sample_user.id, cond2)
 
     def test_commutative_and(self, db_session, sample_user, sample_theme, sample_skill):
         evaluator = CompoundCondition()
@@ -559,7 +695,9 @@ class TestBooleanAlgebra:
                 {"type": "theme_level", "theme": sample_theme.name, "value": 10},
             ],
         }
-        assert evaluator.evaluate(db_session, sample_user.id, cond1) == evaluator.evaluate(db_session, sample_user.id, cond2)
+        assert evaluator.evaluate(
+            db_session, sample_user.id, cond1
+        ) == evaluator.evaluate(db_session, sample_user.id, cond2)
 
     def test_commutative_or(self, db_session, sample_user, sample_theme):
         evaluator = CompoundCondition()
@@ -579,7 +717,9 @@ class TestBooleanAlgebra:
                 {"type": "theme_level", "theme": sample_theme.name, "value": 10},
             ],
         }
-        assert evaluator.evaluate(db_session, sample_user.id, cond1) == evaluator.evaluate(db_session, sample_user.id, cond2)
+        assert evaluator.evaluate(
+            db_session, sample_user.id, cond1
+        ) == evaluator.evaluate(db_session, sample_user.id, cond2)
 
     def test_associative_and(self, db_session, sample_user, sample_theme, sample_skill):
         evaluator = CompoundCondition()
@@ -593,7 +733,11 @@ class TestBooleanAlgebra:
                 {
                     "type": "and",
                     "conditions": [
-                        {"type": "theme_level", "theme": sample_theme.name, "value": 10},
+                        {
+                            "type": "theme_level",
+                            "theme": sample_theme.name,
+                            "value": 10,
+                        },
                         {"type": "skill_rank", "rank": "Expert"},
                     ],
                 },
@@ -606,13 +750,19 @@ class TestBooleanAlgebra:
                     "type": "and",
                     "conditions": [
                         {"type": "total_xp", "value": 5000},
-                        {"type": "theme_level", "theme": sample_theme.name, "value": 10},
+                        {
+                            "type": "theme_level",
+                            "theme": sample_theme.name,
+                            "value": 10,
+                        },
                     ],
                 },
                 {"type": "skill_rank", "rank": "Expert"},
             ],
         }
-        assert evaluator.evaluate(db_session, sample_user.id, cond1) == evaluator.evaluate(db_session, sample_user.id, cond2)
+        assert evaluator.evaluate(
+            db_session, sample_user.id, cond1
+        ) == evaluator.evaluate(db_session, sample_user.id, cond2)
 
     def test_case_sensitivity(self, db_session, sample_user):
         """Type matching is case-sensitive - uppercase returns False."""

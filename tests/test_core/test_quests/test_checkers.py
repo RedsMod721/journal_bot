@@ -106,9 +106,13 @@ def test_yes_no_checker_no_manual_flag_returns_false(db_session, sample_user) ->
     assert new_progress == 10
 
 
-def test_yes_no_checker_already_completed_stays_completed(db_session, sample_user) -> None:
+def test_yes_no_checker_already_completed_stays_completed(
+    db_session, sample_user
+) -> None:
     checker = YesNoChecker()
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=100, status="completed")
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=100, status="completed"
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -120,7 +124,9 @@ def test_yes_no_checker_already_completed_stays_completed(db_session, sample_use
     assert new_progress == 100
 
 
-def test_yes_no_checker_sets_progress_to_100_on_completion(db_session, sample_user) -> None:
+def test_yes_no_checker_sets_progress_to_100_on_completion(
+    db_session, sample_user
+) -> None:
     checker = YesNoChecker()
     user_quest = _create_user_quest(db_session, sample_user.id, progress=40)
 
@@ -168,7 +174,9 @@ def test_accumulation_checker_adds_to_progress(db_session, sample_user) -> None:
         db_session,
         {"type": "accumulation", "target": 50, "unit": "minutes"},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=10, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=10, template=template
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -186,7 +194,9 @@ def test_accumulation_checker_reaches_target(db_session, sample_user) -> None:
         db_session,
         {"type": "accumulation", "target": 50, "unit": "minutes"},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=20, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=20, template=template
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -198,13 +208,17 @@ def test_accumulation_checker_reaches_target(db_session, sample_user) -> None:
     assert new_progress == 50
 
 
-def test_accumulation_checker_exceeds_target_caps_at_target(db_session, sample_user) -> None:
+def test_accumulation_checker_exceeds_target_caps_at_target(
+    db_session, sample_user
+) -> None:
     checker = AccumulationChecker()
     template = _create_template(
         db_session,
         {"type": "accumulation", "target": 50, "unit": "minutes"},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=40, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=40, template=template
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -216,13 +230,17 @@ def test_accumulation_checker_exceeds_target_caps_at_target(db_session, sample_u
     assert new_progress == 50
 
 
-def test_accumulation_checker_no_amount_in_context_returns_current(db_session, sample_user) -> None:
+def test_accumulation_checker_no_amount_in_context_returns_current(
+    db_session, sample_user
+) -> None:
     checker = AccumulationChecker()
     template = _create_template(
         db_session,
         {"type": "accumulation", "target": 50, "unit": "minutes"},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=12, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=12, template=template
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -253,7 +271,9 @@ def test_accumulation_checker_different_units(
         db_session,
         {"type": "accumulation", "target": 10, "unit": unit},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=0, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=0, template=template
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -271,7 +291,9 @@ def test_accumulation_checker_handles_float_amounts(db_session, sample_user) -> 
         db_session,
         {"type": "accumulation", "target": 50, "unit": "minutes"},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=10, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=10, template=template
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -283,13 +305,17 @@ def test_accumulation_checker_handles_float_amounts(db_session, sample_user) -> 
     assert new_progress == 12
 
 
-def test_accumulation_checker_zero_amount_doesnt_change_progress(db_session, sample_user) -> None:
+def test_accumulation_checker_zero_amount_doesnt_change_progress(
+    db_session, sample_user
+) -> None:
     checker = AccumulationChecker()
     template = _create_template(
         db_session,
         {"type": "accumulation", "target": 50, "unit": "minutes"},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=7, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=7, template=template
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -301,13 +327,17 @@ def test_accumulation_checker_zero_amount_doesnt_change_progress(db_session, sam
     assert new_progress == 7
 
 
-def test_accumulation_checker_multiple_increments_accumulate(db_session, sample_user) -> None:
+def test_accumulation_checker_multiple_increments_accumulate(
+    db_session, sample_user
+) -> None:
     checker = AccumulationChecker()
     template = _create_template(
         db_session,
         {"type": "accumulation", "target": 50, "unit": "minutes"},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=10, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=10, template=template
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -330,13 +360,17 @@ def test_accumulation_checker_multiple_increments_accumulate(db_session, sample_
     assert new_progress == 45
 
 
-def test_accumulation_checker_uses_detected_amount_fallback(db_session, sample_user) -> None:
+def test_accumulation_checker_uses_detected_amount_fallback(
+    db_session, sample_user
+) -> None:
     checker = AccumulationChecker()
     template = _create_template(
         db_session,
         {"type": "accumulation", "target": 50, "unit": "minutes"},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=10, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=10, template=template
+    )
 
     is_complete, new_progress = checker.check_completion(
         db_session,
@@ -348,7 +382,9 @@ def test_accumulation_checker_uses_detected_amount_fallback(db_session, sample_u
     assert new_progress == 22
 
 
-def test_accumulation_checker_uses_completion_target_when_no_template(db_session, sample_user) -> None:
+def test_accumulation_checker_uses_completion_target_when_no_template(
+    db_session, sample_user
+) -> None:
     checker = AccumulationChecker()
     user_quest = _create_user_quest(db_session, sample_user.id, progress=90)
     user_quest.completion_target = 100
@@ -381,7 +417,9 @@ def test_frequency_checker_counts_occurrences(db_session, sample_user) -> None:
             ]
         },
     )
-    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 10, 9, 0, 0))
+    entry = _create_journal_entry(
+        db_session, sample_user.id, datetime(2026, 2, 10, 9, 0, 0)
+    )
 
     is_complete, progress = checker.check_completion(
         db_session,
@@ -412,7 +450,9 @@ def test_frequency_checker_reaches_target_in_week(db_session, sample_user) -> No
             ]
         },
     )
-    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 10, 8, 0, 0))
+    entry = _create_journal_entry(
+        db_session, sample_user.id, datetime(2026, 2, 10, 8, 0, 0)
+    )
 
     is_complete, progress = checker.check_completion(
         db_session,
@@ -437,7 +477,9 @@ def test_frequency_checker_daily_frequency(db_session, sample_user) -> None:
         template=template,
         quest_metadata={"occurrences": [{"entry_id": "a", "date": "2026-02-10"}]},
     )
-    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 10, 11, 0, 0))
+    entry = _create_journal_entry(
+        db_session, sample_user.id, datetime(2026, 2, 10, 11, 0, 0)
+    )
 
     is_complete, progress = checker.check_completion(
         db_session,
@@ -467,7 +509,9 @@ def test_frequency_checker_monthly_frequency(db_session, sample_user) -> None:
             ]
         },
     )
-    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 15, 9, 0, 0))
+    entry = _create_journal_entry(
+        db_session, sample_user.id, datetime(2026, 2, 15, 9, 0, 0)
+    )
 
     is_complete, progress = checker.check_completion(
         db_session,
@@ -480,13 +524,17 @@ def test_frequency_checker_monthly_frequency(db_session, sample_user) -> None:
 
 
 @freeze_time("2026-02-10 10:00:00")
-def test_frequency_checker_duplicate_entry_not_counted_twice(db_session, sample_user) -> None:
+def test_frequency_checker_duplicate_entry_not_counted_twice(
+    db_session, sample_user
+) -> None:
     checker = FrequencyChecker()
     template = _create_template(
         db_session,
         {"type": "frequency", "target": 3, "period": "week"},
     )
-    entry = _create_journal_entry(db_session, sample_user.id, datetime(2026, 2, 10, 8, 0, 0))
+    entry = _create_journal_entry(
+        db_session, sample_user.id, datetime(2026, 2, 10, 8, 0, 0)
+    )
     user_quest = _create_user_quest(
         db_session,
         sample_user.id,
@@ -531,7 +579,9 @@ def test_frequency_checker_resets_on_new_period(db_session, sample_user) -> None
 
 
 @freeze_time("2026-02-10 10:00:00")
-def test_frequency_checker_partial_progress_calculation(db_session, sample_user) -> None:
+def test_frequency_checker_partial_progress_calculation(
+    db_session, sample_user
+) -> None:
     checker = FrequencyChecker()
     template = _create_template(
         db_session,
@@ -610,16 +660,23 @@ def test_keyword_match_checker_required_matches_count(db_session, sample_user) -
 
     assert is_complete is True
     assert progress == 100
-    assert set(user_quest.quest_metadata.get("matched_keywords", [])) == {"gym", "workout"}
+    assert set(user_quest.quest_metadata.get("matched_keywords", [])) == {
+        "gym",
+        "workout",
+    }
 
 
-def test_keyword_match_checker_no_match_no_progress_change(db_session, sample_user) -> None:
+def test_keyword_match_checker_no_match_no_progress_change(
+    db_session, sample_user
+) -> None:
     checker = KeywordMatchChecker()
     template = _create_template(
         db_session,
         {"type": "keyword_match", "keywords": ["gym", "workout", "exercise"]},
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=40, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=40, template=template
+    )
 
     is_complete, progress = checker.check_completion(
         db_session,
@@ -677,7 +734,9 @@ def test_keyword_match_checker_incremental_progress(db_session, sample_user) -> 
             "required_matches": 3,
         },
     )
-    user_quest = _create_user_quest(db_session, sample_user.id, progress=40, template=template)
+    user_quest = _create_user_quest(
+        db_session, sample_user.id, progress=40, template=template
+    )
 
     is_complete, progress = checker.check_completion(
         db_session,
@@ -689,7 +748,9 @@ def test_keyword_match_checker_incremental_progress(db_session, sample_user) -> 
     assert progress == 60
 
 
-def test_keyword_match_checker_multiple_entries_accumulate(db_session, sample_user) -> None:
+def test_keyword_match_checker_multiple_entries_accumulate(
+    db_session, sample_user
+) -> None:
     checker = KeywordMatchChecker()
     template = _create_template(
         db_session,

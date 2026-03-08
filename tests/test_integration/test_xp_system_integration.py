@@ -142,8 +142,12 @@ class TestCompleteXPFlow:
         assert any(e["target_type"] == "skill" for e in captured_events)
 
         # 12. Verify xp_breakdown updated
-        assert theme.theme_metadata.get("xp_breakdown", {}).get("journal") == pytest.approx(36.0)
-        assert skill.skill_metadata.get("xp_breakdown", {}).get("journal") == pytest.approx(30.0)
+        assert theme.theme_metadata.get("xp_breakdown", {}).get(
+            "journal"
+        ) == pytest.approx(36.0)
+        assert skill.skill_metadata.get("xp_breakdown", {}).get(
+            "journal"
+        ) == pytest.approx(30.0)
 
 
 class TestXPStrategies:
@@ -191,7 +195,9 @@ class TestXPStrategies:
         db_session.commit()
 
         calc_equal = XPCalculator(EqualDistributor(), event_bus, config)
-        results["equal"] = calc_equal.process_journal_entry(db_session, entry, categories)
+        results["equal"] = calc_equal.process_journal_entry(
+            db_session, entry, categories
+        )
 
         # Test WeightedDistributor
         theme.xp = 0
@@ -201,7 +207,9 @@ class TestXPStrategies:
         db_session.commit()
 
         calc_weighted = XPCalculator(WeightedDistributor(), event_bus, config)
-        results["weighted"] = calc_weighted.process_journal_entry(db_session, entry, categories)
+        results["weighted"] = calc_weighted.process_journal_entry(
+            db_session, entry, categories
+        )
 
         # Test ProportionalDistributor
         theme.xp = 0
@@ -211,11 +219,15 @@ class TestXPStrategies:
         db_session.commit()
 
         calc_proportional = XPCalculator(ProportionalDistributor(), event_bus, config)
-        results["proportional"] = calc_proportional.process_journal_entry(db_session, entry, categories)
+        results["proportional"] = calc_proportional.process_journal_entry(
+            db_session, entry, categories
+        )
 
         # Verify all strategies preserve total XP
         for strategy_name, summary in results.items():
-            assert summary["total_xp"] == pytest.approx(base_xp), f"{strategy_name} should preserve total XP"
+            assert summary["total_xp"] == pytest.approx(
+                base_xp
+            ), f"{strategy_name} should preserve total XP"
             assert len(summary["awards"]) == 2, f"{strategy_name} should have 2 awards"
 
         # Verify equal distribution gives equal amounts
@@ -426,7 +438,9 @@ class TestComplexMultiplierStacking:
 
         # Verify the breakdown
         db_session.refresh(theme)
-        assert theme.theme_metadata["xp_breakdown"]["journal"] == pytest.approx(expected_xp)
+        assert theme.theme_metadata["xp_breakdown"]["journal"] == pytest.approx(
+            expected_xp
+        )
 
     def test_multipliers_only_apply_to_matching_targets(self, db_session, fake):
         """Test that multipliers only apply to their intended targets."""
@@ -592,7 +606,9 @@ class TestEventEmission:
 class TestXPEdgeCases:
     """Additional edge case coverage for XP calculator integration."""
 
-    def test_weighted_distribution_missing_confidence_defaults_to_one(self, db_session, fake):
+    def test_weighted_distribution_missing_confidence_defaults_to_one(
+        self, db_session, fake
+    ):
         user = User(username=fake.user_name(), email=fake.email())
         db_session.add(user)
         db_session.commit()
@@ -602,7 +618,9 @@ class TestXPEdgeCases:
         db_session.add_all([theme, skill])
         db_session.commit()
 
-        entry = JournalEntry(user_id=user.id, content="Education Python", entry_type="text")
+        entry = JournalEntry(
+            user_id=user.id, content="Education Python", entry_type="text"
+        )
         db_session.add(entry)
         db_session.commit()
 
@@ -624,7 +642,9 @@ class TestXPEdgeCases:
         assert theme_award["xp"] == pytest.approx(45.0)
         assert skill_award["xp"] == pytest.approx(45.0)
 
-    def test_proportional_distribution_no_mentions_returns_empty(self, db_session, fake):
+    def test_proportional_distribution_no_mentions_returns_empty(
+        self, db_session, fake
+    ):
         user = User(username=fake.user_name(), email=fake.email())
         db_session.add(user)
         db_session.commit()
@@ -634,7 +654,9 @@ class TestXPEdgeCases:
         db_session.add_all([theme, skill])
         db_session.commit()
 
-        entry = JournalEntry(user_id=user.id, content="No keywords here", entry_type="text")
+        entry = JournalEntry(
+            user_id=user.id, content="No keywords here", entry_type="text"
+        )
         db_session.add(entry)
         db_session.commit()
 
@@ -663,7 +685,9 @@ class TestXPEdgeCases:
         db_session.add_all([theme, skill])
         db_session.commit()
 
-        entry = JournalEntry(user_id=user.id, content="Education Python", entry_type="text")
+        entry = JournalEntry(
+            user_id=user.id, content="Education Python", entry_type="text"
+        )
         db_session.add(entry)
         db_session.commit()
 
@@ -692,7 +716,11 @@ class TestXPEdgeCases:
         db_session.add(user)
         db_session.commit()
 
-        theme = Theme(user_id=user.id, name="Education", theme_metadata={"xp_breakdown": {"quest": 5.0}})
+        theme = Theme(
+            user_id=user.id,
+            name="Education",
+            theme_metadata={"xp_breakdown": {"quest": 5.0}},
+        )
         db_session.add(theme)
         db_session.commit()
 
@@ -726,16 +754,25 @@ class TestXPEdgeCases:
 
         template = TitleTemplate(
             name="GlobalBoost",
-            effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.20},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "all",
+                "target": "all",
+                "value": 1.20,
+            },
             rank="A",
         )
         db_session.add(template)
         db_session.commit()
 
-        db_session.add(UserTitle(user_id=user.id, title_template_id=template.id, is_equipped=True))
+        db_session.add(
+            UserTitle(user_id=user.id, title_template_id=template.id, is_equipped=True)
+        )
         db_session.commit()
 
-        entry = JournalEntry(user_id=user.id, content="Education Python", entry_type="text")
+        entry = JournalEntry(
+            user_id=user.id, content="Education Python", entry_type="text"
+        )
         db_session.add(entry)
         db_session.commit()
 
@@ -767,7 +804,9 @@ class TestXPEdgeCases:
         db_session.add_all([theme, skill])
         db_session.commit()
 
-        entry = JournalEntry(user_id=user.id, content="Education Python", entry_type="text")
+        entry = JournalEntry(
+            user_id=user.id, content="Education Python", entry_type="text"
+        )
         db_session.add(entry)
         db_session.commit()
 

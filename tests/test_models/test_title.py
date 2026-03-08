@@ -10,6 +10,7 @@ Tests cover:
 
 Follows the AAA pattern: Arrange, Act, Assert
 """
+
 import pytest
 from datetime import datetime, timedelta
 
@@ -29,7 +30,12 @@ class TestTitleTemplateModel:
         # Arrange
         name = "Consistent Chronicler"
         description = "{user_name} has shown dedication to daily journaling."
-        effect = {"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 1.10}
+        effect = {
+            "type": "xp_multiplier",
+            "scope": "theme",
+            "target": "Education",
+            "value": 1.10,
+        }
         rank = "C"
         unlock_condition = {"type": "journal_streak", "value": 7}
         category = "Productivity"
@@ -64,7 +70,9 @@ class TestTitleTemplateModel:
         long_description = "A" * 600
 
         # Act
-        template = TitleTemplate(name="Long Description Title", description_template=long_description)
+        template = TitleTemplate(
+            name="Long Description Title", description_template=long_description
+        )
         db_session.add(template)
         db_session.commit()
         db_session.refresh(template)
@@ -257,7 +265,9 @@ class TestUserTitleModel:
         assert user_title.personalized_description is None
         assert user_title.expires_at is None
 
-    def test_user_title_creation_with_personalized_description(self, db_session, sample_user):
+    def test_user_title_creation_with_personalized_description(
+        self, db_session, sample_user
+    ):
         """Should create user title with personalized description."""
         # Arrange
         template = TitleTemplate(name="Personal Title")
@@ -520,12 +530,14 @@ class TestUserTitleModel:
         db_session.commit()
 
         # Assert
-        remaining_titles = db_session.query(UserTitle).filter(
-            UserTitle.user_id == user_id
-        ).all()
+        remaining_titles = (
+            db_session.query(UserTitle).filter(UserTitle.user_id == user_id).all()
+        )
         assert len(remaining_titles) == 0
 
-    def test_title_template_deletion_cascades_to_user_titles(self, db_session, sample_user):
+    def test_title_template_deletion_cascades_to_user_titles(
+        self, db_session, sample_user
+    ):
         """Deleting title template should cascade delete all user titles referencing it."""
         # Arrange
         template = TitleTemplate(name="Delete Me Title")
@@ -542,9 +554,11 @@ class TestUserTitleModel:
         db_session.commit()
 
         # Assert
-        remaining_titles = db_session.query(UserTitle).filter(
-            UserTitle.title_template_id == template_id
-        ).all()
+        remaining_titles = (
+            db_session.query(UserTitle)
+            .filter(UserTitle.title_template_id == template_id)
+            .all()
+        )
         assert len(remaining_titles) == 0
 
     # =========================================================================
@@ -672,9 +686,9 @@ class TestTitleRankSystem:
         db_session.commit()
 
         # Act
-        s_rank_titles = db_session.query(TitleTemplate).filter(
-            TitleTemplate.rank == "S"
-        ).all()
+        s_rank_titles = (
+            db_session.query(TitleTemplate).filter(TitleTemplate.rank == "S").all()
+        )
 
         # Assert
         assert len(s_rank_titles) == 1
@@ -697,9 +711,11 @@ class TestTitleCategory:
         db_session.commit()
 
         # Act
-        health_titles = db_session.query(TitleTemplate).filter(
-            TitleTemplate.category == "Health"
-        ).all()
+        health_titles = (
+            db_session.query(TitleTemplate)
+            .filter(TitleTemplate.category == "Health")
+            .all()
+        )
 
         # Assert
         assert len(health_titles) == 2

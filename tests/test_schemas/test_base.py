@@ -8,6 +8,7 @@ These tests cover:
 - MessageResponse
 - PaginatedResponse with properties
 """
+
 from datetime import datetime
 
 import pytest
@@ -19,13 +20,6 @@ from app.schemas.base import (
     PaginatedResponse,
     validate_non_empty_string,
     validate_uuid_format,
-    UUIDStr,
-    UsernameStr,
-    EmailStr,
-    NameStr,
-    DescriptionStr,
-    XPFloat,
-    LevelInt,
 )
 
 
@@ -126,10 +120,7 @@ class TestPaginatedResponse:
     def test_paginated_response_creation(self):
         """PaginatedResponse should be created with valid values."""
         response = PaginatedResponse(
-            total=100,
-            page=1,
-            page_size=10,
-            items=["a", "b", "c"]
+            total=100, page=1, page_size=10, items=["a", "b", "c"]
         )
         assert response.total == 100
         assert response.page == 1
@@ -191,6 +182,7 @@ class TestBaseSchema:
 
     def test_base_schema_strips_whitespace(self):
         """BaseSchema should strip whitespace from strings."""
+
         class TestSchema(BaseSchema):
             name: str
 
@@ -199,6 +191,7 @@ class TestBaseSchema:
 
     def test_base_schema_forbids_extra_fields(self):
         """BaseSchema should reject extra fields."""
+
         class TestSchema(BaseSchema):
             name: str
 

@@ -7,7 +7,6 @@ Covers positive titles, negative titles, compound conditions, and user journey s
 
 from datetime import datetime, timedelta
 
-import pytest
 
 from app.core.events import EventBus
 from app.core.titles import TitleAwarder
@@ -54,7 +53,12 @@ class TestTitleUnlockCascade:
         title_template = TitleTemplate(
             name="Education Novice",
             description_template="{user_name} has begun their learning journey",
-            effect={"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 1.05},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "theme",
+                "target": "Education",
+                "value": 1.05,
+            },
             rank="D",
             unlock_condition={"type": "theme_level", "theme": "Education", "value": 10},
         )
@@ -151,19 +155,38 @@ class TestMultipleTitlesSimultaneous:
         templates = [
             TitleTemplate(
                 name="Education Master",
-                effect={"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 1.10},
+                effect={
+                    "type": "xp_multiplier",
+                    "scope": "theme",
+                    "target": "Education",
+                    "value": 1.10,
+                },
                 rank="B",
-                unlock_condition={"type": "theme_level", "theme": "Education", "value": 10},
+                unlock_condition={
+                    "type": "theme_level",
+                    "theme": "Education",
+                    "value": 10,
+                },
             ),
             TitleTemplate(
                 name="Python Expert",
-                effect={"type": "xp_multiplier", "scope": "skill", "target": "Python", "value": 1.15},
+                effect={
+                    "type": "xp_multiplier",
+                    "scope": "skill",
+                    "target": "Python",
+                    "value": 1.15,
+                },
                 rank="A",
                 unlock_condition={"type": "skill_rank", "rank": "Expert"},
             ),
             TitleTemplate(
                 name="Prolific Writer",
-                effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.02},
+                effect={
+                    "type": "xp_multiplier",
+                    "scope": "all",
+                    "target": "all",
+                    "value": 1.02,
+                },
                 rank="C",
                 unlock_condition={"type": "journal_count", "value": 3},
             ),
@@ -183,7 +206,9 @@ class TestMultipleTitlesSimultaneous:
 
         # Verify all 3 titles awarded
         assert len(new_titles) == 3, "Should award all 3 titles"
-        awarded_names = {db_session.get(TitleTemplate, t.title_template_id).name for t in new_titles}
+        awarded_names = {
+            db_session.get(TitleTemplate, t.title_template_id).name for t in new_titles
+        }
         assert awarded_names == {"Education Master", "Python Expert", "Prolific Writer"}
 
         # Verify 3 events emitted
@@ -229,7 +254,12 @@ class TestCompoundConditionTitle:
         # Create title with compound condition
         title_template = TitleTemplate(
             name="Scholar Elite",
-            effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.25},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "all",
+                "target": "all",
+                "value": 1.25,
+            },
             rank="S",
             unlock_condition={
                 "type": "or",
@@ -296,7 +326,12 @@ class TestCompoundConditionTitle:
         # Create title with compound condition
         title_template = TitleTemplate(
             name="Scholar Elite",
-            effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.25},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "all",
+                "target": "all",
+                "value": 1.25,
+            },
             rank="S",
             unlock_condition={
                 "type": "or",
@@ -353,7 +388,12 @@ class TestCompoundConditionTitle:
         # Create title with compound condition
         title_template = TitleTemplate(
             name="Scholar Elite",
-            effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.25},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "all",
+                "target": "all",
+                "value": 1.25,
+            },
             rank="S",
             unlock_condition={
                 "type": "or",
@@ -409,10 +449,19 @@ class TestNegativeTitleCorrosion:
         title_template = TitleTemplate(
             name="The Neglectful",
             description_template="{user_name} has let their studies rust",
-            effect={"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 0.90},  # -10% XP penalty
+            effect={
+                "type": "xp_multiplier",
+                "scope": "theme",
+                "target": "Education",
+                "value": 0.90,
+            },  # -10% XP penalty
             rank="D",
             category="negative",
-            unlock_condition={"type": "corrosion_level", "theme": "Education", "min_level": "Rusty"},
+            unlock_condition={
+                "type": "corrosion_level",
+                "theme": "Education",
+                "min_level": "Rusty",
+            },
         )
         db_session.add(title_template)
         db_session.commit()
@@ -457,10 +506,19 @@ class TestNegativeTitleCorrosion:
         # Create negative title template
         title_template = TitleTemplate(
             name="The Neglectful",
-            effect={"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 0.90},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "theme",
+                "target": "Education",
+                "value": 0.90,
+            },
             rank="D",
             category="negative",
-            unlock_condition={"type": "corrosion_level", "theme": "Education", "min_level": "Rusty"},
+            unlock_condition={
+                "type": "corrosion_level",
+                "theme": "Education",
+                "min_level": "Rusty",
+            },
         )
         db_session.add(title_template)
         db_session.commit()
@@ -490,7 +548,12 @@ class TestRealUserJourney:
         title_template = TitleTemplate(
             name="Week Warrior",
             description_template="{user_name} has journaled for a full week",
-            effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.10},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "all",
+                "target": "all",
+                "value": 1.10,
+            },
             rank="C",
             unlock_condition={"type": "journal_streak", "value": 7},
         )
@@ -531,10 +594,13 @@ class TestRealUserJourney:
             if day < 6:
                 # Days 1-6: Should not unlock Week Warrior yet
                 week_warrior_unlocked = any(
-                    db_session.get(TitleTemplate, t.title_template_id).name == "Week Warrior"
+                    db_session.get(TitleTemplate, t.title_template_id).name
+                    == "Week Warrior"
                     for t in new_titles
                 )
-                assert not week_warrior_unlocked, f"Week Warrior should not unlock on day {day + 1}"
+                assert (
+                    not week_warrior_unlocked
+                ), f"Week Warrior should not unlock on day {day + 1}"
             else:
                 # Day 7: Should unlock Week Warrior
                 assert len(new_titles) == 1, "Should unlock Week Warrior on day 7"
@@ -546,7 +612,9 @@ class TestRealUserJourney:
         assert captured_events[0]["title_name"] == "Week Warrior"
 
         # Verify title is equipped
-        user_titles = db_session.query(UserTitle).filter(UserTitle.user_id == user.id).all()
+        user_titles = (
+            db_session.query(UserTitle).filter(UserTitle.user_id == user.id).all()
+        )
         assert len(user_titles) == 1
         assert user_titles[0].is_equipped is True
 
@@ -569,7 +637,12 @@ class TestRealUserJourney:
         # Create title template
         title_template = TitleTemplate(
             name="Education Beginner",
-            effect={"type": "xp_multiplier", "scope": "theme", "target": "Education", "value": 1.05},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "theme",
+                "target": "Education",
+                "value": 1.05,
+            },
             rank="D",
             unlock_condition={"type": "theme_level", "theme": "Education", "value": 10},
         )
@@ -593,7 +666,9 @@ class TestRealUserJourney:
         assert len(captured_events) == 1  # No new events
 
         # Verify only one UserTitle exists
-        user_titles = db_session.query(UserTitle).filter(UserTitle.user_id == user.id).all()
+        user_titles = (
+            db_session.query(UserTitle).filter(UserTitle.user_id == user.id).all()
+        )
         assert len(user_titles) == 1
 
 
@@ -610,7 +685,12 @@ class TestTitleAwarderEdgeCases:
         # Create title without unlock condition (manual award only)
         title_template = TitleTemplate(
             name="Special Achievement",
-            effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.50},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "all",
+                "target": "all",
+                "value": 1.50,
+            },
             rank="S",
             unlock_condition=None,  # No auto-unlock
         )
@@ -635,7 +715,12 @@ class TestTitleAwarderEdgeCases:
         # Create title template
         title_template = TitleTemplate(
             name="Manual Award Title",
-            effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.20},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "all",
+                "target": "all",
+                "value": 1.20,
+            },
             rank="A",
         )
         db_session.add(title_template)
@@ -675,7 +760,12 @@ class TestTitleAwarderEdgeCases:
         # Create title with unknown condition type
         title_template = TitleTemplate(
             name="Mystery Title",
-            effect={"type": "xp_multiplier", "scope": "all", "target": "all", "value": 1.10},
+            effect={
+                "type": "xp_multiplier",
+                "scope": "all",
+                "target": "all",
+                "value": 1.10,
+            },
             rank="B",
             unlock_condition={"type": "unknown_condition_type", "value": 42},
         )

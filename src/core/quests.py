@@ -10,9 +10,8 @@ Completion types:
 """
 
 import json
-import math
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
@@ -26,6 +25,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _get_criteria(quest: Quest) -> tuple[Optional[dict], bool]:
     """Load matching criteria from the quest's template parameters (JSON).
@@ -70,14 +70,14 @@ def _skill_matches(quest: Quest, detected_skills: list[str]) -> bool:
     return name.strip().lower() in detected
 
 
-def _entry_date(entry: JournalEntry) -> Optional[datetime.date]:
+def _entry_date(entry: JournalEntry) -> Optional[date]:
     """Return entry calendar date in UTC-naive date semantics."""
     if not getattr(entry, "created_at", None):
         return None
     return entry.created_at.date()
 
 
-def _quest_last_progress_date(quest: Quest) -> Optional[datetime.date]:
+def _quest_last_progress_date(quest: Quest) -> Optional[date]:
     """Best-effort date of the quest's latest progress mutation."""
     updated_at_utc_ms = getattr(quest, "updated_at_utc_ms", None)
     if isinstance(updated_at_utc_ms, int) and updated_at_utc_ms > 0:
@@ -96,6 +96,7 @@ def _quest_last_progress_date(quest: Quest) -> Optional[datetime.date]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def match_quests(
     entry: "JournalEntry",
@@ -199,13 +200,19 @@ def check_quest_match(
             return _skill_matches(quest, detected_skills)
 
         raw_keywords = criteria.get("keywords", [])
-        keywords = [kw.strip().lower() for kw in raw_keywords if isinstance(kw, str) and kw.strip()]
+        keywords = [
+            kw.strip().lower()
+            for kw in raw_keywords
+            if isinstance(kw, str) and kw.strip()
+        ]
         activity = criteria.get("activity", "")
         activity_norm = activity.strip().lower() if isinstance(activity, str) else ""
         content = getattr(entry, "content", "") or ""
         content_lower = content.lower()
         detected_activity_set = {
-            a.strip().lower() for a in detected_activities if isinstance(a, str) and a.strip()
+            a.strip().lower()
+            for a in detected_activities
+            if isinstance(a, str) and a.strip()
         }
 
         keyword_ok = (
@@ -301,12 +308,19 @@ def update_quest_progress(quest: Quest, progress_delta: float, db: Session) -> b
 
     delta = int(round(progress_delta))
     if delta <= 0:
-        logger.info("Quest %s: ignoring non-positive progress delta %s", quest.id, progress_delta)
+        logger.info(
+            "Quest %s: ignoring non-positive progress delta %s",
+            quest.id,
+            progress_delta,
+        )
         db.flush()
         return False
 
     quest.current_progress += delta
-    completed = quest.current_progress >= quest.required_progress and quest.status != "completed"
+    completed = (
+        quest.current_progress >= quest.required_progress
+        and quest.status != "completed"
+    )
 
     if completed:
         now = datetime.now(timezone.utc)
@@ -324,12 +338,11 @@ def update_quest_progress(quest: Quest, progress_delta: float, db: Session) -> b
 # Internal mutation helpers
 # ---------------------------------------------------------------------------
 
+
 def _break_streak(quest: Quest) -> None:
     """Mark a streak quest as failed due to a missed day.
 
     Called from check_quest_match; the caller's session flush will persist it.
     """
     quest.status = "failed"
-    logger.info(
-        "Quest %s (%r): streak broken — marking failed", quest.id, quest.name
-    )
+    logger.info("Quest %s (%r): streak broken — marking failed", quest.id, quest.name)

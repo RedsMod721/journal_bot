@@ -1,0 +1,8 @@
+[tool.mypy]
+python_version = "3.12"
+explicit_package_bases = true
+files = ["src"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/unit/core/test_quests.py" = ["E402"]
+"tests/unit/core/test_xp.py" = ["E402"]

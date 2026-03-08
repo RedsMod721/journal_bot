@@ -7,6 +7,7 @@ This module tests the complete CRUD layer end-to-end, verifying:
 - Schema validation works as expected
 - Cascade delete properly removes all related records via CRUD layer
 """
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -32,11 +33,10 @@ from app.schemas.journal import JournalEntryCreate
 from app.schemas.user_stats import UserStatsCreate
 
 # Import models for verification queries
-from app.models.user import User
 from app.models.theme import Theme
 from app.models.skill import Skill
-from app.models.title import TitleTemplate, UserTitle
-from app.models.mission_quest import MissionQuestTemplate, UserMissionQuest
+from app.models.title import UserTitle
+from app.models.mission_quest import UserMissionQuest
 from app.models.journal_entry import JournalEntry
 from app.models.user_stats import UserStats
 
@@ -69,10 +69,7 @@ class TestFullCRUDIntegration:
         # =================================================================
         # STEP 1: Create User via CRUD
         # =================================================================
-        user_data = UserCreate(
-            username=fake.user_name(),
-            email=fake.email()
-        )
+        user_data = UserCreate(username=fake.user_name(), email=fake.email())
         user = user_crud.create_user(db_session, user_data)
 
         assert user is not None
@@ -97,7 +94,7 @@ class TestFullCRUDIntegration:
             mental_health=75,
             physical_health=80,
             relationship_quality=60,
-            socialization_level=55
+            socialization_level=55,
         )
         user_stats = stats_crud.create_user_stats(db_session, stats_data)
 
@@ -117,14 +114,14 @@ class TestFullCRUDIntegration:
         theme1_data = ThemeCreate(
             user_id=user.id,
             name="Career Development",
-            description="Professional growth and work skills"
+            description="Professional growth and work skills",
         )
         theme1 = theme_crud.create_theme(db_session, theme1_data)
 
         theme2_data = ThemeCreate(
             user_id=user.id,
             name="Health & Wellness",
-            description="Physical and mental health"
+            description="Physical and mental health",
         )
         theme2 = theme_crud.create_theme(db_session, theme2_data)
 
@@ -145,7 +142,7 @@ class TestFullCRUDIntegration:
             theme_id=theme1.id,
             name="Python Programming",
             description="Backend development with Python",
-            difficulty="Hard"
+            difficulty="Hard",
         )
         skill1 = skill_crud.create_skill(db_session, skill1_data)
 
@@ -154,7 +151,7 @@ class TestFullCRUDIntegration:
             theme_id=theme1.id,
             name="Project Management",
             description="Managing projects and teams",
-            difficulty="Medium"
+            difficulty="Medium",
         )
         skill2 = skill_crud.create_skill(db_session, skill2_data)
 
@@ -163,7 +160,7 @@ class TestFullCRUDIntegration:
             theme_id=None,  # Standalone skill
             name="Communication",
             description="Verbal and written communication",
-            difficulty="Medium"
+            difficulty="Medium",
         )
         skill3 = skill_crud.create_skill(db_session, skill3_data)
 
@@ -189,16 +186,20 @@ class TestFullCRUDIntegration:
             rank="B",
             unlock_condition={"type": "skill_level", "skill": "Python", "value": 10},
             category="Skills",
-            is_hidden=False
+            is_hidden=False,
         )
-        title_template = title_crud.create_title_template(db_session, title_template_data)
+        title_template = title_crud.create_title_template(
+            db_session, title_template_data
+        )
 
         assert title_template is not None
         assert title_template.name == "Code Warrior"
         assert title_template.rank == "B"
 
         # Verify we can retrieve the template
-        retrieved_template = title_crud.get_title_template(db_session, title_template.id)
+        retrieved_template = title_crud.get_title_template(
+            db_session, title_template.id
+        )
         assert retrieved_template is not None
 
         # =================================================================
@@ -208,7 +209,7 @@ class TestFullCRUDIntegration:
             user_id=user.id,
             title_template_id=title_template.id,
             is_equipped=False,
-            personalized_description=f"{user.username} is a master of code"
+            personalized_description=f"{user.username} is a master of code",
         )
         user_title = title_crud.award_title_to_user(db_session, user_title_data)
 
@@ -227,7 +228,9 @@ class TestFullCRUDIntegration:
         assert equipped_title.is_equipped is True
 
         # Verify equipped titles query
-        equipped_titles = title_crud.get_user_titles(db_session, user.id, equipped_only=True)
+        equipped_titles = title_crud.get_user_titles(
+            db_session, user.id, equipped_only=True
+        )
         assert len(equipped_titles) == 1
 
         # =================================================================
@@ -242,7 +245,7 @@ class TestFullCRUDIntegration:
             reward_xp=500,
             reward_coins=50,
             difficulty="hard",
-            category="Learning"
+            category="Learning",
         )
         mq_template = mq_crud.create_mq_template(db_session, mq_template_data)
 
@@ -263,7 +266,7 @@ class TestFullCRUDIntegration:
             name="Learn FastAPI",
             personalized_description=f"{user.username} will master FastAPI",
             status="in_progress",
-            completion_target=100
+            completion_target=100,
         )
         user_mq = mq_crud.create_user_mq(db_session, user_mq_data)
 
@@ -279,9 +282,9 @@ class TestFullCRUDIntegration:
         journal_data = JournalEntryCreate(
             user_id=user.id,
             content="Today I made great progress learning FastAPI. "
-                    "I completed the routing chapter and built my first endpoint. "
-                    "Feeling accomplished and motivated!",
-            entry_type="text"
+            "I completed the routing chapter and built my first endpoint. "
+            "Feeling accomplished and motivated!",
+            entry_type="text",
         )
         journal_entry = journal_crud.create_journal_entry(db_session, journal_data)
 
@@ -318,7 +321,10 @@ class TestFullCRUDIntegration:
         assert updated_theme1 is not None
         assert updated_theme1.xp >= 0  # XP may have reset if level up occurred
         # Either XP increased or level increased (due to level-up)
-        assert updated_theme1.xp > initial_theme_xp or updated_theme1.level > initial_theme_level
+        assert (
+            updated_theme1.xp > initial_theme_xp
+            or updated_theme1.level > initial_theme_level
+        )
 
         # =================================================================
         # STEP 13: Update MQ Progress to 50 via CRUD
@@ -341,7 +347,7 @@ class TestFullCRUDIntegration:
             "themes": ["Career Development"],
             "skills": ["Python Programming"],
             "sentiment": "positive",
-            "energy_level": "high"
+            "energy_level": "high",
         }
         processed_entry = journal_crud.mark_as_ai_processed(
             db_session, journal_entry.id, ai_categories
@@ -410,13 +416,31 @@ class TestFullCRUDIntegration:
         assert db_session.query(Skill).filter(Skill.id == skill1_id).first() is None
         assert db_session.query(Skill).filter(Skill.id == skill2_id).first() is None
         assert db_session.query(Skill).filter(Skill.id == skill3_id).first() is None
-        assert db_session.query(UserTitle).filter(UserTitle.id == user_title_id).first() is None
-        assert db_session.query(UserMissionQuest).filter(UserMissionQuest.id == user_mq_id).first() is None
-        assert db_session.query(JournalEntry).filter(JournalEntry.id == journal_entry_id).first() is None
-        assert db_session.query(UserStats).filter(UserStats.id == user_stats_id).first() is None
+        assert (
+            db_session.query(UserTitle).filter(UserTitle.id == user_title_id).first()
+            is None
+        )
+        assert (
+            db_session.query(UserMissionQuest)
+            .filter(UserMissionQuest.id == user_mq_id)
+            .first()
+            is None
+        )
+        assert (
+            db_session.query(JournalEntry)
+            .filter(JournalEntry.id == journal_entry_id)
+            .first()
+            is None
+        )
+        assert (
+            db_session.query(UserStats).filter(UserStats.id == user_stats_id).first()
+            is None
+        )
 
         # Verify templates are NOT deleted (global resources)
-        remaining_title_template = title_crud.get_title_template(db_session, title_template_id)
+        remaining_title_template = title_crud.get_title_template(
+            db_session, title_template_id
+        )
         assert remaining_title_template is not None
         assert remaining_title_template.name == "Code Warrior"
 
@@ -556,10 +580,16 @@ class TestFullCRUDIntegration:
         db_session.commit()
 
         all_entries = journal_crud.get_user_journal_entries(db_session, user.id)
-        assert [e.id for e in all_entries[:3]] == [entry_new.id, entry_mid.id, entry_old.id]
+        assert [e.id for e in all_entries[:3]] == [
+            entry_new.id,
+            entry_mid.id,
+            entry_old.id,
+        ]
 
         page1 = journal_crud.get_user_journal_entries(db_session, user.id, limit=2)
-        page2 = journal_crud.get_user_journal_entries(db_session, user.id, skip=2, limit=2)
+        page2 = journal_crud.get_user_journal_entries(
+            db_session, user.id, skip=2, limit=2
+        )
         assert [e.id for e in page1] == [entry_new.id, entry_mid.id]
         assert [e.id for e in page2] == [entry_old.id]
 
@@ -651,13 +681,19 @@ class TestFullCRUDIntegration:
         assert equipped is not None
         assert equipped.is_equipped is True
 
-        assert len(title_crud.get_user_titles(db_session, user.id, equipped_only=True)) == 1
+        assert (
+            len(title_crud.get_user_titles(db_session, user.id, equipped_only=True))
+            == 1
+        )
         assert title_crud.remove_user_title(db_session, awarded.id) is True
         assert title_crud.get_user_title(db_session, awarded.id) is None
 
     def test_schema_validation_rejects_extra_fields(self):
         schemas = [
-            (UserCreate, {"username": "user1", "email": "user1@example.com", "extra": 1}),
+            (
+                UserCreate,
+                {"username": "user1", "email": "user1@example.com", "extra": 1},
+            ),
             (
                 ThemeCreate,
                 {
@@ -731,9 +767,7 @@ class TestFullCRUDIntegration:
 
         assert stats.user_id == "not-a-uuid"
 
-    def test_duplicate_title_template_name_raises_integrity_error(
-        self, db_session
-    ):
+    def test_duplicate_title_template_name_raises_integrity_error(self, db_session):
         template = TitleTemplateCreate(
             name="Unique Title",
             description_template="Desc",

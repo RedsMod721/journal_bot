@@ -1,6 +1,7 @@
 """
 Tests for title unlock condition base interfaces.
 """
+
 import pytest
 
 from app.core.titles.base import ConditionEvaluator, ConditionType

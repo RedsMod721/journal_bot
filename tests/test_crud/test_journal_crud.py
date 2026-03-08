@@ -12,7 +12,8 @@ This module tests all CRUD functions in app/crud/journal.py:
 
 Uses db_session and sample_user fixtures from conftest.py.
 """
-from datetime import datetime, timedelta
+
+from datetime import datetime
 
 import pytest
 from freezegun import freeze_time
@@ -128,7 +129,9 @@ class TestJournalCRUD:
         # Assert
         assert result.content == long_content
 
-    def test_create_journal_entry_entry_type_max_length_raises_validation_error(self, sample_user):
+    def test_create_journal_entry_entry_type_max_length_raises_validation_error(
+        self, sample_user
+    ):
         """Should raise ValidationError when entry_type exceeds max length."""
         # Act & Assert
         with pytest.raises(ValidationError):
@@ -138,7 +141,9 @@ class TestJournalCRUD:
                 user_id=sample_user.id,
             )
 
-    def test_create_journal_entry_invalid_content_raises_validation_error(self, sample_user):
+    def test_create_journal_entry_invalid_content_raises_validation_error(
+        self, sample_user
+    ):
         """Should raise ValidationError for empty content."""
         # Act & Assert
         with pytest.raises(ValidationError):
@@ -401,7 +406,9 @@ class TestJournalCRUD:
         assert result is not None
         assert result.content == "Updated"
 
-    def test_update_journal_entry_content_strips_whitespace(self, db_session, sample_user):
+    def test_update_journal_entry_content_strips_whitespace(
+        self, db_session, sample_user
+    ):
         """Should strip whitespace on content update."""
         # Arrange
         entry = create_journal_entry(
@@ -443,13 +450,17 @@ class TestJournalCRUD:
         assert result.manual_theme_ids == ["theme1"]
         assert result.manual_skill_ids == ["skill1"]
 
-    def test_update_journal_entry_invalid_ai_categories_type_raises_validation_error(self):
+    def test_update_journal_entry_invalid_ai_categories_type_raises_validation_error(
+        self,
+    ):
         """Should raise ValidationError for invalid ai_categories type."""
         # Act & Assert
         with pytest.raises(ValidationError):
             JournalEntryUpdate(ai_categories=["not", "a", "dict"])
 
-    def test_update_journal_entry_invalid_ai_suggested_quests_type_raises_validation_error(self):
+    def test_update_journal_entry_invalid_ai_suggested_quests_type_raises_validation_error(
+        self,
+    ):
         """Should raise ValidationError for invalid ai_suggested_quests type."""
         # Act & Assert
         with pytest.raises(ValidationError):
@@ -587,7 +598,9 @@ class TestJournalCRUD:
         # Assert
         assert result is False
 
-    def test_delete_journal_entry_already_deleted_returns_false(self, db_session, sample_user):
+    def test_delete_journal_entry_already_deleted_returns_false(
+        self, db_session, sample_user
+    ):
         """Should return False when deleting entry twice."""
         # Arrange
         entry = create_journal_entry(

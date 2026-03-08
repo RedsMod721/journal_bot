@@ -14,6 +14,7 @@ Public surface:
 
 Models are available via src.db.models.
 """
+
 from src.db.base import Base
 from src.db.session import (
     DATABASE_URL,

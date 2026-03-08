@@ -14,6 +14,7 @@ This module tests all CRUD functions in app/crud/skill.py:
 
 Uses db_session, sample_user, and sample_theme fixtures from conftest.py.
 """
+
 import pytest
 from pydantic import ValidationError  # type: ignore[import-not-found]
 
@@ -28,8 +29,6 @@ from app.crud.skill import (
     get_user_skills,
     update_skill,
 )
-from app.models.skill import Skill
-from app.models.theme import Theme
 from app.models.user import User
 from app.schemas.skill import SkillCreate, SkillUpdate
 from app.schemas.theme import ThemeCreate
@@ -186,11 +185,13 @@ class TestSkillCRUD:
         """Should raise ValidationError for extra fields."""
         # Act & Assert
         with pytest.raises(ValidationError):
-            SkillCreate.model_validate({
-                "name": "Valid",
-                "user_id": sample_user.id,
-                "extra": "field",
-            })
+            SkillCreate.model_validate(
+                {
+                    "name": "Valid",
+                    "user_id": sample_user.id,
+                    "extra": "field",
+                }
+            )
 
     # =========================================================================
     # READ BY ID TESTS
@@ -252,7 +253,9 @@ class TestSkillCRUD:
         # Assert
         assert result == []
 
-    def test_get_user_skills_only_returns_user_skills(self, db_session, sample_user, fake):
+    def test_get_user_skills_only_returns_user_skills(
+        self, db_session, sample_user, fake
+    ):
         """Should only return skills for the specified user."""
         # Arrange - Create another user with skills
         other_user = User(username=fake.user_name(), email=fake.email())
@@ -273,7 +276,9 @@ class TestSkillCRUD:
     # GET THEME SKILLS TESTS
     # =========================================================================
 
-    def test_get_theme_skills_returns_only_theme_skills(self, db_session, sample_user, sample_theme):
+    def test_get_theme_skills_returns_only_theme_skills(
+        self, db_session, sample_user, sample_theme
+    ):
         """Should only return skills belonging to the specified theme."""
         # Arrange - Create another theme
         other_theme = create_theme(
@@ -283,11 +288,15 @@ class TestSkillCRUD:
 
         create_skill(
             db_session,
-            SkillCreate(name="Theme Skill", user_id=sample_user.id, theme_id=sample_theme.id),
+            SkillCreate(
+                name="Theme Skill", user_id=sample_user.id, theme_id=sample_theme.id
+            ),
         )
         create_skill(
             db_session,
-            SkillCreate(name="Other Skill", user_id=sample_user.id, theme_id=other_theme.id),
+            SkillCreate(
+                name="Other Skill", user_id=sample_user.id, theme_id=other_theme.id
+            ),
         )
 
         # Act
@@ -312,14 +321,20 @@ class TestSkillCRUD:
     def test_get_skill_with_children_includes_tree(self, db_session, sample_user):
         """Should return skill with child_skills relationship loaded."""
         # Arrange - Create parent and children
-        parent = create_skill(db_session, SkillCreate(name="Parent", user_id=sample_user.id))
-        create_skill(
-            db_session,
-            SkillCreate(name="Child 1", user_id=sample_user.id, parent_skill_id=parent.id),
+        parent = create_skill(
+            db_session, SkillCreate(name="Parent", user_id=sample_user.id)
         )
         create_skill(
             db_session,
-            SkillCreate(name="Child 2", user_id=sample_user.id, parent_skill_id=parent.id),
+            SkillCreate(
+                name="Child 1", user_id=sample_user.id, parent_skill_id=parent.id
+            ),
+        )
+        create_skill(
+            db_session,
+            SkillCreate(
+                name="Child 2", user_id=sample_user.id, parent_skill_id=parent.id
+            ),
         )
 
         # Act
@@ -331,17 +346,25 @@ class TestSkillCRUD:
         child_names = {c.name for c in result.child_skills}
         assert child_names == {"Child 1", "Child 2"}
 
-    def test_get_skill_with_children_only_direct_children(self, db_session, sample_user):
+    def test_get_skill_with_children_only_direct_children(
+        self, db_session, sample_user
+    ):
         """Should include only direct children, not grandchildren."""
         # Arrange - Create parent -> child -> grandchild
-        parent = create_skill(db_session, SkillCreate(name="Parent", user_id=sample_user.id))
+        parent = create_skill(
+            db_session, SkillCreate(name="Parent", user_id=sample_user.id)
+        )
         child = create_skill(
             db_session,
-            SkillCreate(name="Child", user_id=sample_user.id, parent_skill_id=parent.id),
+            SkillCreate(
+                name="Child", user_id=sample_user.id, parent_skill_id=parent.id
+            ),
         )
         create_skill(
             db_session,
-            SkillCreate(name="Grandchild", user_id=sample_user.id, parent_skill_id=child.id),
+            SkillCreate(
+                name="Grandchild", user_id=sample_user.id, parent_skill_id=child.id
+            ),
         )
 
         # Act
@@ -370,7 +393,9 @@ class TestSkillCRUD:
     def test_add_practice_time_increments_and_awards_xp(self, db_session, sample_user):
         """Should increment practice time and award XP."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="Practice", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="Practice", user_id=sample_user.id)
+        )
 
         # Act
         result = add_practice_time(db_session, skill.id, minutes=30)
@@ -383,7 +408,9 @@ class TestSkillCRUD:
     def test_add_practice_time_with_multiplier(self, db_session, sample_user):
         """Should apply multiplier to XP awarded."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="Multiplier", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="Multiplier", user_id=sample_user.id)
+        )
 
         # Act
         result = add_practice_time(db_session, skill.id, minutes=30, multiplier=2.0)
@@ -396,7 +423,9 @@ class TestSkillCRUD:
     def test_add_practice_time_zero_minutes(self, db_session, sample_user):
         """Should handle zero minutes without changes."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="Zero", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="Zero", user_id=sample_user.id)
+        )
 
         # Act
         result = add_practice_time(db_session, skill.id, minutes=0)
@@ -406,10 +435,14 @@ class TestSkillCRUD:
         assert result.practice_time_minutes == 0
         assert result.xp == 0.0
 
-    def test_add_practice_time_negative_raises_value_error(self, db_session, sample_user):
+    def test_add_practice_time_negative_raises_value_error(
+        self, db_session, sample_user
+    ):
         """Should raise ValueError for negative practice time."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="Negative", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="Negative", user_id=sample_user.id)
+        )
 
         # Act & Assert
         with pytest.raises(ValueError):
@@ -430,10 +463,14 @@ class TestSkillCRUD:
     # XP TESTS
     # =========================================================================
 
-    def test_add_xp_to_skill_triggers_level_up_and_rank_change(self, db_session, sample_user):
+    def test_add_xp_to_skill_triggers_level_up_and_rank_change(
+        self, db_session, sample_user
+    ):
         """Should trigger level-up and rank change when XP exceeds threshold."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="Leveling", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="Leveling", user_id=sample_user.id)
+        )
 
         # Act - Add enough XP to reach level 5 (Amateur)
         result = add_xp_to_skill(db_session, skill.id, 400.0)
@@ -446,7 +483,9 @@ class TestSkillCRUD:
     def test_add_xp_to_skill_exact_threshold(self, db_session, sample_user):
         """Should level up with exact threshold and reset XP to 0."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="Exact XP", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="Exact XP", user_id=sample_user.id)
+        )
 
         # Act
         result = add_xp_to_skill(db_session, skill.id, 50.0)
@@ -459,7 +498,9 @@ class TestSkillCRUD:
     def test_add_xp_to_skill_fractional(self, db_session, sample_user):
         """Should handle fractional XP values correctly."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="Fractional", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="Fractional", user_id=sample_user.id)
+        )
 
         # Act
         result = add_xp_to_skill(db_session, skill.id, 12.5)
@@ -471,7 +512,9 @@ class TestSkillCRUD:
     def test_add_xp_to_skill_negative_raises_value_error(self, db_session, sample_user):
         """Should raise ValueError for negative XP."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="Negative XP", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="Negative XP", user_id=sample_user.id)
+        )
 
         # Act & Assert
         with pytest.raises(ValueError):
@@ -621,7 +664,9 @@ class TestSkillCRUD:
     def test_delete_skill_success(self, db_session, sample_user):
         """Should delete skill and return True."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="To Delete", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="To Delete", user_id=sample_user.id)
+        )
         skill_id = skill.id
 
         # Act
@@ -637,14 +682,20 @@ class TestSkillCRUD:
     def test_delete_skill_cascades_to_children(self, db_session, sample_user):
         """Should cascade delete to child skills when parent is deleted."""
         # Arrange
-        parent = create_skill(db_session, SkillCreate(name="Parent", user_id=sample_user.id))
+        parent = create_skill(
+            db_session, SkillCreate(name="Parent", user_id=sample_user.id)
+        )
         child1 = create_skill(
             db_session,
-            SkillCreate(name="Child 1", user_id=sample_user.id, parent_skill_id=parent.id),
+            SkillCreate(
+                name="Child 1", user_id=sample_user.id, parent_skill_id=parent.id
+            ),
         )
         child2 = create_skill(
             db_session,
-            SkillCreate(name="Child 2", user_id=sample_user.id, parent_skill_id=parent.id),
+            SkillCreate(
+                name="Child 2", user_id=sample_user.id, parent_skill_id=parent.id
+            ),
         )
 
         # Act
@@ -659,10 +710,14 @@ class TestSkillCRUD:
     def test_delete_skill_orphans_children(self, db_session, sample_user):
         """Documents current behavior: children are orphaned on parent deletion."""
         # Arrange
-        parent = create_skill(db_session, SkillCreate(name="Parent", user_id=sample_user.id))
+        parent = create_skill(
+            db_session, SkillCreate(name="Parent", user_id=sample_user.id)
+        )
         child = create_skill(
             db_session,
-            SkillCreate(name="Child", user_id=sample_user.id, parent_skill_id=parent.id),
+            SkillCreate(
+                name="Child", user_id=sample_user.id, parent_skill_id=parent.id
+            ),
         )
 
         # Act
@@ -672,7 +727,10 @@ class TestSkillCRUD:
         assert result is True
         child_after = get_skill(db_session, child.id)
         assert child_after is not None
-        assert child_after.parent_skill_id is None or child_after.parent_skill_id == parent.id
+        assert (
+            child_after.parent_skill_id is None
+            or child_after.parent_skill_id == parent.id
+        )
 
     def test_delete_skill_nonexistent_returns_false(self, db_session):
         """Should return False when deleting non-existent skill."""
@@ -688,7 +746,9 @@ class TestSkillCRUD:
     def test_delete_skill_already_deleted_returns_false(self, db_session, sample_user):
         """Should return False when deleting skill twice."""
         # Arrange
-        skill = create_skill(db_session, SkillCreate(name="Delete Twice", user_id=sample_user.id))
+        skill = create_skill(
+            db_session, SkillCreate(name="Delete Twice", user_id=sample_user.id)
+        )
 
         # Act
         first_result = delete_skill(db_session, skill.id)
@@ -701,10 +761,14 @@ class TestSkillCRUD:
     def test_delete_child_skill_keeps_parent(self, db_session, sample_user):
         """Should delete child skill while keeping parent intact."""
         # Arrange
-        parent = create_skill(db_session, SkillCreate(name="Parent", user_id=sample_user.id))
+        parent = create_skill(
+            db_session, SkillCreate(name="Parent", user_id=sample_user.id)
+        )
         child = create_skill(
             db_session,
-            SkillCreate(name="Child", user_id=sample_user.id, parent_skill_id=parent.id),
+            SkillCreate(
+                name="Child", user_id=sample_user.id, parent_skill_id=parent.id
+            ),
         )
 
         # Act

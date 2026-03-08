@@ -1,6 +1,7 @@
 """
 Tests for XP distribution strategy base interfaces.
 """
+
 import pytest
 
 from app.core.xp.base import XPTarget, XPDistributionStrategy
