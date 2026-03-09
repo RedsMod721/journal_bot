@@ -45,6 +45,17 @@ _DEFAULT_CONFIG = _REPO_ROOT / "config" / "dev.yaml"
 _DEFAULT_SQLITE = _REPO_ROOT / "data" / "db" / "rpg_life_tracker.db"
 
 
+def _ensure_sqlite_parent_dir(url: str) -> None:
+    """Create parent directory for file-based SQLite URLs when needed."""
+    if not url.startswith("sqlite"):
+        return
+    if ":memory:" in url or url == "sqlite://":
+        return
+
+    db_path_str = url.replace("sqlite:///", "")
+    Path(db_path_str).parent.mkdir(parents=True, exist_ok=True)
+
+
 # ---------------------------------------------------------------------------
 # Config loader
 # ---------------------------------------------------------------------------
@@ -96,6 +107,7 @@ def _load_db_url() -> str:
 
 
 DATABASE_URL: str = _load_db_url()
+_ensure_sqlite_parent_dir(DATABASE_URL)
 
 
 # ---------------------------------------------------------------------------
@@ -227,9 +239,7 @@ def init_db() -> None:
     migrations instead. This function is idempotent (CREATE TABLE IF NOT EXISTS).
     """
     # Ensure the data directory exists for file-based SQLite
-    if DATABASE_URL.startswith("sqlite") and ":memory:" not in DATABASE_URL:
-        db_path_str = DATABASE_URL.replace("sqlite:///", "")
-        Path(db_path_str).parent.mkdir(parents=True, exist_ok=True)
+    _ensure_sqlite_parent_dir(DATABASE_URL)
 
     Base.metadata.create_all(bind=engine)
     _create_sqlite_tenant_integrity_triggers()

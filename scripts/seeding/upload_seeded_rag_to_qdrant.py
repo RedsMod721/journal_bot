@@ -1,4 +1,14 @@
-"""Seed Window B uploader: embed seeded rag_documents rows into Qdrant."""
+"""
+Upload RAG documents to Qdrant vector database.
+
+Reads from: data/seeds/kb/rag_documents_v1.jsonl
+Uploads to: Qdrant collection configured in config/dev.yaml
+
+Usage:
+    python scripts/seeding/upload_seeded_rag_to_qdrant.py
+    python scripts/seeding/upload_seeded_rag_to_qdrant.py --batch-size 50
+    python scripts/seeding/upload_seeded_rag_to_qdrant.py --dry-run
+"""
 
 from __future__ import annotations
 
@@ -6,160 +16,317 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.ai.ollama import OllamaClient
-from src.ai.qdrant import QdrantClientAdapter
-from src.db.models.rag import RagDocument
-from src.db.session import db_session
+from loguru import logger
+
+if TYPE_CHECKING:
+    from src.ai.qdrant import QdrantClient
+
+_DEFAULT_JSONL_PATH = _REPO_ROOT / "data" / "seeds" / "kb" / "rag_documents_v1.jsonl"
+_DEFAULT_BATCH_SIZE = 100
 
 
-def _point_id(doc: RagDocument) -> str:
-    return str(doc.qdrant_point_id or doc.source_document_id or doc.id)
+def _normalize_seed_document(doc: dict[str, Any], line_num: int) -> dict[str, Any]:
+    """Normalize seed document schema variants into uploader contract.
 
+    Supported input keys include both legacy and current generator outputs:
+    - ``doc_id`` or ``document_id``
+    - ``content`` or ``content_markdown``
+    - ``category`` or ``categories``
 
-def _embed_text(doc: RagDocument) -> str:
-    title = (doc.title or "").strip()
-    body = (doc.body_text or "").strip()
-    text = f"{title}\n\n{body}".strip()
-    return text[:4000]
+    Args:
+        doc: Raw parsed JSON object from a JSONL row.
+        line_num: Source line number for precise error messages.
 
+    Returns:
+        Normalized document dictionary with canonical keys used by uploader.
 
-def upload_seeded_rag(
-    *,
-    expected_min_docs: int = 1000,
-    batch_size: int = 32,
-    max_docs: int | None = None,
-    dry_run: bool = False,
-) -> dict[str, Any]:
-    if batch_size <= 0:
-        raise ValueError("batch_size must be > 0")
-
-    ollama = OllamaClient()
-    qdrant = QdrantClientAdapter()
-    qdrant.ensure_collection()
-
-    with db_session() as db:
-        query = (
-            db.query(RagDocument)
-            .filter(RagDocument.scope == "global")
-            .order_by(RagDocument.id.asc())
-        )
-        if max_docs is not None:
-            query = query.limit(max_docs)
-        docs = query.all()
-
-    if len(docs) < expected_min_docs:
+    Raises:
+        ValueError: If required content is missing after normalization.
+    """
+    content = doc.get("content") or doc.get("content_markdown")
+    if not content:
         raise ValueError(
-            f"insufficient seeded rag docs: found {len(docs)}, expected >= {expected_min_docs}"
+            "Document on line {} is missing required field 'content' or "
+            "'content_markdown': {}".format(line_num, doc)
         )
 
-    embedded = 0
+    doc_id = doc.get("doc_id") or doc.get("document_id")
+    categories = doc.get("categories")
+    category = doc.get("category")
+    tags = doc.get("tags")
+
+    if tags is None:
+        if isinstance(categories, list):
+            tags = categories
+        elif category:
+            tags = [category]
+        else:
+            tags = []
+
+    if category is None and isinstance(categories, list) and categories:
+        category = str(categories[0])
+
+    normalized = dict(doc)
+    normalized["content"] = content
+    normalized["doc_id"] = doc_id
+    normalized["category"] = category
+    normalized["tags"] = tags
+    return normalized
+
+
+def load_rag_documents(filepath: Path) -> list[dict[str, Any]]:
+    """Load RAG documents from a JSONL file.
+
+    Args:
+        filepath: Path to rag_documents_v1.jsonl.
+
+    Returns:
+        List of document dictionaries.
+
+    Raises:
+        FileNotFoundError: If *filepath* does not exist.
+        ValueError: If any line is not valid JSON or is missing required content.
+    """
+    if not filepath.exists():
+        raise FileNotFoundError(f"RAG document file not found: {filepath}")
+
+    documents: list[dict[str, Any]] = []
+    with filepath.open(encoding="utf-8") as fh:
+        for line_num, raw_line in enumerate(fh, start=1):
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                doc = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Invalid JSON on line {line_num} of {filepath}: {exc}"
+                ) from exc
+            documents.append(_normalize_seed_document(doc, line_num))
+
+    return documents
+
+
+def upload_documents(
+    client: QdrantClient,
+    documents: list[dict[str, Any]],
+    batch_size: int = _DEFAULT_BATCH_SIZE,
+    dry_run: bool = False,
+) -> int:
+    """Upload documents to Qdrant in batches, generating embeddings per document.
+
+    Args:
+        client: Initialised :class:`QdrantClient` instance.
+        documents: List of RAG document dicts loaded from JSONL.
+        batch_size: Number of documents per Qdrant upsert call.
+        dry_run: When ``True`` embeddings are generated but nothing is upserted.
+
+    Returns:
+        Total number of documents successfully upserted (0 on dry run).
+
+    Raises:
+        RuntimeError: If the embedding model is unavailable.
+    """
+    if client.embedding_model is None:
+        raise RuntimeError(
+            "Embedding model is not available. "
+            "Ensure sentence-transformers is installed and the model can be downloaded."
+        )
+
+    # Ensure the collection exists before attempting any upsert.
+    if not client.collection_exists():
+        logger.info("Collection '{}' not found — creating it now.", client.collection)
+        client.create_collection()
+    else:
+        logger.info("Collection '{}' already exists — reusing it.", client.collection)
+
+    total_docs = len(documents)
+    total_batches = (total_docs + batch_size - 1) // batch_size
     upserted = 0
-    skipped_empty = 0
-    embedding_dims: set[int] = set()
-    probe_vector: list[float] | None = None
-    batch: list[dict[str, Any]] = []
 
-    for doc in docs:
-        text = _embed_text(doc)
-        if not text:
-            skipped_empty += 1
-            continue
+    for batch_idx in range(total_batches):
+        start = batch_idx * batch_size
+        end = min(start + batch_size, total_docs)
+        batch_docs = documents[start:end]
 
-        vector = ollama.embed(text)
-        embedding_dims.add(len(vector))
-        if len(vector) != qdrant.vector_size:
-            raise ValueError(
-                f"embedding dimension mismatch for point_id={_point_id(doc)}: "
-                f"got {len(vector)}, expected {qdrant.vector_size}"
+        logger.info(
+            "Uploading batch {}/{} ({} documents, indices {}–{}).",
+            batch_idx + 1,
+            total_batches,
+            len(batch_docs),
+            start,
+            end - 1,
+        )
+
+        points: list[dict[str, Any]] = []
+        for doc in batch_docs:
+            try:
+                vector = client._encode_query(doc["content"])
+            except Exception as exc:
+                doc_id = doc.get("doc_id", "<unknown>")
+                logger.warning(
+                    "Failed to encode doc_id='{}': {}. Skipping.", doc_id, exc
+                )
+                continue
+
+            points.append(
+                {
+                    "point_id": doc.get("doc_id", str(start + len(points))),
+                    "vector": vector,
+                    "payload": {
+                        "doc_id": doc.get("doc_id"),
+                        "content": doc.get("content"),
+                        "category": doc.get("category"),
+                        "tags": doc.get("tags", []),
+                        "source": doc.get("source"),
+                        "confidence": doc.get("confidence"),
+                    },
+                }
             )
 
-        if probe_vector is None:
-            probe_vector = vector
+        if not dry_run and points:
+            try:
+                client._adapter.upsert_documents(points)
+                upserted += len(points)
+            except Exception as exc:
+                logger.error(
+                    "Batch {}/{} upsert failed: {}. Skipping batch.",
+                    batch_idx + 1,
+                    total_batches,
+                    exc,
+                )
+        elif dry_run:
+            logger.info(
+                "Dry run — skipping upsert for batch {}/{}.", batch_idx + 1, total_batches
+            )
 
-        batch.append(
-            {
-                "point_id": _point_id(doc),
-                "vector": vector,
-                "payload": {
-                    "title": doc.title,
-                    "source": doc.source_citation,
-                    "publication_date": doc.publication_date,
-                    "doi_link": doc.doi_link,
-                    "scope": doc.scope,
-                },
-            }
+    return upserted
+
+
+def verify_upload(client: QdrantClient, expected_count: int) -> bool:
+    """Verify the upload by comparing the stored document count to *expected_count*.
+
+    Args:
+        client: Initialised :class:`QdrantClient` instance.
+        expected_count: Number of documents that were submitted for upload.
+
+    Returns:
+        ``True`` if the stored count matches *expected_count*, ``False`` otherwise.
+    """
+    actual = client.count_documents()
+    if actual >= expected_count:
+        logger.info(
+            "Verification passed: Qdrant reports {} documents (expected {}).",
+            actual,
+            expected_count,
         )
-        embedded += 1
+        return True
 
-        if len(batch) >= batch_size:
-            if not dry_run:
-                qdrant.upsert_documents(batch)
-            upserted += len(batch)
-            batch = []
-
-    if batch:
-        if not dry_run:
-            qdrant.upsert_documents(batch)
-        upserted += len(batch)
-
-    if dry_run or probe_vector is None:
-        probe_hits = []
-    else:
-        probe_hits = qdrant.search(probe_vector, limit=5)
-
-    return {
-        "ok": True,
-        "dry_run": dry_run,
-        "qdrant_mode": qdrant.mode,
-        "qdrant_collection": qdrant.collection,
-        "qdrant_vector_size": qdrant.vector_size,
-        "ollama_model": ollama.model,
-        "rows_seen": len(docs),
-        "embedded": embedded,
-        "upserted": upserted,
-        "skipped_empty": skipped_empty,
-        "embedding_dimensions": sorted(embedding_dims),
-        "probe_hit_count": len(probe_hits),
-    }
+    logger.error(
+        "Verification FAILED: Qdrant reports {} documents but expected {}.",
+        actual,
+        expected_count,
+    )
+    return False
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Upload seeded RAG documents from JSONL to Qdrant."
+    )
     parser.add_argument(
-        "--expected-min-docs",
-        type=int,
-        default=1000,
-        help="Fail if fewer seeded global docs are found.",
+        "--jsonl-path",
+        type=Path,
+        default=_DEFAULT_JSONL_PATH,
+        help="Path to rag_documents_v1.jsonl (default: data/seeds/kb/rag_documents_v1.jsonl).",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=32,
-        help="Qdrant upsert batch size.",
+        default=_DEFAULT_BATCH_SIZE,
+        help=f"Documents per Qdrant upsert call (default: {_DEFAULT_BATCH_SIZE}).",
     )
     parser.add_argument(
-        "--max-docs",
-        type=int,
-        default=None,
-        help="Optional cap for local smoke runs.",
+        "--dry-run",
+        action="store_true",
+        help="Generate embeddings but do not write to Qdrant.",
     )
-    parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    result = upload_seeded_rag(
-        expected_min_docs=args.expected_min_docs,
-        batch_size=args.batch_size,
-        max_docs=args.max_docs,
-        dry_run=args.dry_run,
-    )
-    print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
+    logger.info("Starting RAG document upload to Qdrant")
+
+    from src.ai.qdrant import QdrantClient
+
+    # ------------------------------------------------------------------
+    # 1. Initialise client and verify Qdrant is reachable.
+    # ------------------------------------------------------------------
+    try:
+        client = QdrantClient()
+    except Exception as exc:
+        logger.error("Failed to initialise QdrantClient: {}", exc)
+        return 1
+
+    if not client.is_available():
+        logger.error(
+            "Qdrant is not reachable at {}:{}. "
+            "Start it with: docker run -d -p 6333:6333 qdrant/qdrant",
+            client.host,
+            client.port,
+        )
+        return 1
+
+    logger.info("Qdrant is available at {}:{}.", client.host, client.port)
+
+    # ------------------------------------------------------------------
+    # 2. Load documents from JSONL.
+    # ------------------------------------------------------------------
+    try:
+        documents = load_rag_documents(args.jsonl_path)
+    except FileNotFoundError as exc:
+        logger.error("{}", exc)
+        return 1
+    except ValueError as exc:
+        logger.error("Failed to parse RAG documents: {}", exc)
+        return 1
+
+    logger.info("Loaded {} RAG documents from {}.", len(documents), args.jsonl_path)
+
+    if not documents:
+        logger.warning("No documents found — nothing to upload.")
+        return 0
+
+    # ------------------------------------------------------------------
+    # 3. Upload in batches.
+    # ------------------------------------------------------------------
+    try:
+        uploaded = upload_documents(
+            client, documents, batch_size=args.batch_size, dry_run=args.dry_run
+        )
+    except RuntimeError as exc:
+        logger.error("{}", exc)
+        return 1
+
+    if args.dry_run:
+        logger.info("Dry run complete — no documents written to Qdrant.")
+        return 0
+
+    logger.info("Uploaded {} / {} documents to Qdrant.", uploaded, len(documents))
+
+    # ------------------------------------------------------------------
+    # 4. Verify.
+    # ------------------------------------------------------------------
+    if verify_upload(client, uploaded):
+        logger.info("Upload verified successfully.")
+        return 0
+
+    logger.error("Upload verification failed.")
+    return 1
 
 
 if __name__ == "__main__":

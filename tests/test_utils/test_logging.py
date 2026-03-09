@@ -33,11 +33,14 @@ class TestLoggerCreatesJsonLogs:
 
         # Create a fresh handler for testing
         from logging.handlers import RotatingFileHandler
-        from pythonjsonlogger.json import JsonFormatter
+        try:
+            from pythonjsonlogger.json import JsonFormatter
+        except ModuleNotFoundError:
+            from pythonjsonlogger.jsonlogger import JsonFormatter
 
         handler = RotatingFileHandler(test_log_file, maxBytes=1024, backupCount=1)
         json_formatter = JsonFormatter(
-            fmt="%(timestamp)s %(level)s %(name)s %(message)s",
+            fmt="%(asctime)s %(levelname)s %(name)s %(message)s",
             rename_fields={"levelname": "level", "asctime": "timestamp"},
         )
         handler.setFormatter(json_formatter)
