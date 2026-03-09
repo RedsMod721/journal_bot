@@ -33,6 +33,11 @@ class _HealthyOllama:
     def embed(self, _text: str):
         return [0.01] * 384
 
+    def generate_json(self, _prompt: str) -> dict:
+        return {
+            "response": '{"insight_text": "Great session!", "category": "skill_development", "confidence": 0.9}'
+        }
+
 
 class _DownOllama:
     model = "llama3.2:3b"

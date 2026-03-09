@@ -160,25 +160,33 @@ def finalize_quest_xp(
     troll_bp: int = 10000,
     variety_multiplier_bp: int = 10000,
     arc_reward_multiplier_bp: int = 10000,
+    diminishing_bp: int = 10000,
     penalty_xp: int = 0,
 ) -> Dict[str, int]:
-    """Canonical Section 10 integer XP finalization pipeline."""
+    """Canonical Section 10 integer XP finalization pipeline.
+
+    Stage order (architecture §5.9 / §9.8):
+        base → troll → variety → arc → diminishing → penalty
+    """
     base = max(0, int(quest_xp_total))
     troll_bp = max(0, int(troll_bp))
     variety_multiplier_bp = max(0, int(variety_multiplier_bp))
     arc_reward_multiplier_bp = max(0, int(arc_reward_multiplier_bp))
+    diminishing_bp = max(0, int(diminishing_bp))
     penalty_xp = max(0, int(penalty_xp))
 
     t1 = (base * troll_bp) // 10000
     t2 = (t1 * variety_multiplier_bp) // 10000
     t3 = (t2 * arc_reward_multiplier_bp) // 10000
-    final_xp = max(0, t3 - penalty_xp)
+    t4 = (t3 * diminishing_bp) // 10000
+    final_xp = max(0, t4 - penalty_xp)
 
     return {
         "quest_xp_total": base,
         "t1_after_troll": t1,
         "t2_after_variety": t2,
         "t3_after_arc": t3,
+        "t4_after_diminishing": t4,
         "penalty_xp": penalty_xp,
         "final_xp": final_xp,
     }

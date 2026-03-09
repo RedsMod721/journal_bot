@@ -246,6 +246,7 @@ def test_finalize_quest_xp_clamps_negative_inputs() -> None:
         "t1_after_troll": 0,
         "t2_after_variety": 0,
         "t3_after_arc": 0,
+        "t4_after_diminishing": 0,
         "penalty_xp": 0,
         "final_xp": 0,
     }

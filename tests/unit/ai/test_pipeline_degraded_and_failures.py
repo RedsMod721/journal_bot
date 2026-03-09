@@ -9,7 +9,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from src.ai.cache import StepCache
 from src.ai.pipeline import PipelineProcessor, PipelineStepError
+from src.ai.steps import embedding, rag
 from src.db.base import Base
 import src.db.models  # noqa: F401
 from src.db.models.journal_entry import JournalEntry
@@ -27,6 +29,11 @@ class _HealthyOllama:
 
     def embed(self, _text: str):
         return [0.1] * 8
+
+    def generate_json(self, _prompt: str) -> dict:
+        return {
+            "response": '{"insight_text": "Keep it up!", "category": "general", "confidence": 0.8}'
+        }
 
 
 class _HealthyQdrant:
@@ -185,7 +192,8 @@ def test_process_entry_failure_path_records_failed_job_and_claim(monkeypatch: py
         def _boom(**_kwargs):
             raise RuntimeError("signal crash")
 
-        monkeypatch.setattr(processor, "_step_detect_signals", _boom)
+        # Step logic now lives in src.ai.steps.signals; patch at the module level.
+        monkeypatch.setattr("src.ai.steps.signals.run", _boom)
 
         with pytest.raises(PipelineStepError, match="signal crash"):
             processor.process_entry(
@@ -229,23 +237,21 @@ def test_record_failure_creates_claim_if_missing_and_no_job():
 
 
 def test_step_embedding_raises_when_ollama_disconnected():
-    with _make_db() as db:
-        _seed(db)
-        processor = PipelineProcessor(db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant())
-        with pytest.raises(RuntimeError, match="ollama unavailable"):
-            processor._step_embedding(
-                entry_id="entry-x",
-                normalized_text="text",
-                ollama_health={"connected": False},
-            )
+    # Step logic lives in src.ai.steps.embedding — test the module directly.
+    with pytest.raises(RuntimeError, match="ollama unavailable"):
+        embedding.run(
+            entry_id="entry-x",
+            normalized_text="text",
+            ollama_health={"connected": False},
+            ollama=_HealthyOllama(),
+            cache=StepCache(),
+        )
 
 
 def test_step_rag_search_empty_vector_returns_fallback():
-    with _make_db() as db:
-        _seed(db)
-        processor = PipelineProcessor(db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant())
-        out = processor._step_rag_search([])
-        assert out == {"hits": [], "hit_count": 0, "fallback": True}
+    # Step logic lives in src.ai.steps.rag — test the module directly.
+    out = rag.run(vector=[], qdrant=_HealthyQdrant())
+    assert out == {"hits": [], "hit_count": 0, "fallback": True}
 
 
 @pytest.mark.parametrize(
@@ -309,12 +315,16 @@ def test_malformed_structured_payload_triggers_failure_recording(
         processor = PipelineProcessor(db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant())
 
         def _malformed(**_kwargs):
+            # Returns a detection dict that is missing required keys
+            # (dominant_emotions, energy_level, etc.), causing the structured
+            # step to raise a KeyError and the pipeline to record a failure.
             return {
                 "detected_skills": ["Python Programming"],
                 "detected_activities": ["code"],
             }
 
-        monkeypatch.setattr(processor, "_step_detect_signals", _malformed)
+        # Step logic lives in src.ai.steps.signals; patch at the module level.
+        monkeypatch.setattr("src.ai.steps.signals.run", _malformed)
 
         with pytest.raises(PipelineStepError):
             processor.process_entry(

@@ -18,11 +18,13 @@
       "Bash(ruff check:*)",
       "Bash(conda run -n myenv pip install loguru -q)",
       "Bash(conda run -n myenv python scripts/init_db.py)",
-      "Bash(conda run -n myenv python3 -c \"from src.core.quests import match_quests, check_quest_match, update_quest_progress; print\\(''imports OK''\\)\")"
+      "Bash(conda run -n myenv python3 -c \"from src.core.quests import match_quests, check_quest_match, update_quest_progress; print\\(''imports OK''\\)\")",
+      "Bash(python -c \"print\\(''ok''\\)\")"
     ],
     "additionalDirectories": [
       "/Users/sebastian/Python/projects/journal_bot",
-      "/Users/sebastian/Python/projects/journal_bot/app/core"
+      "/Users/sebastian/Python/projects/journal_bot/app/core",
+      "c:\\Users\\vazqse01\\.claude\\projects\\c--Users-vazqse01-journal-bot\\memory"
     ]
   }
 }
