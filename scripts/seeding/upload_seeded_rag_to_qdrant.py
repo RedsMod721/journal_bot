@@ -31,6 +31,75 @@ _DEFAULT_JSONL_PATH = _REPO_ROOT / "data" / "seeds" / "kb" / "rag_documents_v1.j
 _DEFAULT_BATCH_SIZE = 100
 
 
+def _extract_collection_vector_size(collection_info: Any) -> int | None:
+    """Return the vector dimension from Qdrant collection metadata."""
+    vectors = getattr(getattr(collection_info, "config", None), "params", None)
+    vectors = getattr(vectors, "vectors", None)
+    if vectors is None:
+        return None
+
+    if hasattr(vectors, "size"):
+        try:
+            return int(vectors.size)
+        except Exception:
+            return None
+
+    if isinstance(vectors, dict):
+        first = next(iter(vectors.values()), None)
+        if first is not None and hasattr(first, "size"):
+            try:
+                return int(first.size)
+            except Exception:
+                return None
+
+    return None
+
+
+def _ensure_collection_dimension(client: QdrantClient, expected_dim: int) -> None:
+    """Ensure the target collection exists and matches *expected_dim*."""
+    if not client.collection_exists():
+        logger.info("Collection '{}' not found — creating it now.", client.collection)
+        client.create_collection()
+        return
+
+    logger.info("Collection '{}' already exists — validating dimension.", client.collection)
+    try:
+        info = client._adapter.client.get_collection(collection_name=client.collection)
+        current_dim = _extract_collection_vector_size(info)
+    except Exception as exc:
+        logger.warning(
+            "Could not inspect collection '{}': {}. Reusing it as-is.",
+            client.collection,
+            exc,
+        )
+        return
+
+    if current_dim is None:
+        logger.warning(
+            "Could not determine vector size for collection '{}'. Reusing it as-is.",
+            client.collection,
+        )
+        return
+
+    if current_dim == expected_dim:
+        logger.info(
+            "Collection '{}' vector_size={} matches embedding dimension.",
+            client.collection,
+            current_dim,
+        )
+        return
+
+    logger.warning(
+        "Collection '{}' vector_size={} does not match embedding dimension={}."
+        " Recreating collection.",
+        client.collection,
+        current_dim,
+        expected_dim,
+    )
+    client._adapter.client.delete_collection(collection_name=client.collection)
+    client.create_collection()
+
+
 def _normalize_seed_document(doc: dict[str, Any], line_num: int) -> dict[str, Any]:
     """Normalize seed document schema variants into uploader contract.
 
@@ -139,12 +208,8 @@ def upload_documents(
             "Ensure sentence-transformers is installed and the model can be downloaded."
         )
 
-    # Ensure the collection exists before attempting any upsert.
-    if not client.collection_exists():
-        logger.info("Collection '{}' not found — creating it now.", client.collection)
-        client.create_collection()
-    else:
-        logger.info("Collection '{}' already exists — reusing it.", client.collection)
+    expected_dim = len(client._encode_query("dimension probe"))
+    _ensure_collection_dimension(client, expected_dim)
 
     total_docs = len(documents)
     total_batches = (total_docs + batch_size - 1) // batch_size
@@ -219,6 +284,13 @@ def verify_upload(client: QdrantClient, expected_count: int) -> bool:
     Returns:
         ``True`` if the stored count matches *expected_count*, ``False`` otherwise.
     """
+    if expected_count <= 0:
+        logger.error(
+            "Verification FAILED: uploader reported {} upserts, so success cannot be confirmed.",
+            expected_count,
+        )
+        return False
+
     actual = client.count_documents()
     if actual >= expected_count:
         logger.info(

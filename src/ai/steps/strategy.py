@@ -21,15 +21,61 @@ logger = logging.getLogger(__name__)
 
 STRATEGY_KEYS = ("social", "study", "mundane", "troll", "grind", "harmony")
 
-_SOCIAL_KW = ("meeting", "presentation", "networking", "group", "team",
-    "public", "stranger", "colleagues", "conference", "interview",
-    "collaboration", "audience", "community")
-_MUNDANE_KW = ("clean", "laundry", "chore", "grocery", "errand",
-    "bill", "paperwork", "appointment", "maintenance", "organize",
-    "dishes", "emails", "admin", "tax", "budget")
-_LEARNING_KW = ("learn", "study", "read", "practice", "course", "lecture",
-    "tutorial", "research", "review", "drill", "training")
+_SOCIAL_KW = (
+    "meeting",
+    "presentation",
+    "networking",
+    "group",
+    "team",
+    "public",
+    "stranger",
+    "colleagues",
+    "conference",
+    "interview",
+    "collaboration",
+    "audience",
+    "community",
+)
+_MUNDANE_KW = (
+    "clean",
+    "laundry",
+    "chore",
+    "grocery",
+    "errand",
+    "bill",
+    "paperwork",
+    "appointment",
+    "maintenance",
+    "organize",
+    "dishes",
+    "emails",
+    "admin",
+    "tax",
+    "budget",
+)
+_LEARNING_KW = (
+    "learn",
+    "study",
+    "read",
+    "practice",
+    "course",
+    "lecture",
+    "tutorial",
+    "research",
+    "review",
+    "drill",
+    "training",
+)
 _LEARNING_TYPES = frozenset(["analytical", "intellectual"])
+
+
+def _coerce_int(value: object) -> int:
+    if not isinstance(value, (int, float, str, bytes, bytearray)):
+        return 0
+    try:
+        return int(value)
+    except Exception:
+        return 0
 
 
 def _now_utc() -> datetime:
@@ -41,7 +87,9 @@ def _is_social_risk(content: str, goal_relation: str | None) -> bool:
     text = content.lower()
     if not any(kw in text for kw in _SOCIAL_KW):
         return False
-    return bool(goal_relation) and "first" in goal_relation.lower()
+    if not goal_relation:
+        return False
+    return "first" in goal_relation.lower()
 
 
 def _is_study_burst(
@@ -81,7 +129,11 @@ def _is_mundane_focus(
     if any(kw in content.lower() for kw in _MUNDANE_KW):
         return True
     tt = (task_type or "").lower()
-    return tt in ("practical", "administrative") and energy_level is not None and int(energy_level) <= 5
+    return (
+        tt in ("practical", "administrative")
+        and energy_level is not None
+        and int(energy_level) <= 5
+    )
 
 
 def _is_troll_exploits(anomaly_score: float) -> bool:
@@ -149,10 +201,7 @@ def diminishing_multiplier_from_streaks(
         last_day = v.get("last_day")
         if last_day != yesterday_local.isoformat():
             return 0
-        try:
-            return int(v.get("count") or 0)
-        except Exception:
-            return 0
+        return _coerce_int(v.get("count") or 0)
 
     s = max((streak_count(sk) for sk in credited_strategies), default=0)
     mult = 1.0 - 0.05 * max(0, s - 2)
@@ -173,11 +222,7 @@ def _update_strategy_streaks(
     if not credited_strategies:
         return
 
-    row = (
-        db.query(StrategyTracking)
-        .filter(StrategyTracking.user_id == user_id)
-        .first()
-    )
+    row = db.query(StrategyTracking).filter(StrategyTracking.user_id == user_id).first()
     if row is None:
         return
 
@@ -200,7 +245,7 @@ def _update_strategy_streaks(
             continue  # already credited today
         if last_day == yesterday_iso:
             streaks[sk] = {
-                "count": int(v.get("count") or 0) + 1,
+                "count": _coerce_int(v.get("count") or 0) + 1,
                 "last_day": today_iso,
             }
         else:
@@ -246,19 +291,17 @@ def run(
 
     # Read streak state BEFORE crediting today's entry (§5.9 "today affects tomorrow").
     tracking_row = (
-        db.query(StrategyTracking)
-        .filter(StrategyTracking.user_id == user_id)
-        .first()
+        db.query(StrategyTracking).filter(StrategyTracking.user_id == user_id).first()
     )
     streaks_json: str = getattr(tracking_row, "strategy_streaks_json", None) or "{}"
     yesterday_local: date = datetime.now(timezone.utc).date() - timedelta(days=1)
 
     detectors = {
-        "social":  lambda: _is_social_risk(canonical_text, goal_relation),
-        "study":   lambda: _is_study_burst(user_id, canonical_text, task_type, db),
+        "social": lambda: _is_social_risk(canonical_text, goal_relation),
+        "study": lambda: _is_study_burst(user_id, canonical_text, task_type, db),
         "mundane": lambda: _is_mundane_focus(canonical_text, task_type, energy_level),
-        "troll":   lambda: _is_troll_exploits(anomaly_score),
-        "grind":   lambda: _is_daily_grind(user_id, db),
+        "troll": lambda: _is_troll_exploits(anomaly_score),
+        "grind": lambda: _is_daily_grind(user_id, db),
         "harmony": lambda: _is_harmony_balance(user_id, db),
     }
 
@@ -296,9 +339,7 @@ def run(
     }
 
 
-def _increment_strategy_count(
-    *, user_id: str, strategy_name: str, db: Session
-) -> None:
+def _increment_strategy_count(*, user_id: str, strategy_name: str, db: Session) -> None:
     """Upsert and increment StrategyTracking.usage_count for the given strategy."""
     now = _now_utc()
     row = (

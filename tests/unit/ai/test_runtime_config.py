@@ -17,7 +17,9 @@ def _clear_cache() -> Iterator[None]:
     runtime_config._load_ai_config.cache_clear()
 
 
-def test_load_ai_config_missing_file_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_ai_config_missing_file_returns_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("CONFIG_PATH", "Z:/does/not/exist/dev.yaml")
     assert runtime_config._load_ai_config() == {}
 
@@ -113,9 +115,9 @@ ai:
 
     out = runtime_config.get_qdrant_defaults()
     assert out["mode"] == "local"
-    assert out["local_path"].endswith("data\\qdrant_local") or out["local_path"].endswith(
-        "data/qdrant_local"
-    )
+    assert out["local_path"].endswith("data\\qdrant_local") or out[
+        "local_path"
+    ].endswith("data/qdrant_local")
 
 
 def test_get_qdrant_defaults_invalid_env_port_uses_default(

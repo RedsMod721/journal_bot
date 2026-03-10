@@ -9,7 +9,9 @@ import pytest
 import src.ai.readiness as readiness
 
 
-def test_check_required_imports_reports_missing_module(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_required_imports_reports_missing_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     real_import = readiness.importlib.import_module
 
     def _fake_import(name: str):
@@ -114,7 +116,9 @@ def test_build_readiness_report_v2_flag_logic(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(readiness, "check_database_readiness", lambda: {"ok": True})
     monkeypatch.setattr(readiness, "check_ollama_readiness", lambda: {"ok": False})
     monkeypatch.setattr(readiness, "check_qdrant_readiness", lambda: {"ok": True})
-    monkeypatch.setattr(readiness, "check_seed_contract", lambda require_artifacts: {"ok": False})
+    monkeypatch.setattr(
+        readiness, "check_seed_contract", lambda require_artifacts: {"ok": False}
+    )
 
     core_mode = readiness.build_readiness_report_v2(require_ai_endpoints=False)
     ai_required = readiness.build_readiness_report_v2(require_ai_endpoints=True)

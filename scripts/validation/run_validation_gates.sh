@@ -17,8 +17,8 @@ python -m ruff check src tests
 python -m mypy --explicit-package-bases src
 python scripts/init_db.py --strict --expected-min-tables 52 --hide-tables
 python scripts/validation/validate_canonical_schema.py
-PYTHONPATH=. pytest --confcutdir=tests/unit tests/unit/ai/ tests/unit/db/ -q
+PYTHONPATH=. pytest --no-cov --confcutdir=tests/unit tests/unit/ai/ tests/unit/db/ -q
 if [[ "${RUN_SEEDED_RAG_TEST:-0}" == "1" ]]; then
-  PYTHONPATH=. pytest --confcutdir=tests/unit tests/unit/ai/test_rag_seed_validation.py -q
+  PYTHONPATH=. pytest --no-cov --confcutdir=tests/unit tests/unit/ai/test_rag_seed_validation.py -q
 fi
-PYTHONPATH=. pytest --confcutdir=tests/test_performance tests/test_performance/test_week3_pipeline_smoke.py -q
+PYTHONPATH=. pytest --no-cov --confcutdir=tests/test_performance tests/test_performance/test_week3_pipeline_smoke.py -q

@@ -154,7 +154,9 @@ def _seed(db: Session) -> _FixtureIds:
     return _FixtureIds(user_id=user.id, entry_id=entry.id)
 
 
-def test_build_default_qdrant_fallback_when_adapter_raises(monkeypatch: pytest.MonkeyPatch):
+def test_build_default_qdrant_fallback_when_adapter_raises(
+    monkeypatch: pytest.MonkeyPatch,
+):
     with _make_db() as db:
         ids = _seed(db)
 
@@ -175,7 +177,9 @@ def test_build_default_qdrant_fallback_when_adapter_raises(monkeypatch: pytest.M
 
 def test_process_entry_raises_entry_not_found():
     with _make_db() as db:
-        processor = PipelineProcessor(db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant())
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
         with pytest.raises(PipelineStepError, match="not found"):
             processor.process_entry(
                 entry_id="00000000-0000-0000-0000-000000009999",
@@ -184,18 +188,24 @@ def test_process_entry_raises_entry_not_found():
             )
 
 
-def test_process_entry_failure_path_records_failed_job_and_claim(monkeypatch: pytest.MonkeyPatch):
+def test_process_entry_failure_path_records_failed_job_and_claim(
+    monkeypatch: pytest.MonkeyPatch,
+):
     with _make_db() as db:
         ids = _seed(db)
-        processor = PipelineProcessor(db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant())
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
 
         def _boom(**_kwargs):
-            raise RuntimeError("signal crash")
+            raise RuntimeError("structured crash")
 
-        # Step logic now lives in src.ai.steps.signals; patch at the module level.
-        monkeypatch.setattr("src.ai.steps.signals.run", _boom)
+        # Patch a mandatory (non-degradable) step — structured data persistence
+        # (step 08) has allow_degraded=False, so failures bubble up as PipelineStepError.
+        # (Step 07 / signals is allow_degraded=True and would degrade silently instead.)
+        monkeypatch.setattr("src.ai.steps.structured.run", _boom)
 
-        with pytest.raises(PipelineStepError, match="signal crash"):
+        with pytest.raises(PipelineStepError, match="structured crash"):
             processor.process_entry(
                 entry_id=ids.entry_id,
                 user_id=ids.user_id,
@@ -205,7 +215,11 @@ def test_process_entry_failure_path_records_failed_job_and_claim(monkeypatch: py
         job = db.query(ProcessingJob).one()
         claim = db.query(EntryIdempotencyClaim).one()
         entry = db.query(JournalEntry).filter(JournalEntry.id == ids.entry_id).one()
-        failed_events = db.query(OutboxEvent).filter(OutboxEvent.event_type == "entry.processing_failed").all()
+        failed_events = (
+            db.query(OutboxEvent)
+            .filter(OutboxEvent.event_type == "entry.processing_failed")
+            .all()
+        )
 
         assert job.status == "failed"
         assert claim.status == "failed"
@@ -216,7 +230,9 @@ def test_process_entry_failure_path_records_failed_job_and_claim(monkeypatch: py
 def test_record_failure_creates_claim_if_missing_and_no_job():
     with _make_db() as db:
         ids = _seed(db)
-        processor = PipelineProcessor(db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant())
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
 
         processor._record_failure(
             job_id="00000000-0000-0000-0000-000000001111",
@@ -251,7 +267,10 @@ def test_step_embedding_raises_when_ollama_disconnected():
 def test_step_rag_search_empty_vector_returns_fallback():
     # Step logic lives in src.ai.steps.rag — test the module directly.
     out = rag.run(vector=[], qdrant=_HealthyQdrant())
-    assert out == {"hits": [], "hit_count": 0, "fallback": True}
+    assert out["hits"] == []
+    assert out["hit_count"] == 0
+    assert out["fallback"] is True
+    assert out["from_cache"] is False
 
 
 @pytest.mark.parametrize(
@@ -294,7 +313,9 @@ def test_claim_replay_collision_returns_existing_claim_payload_without_duplicati
         )
         db.commit()
 
-        processor = PipelineProcessor(db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant())
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
         replay = processor.process_entry(
             entry_id=ids.entry_id,
             user_id=ids.user_id,
@@ -312,7 +333,9 @@ def test_malformed_structured_payload_triggers_failure_recording(
 ):
     with _make_db() as db:
         ids = _seed(db)
-        processor = PipelineProcessor(db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant())
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
 
         def _malformed(**_kwargs):
             # Returns a detection dict that is missing required keys
@@ -349,7 +372,9 @@ def test_outbox_emission_failure_handling_records_processing_failure(
 ):
     with _make_db() as db:
         ids = _seed(db)
-        processor = PipelineProcessor(db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant())
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
 
         call_count = {"n": 0}
 

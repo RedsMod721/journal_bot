@@ -78,8 +78,8 @@ def get_qdrant_defaults() -> dict[str, Any]:
         os.getenv("QDRANT_COLLECTION") or cfg.get("collection") or "rag_documents"
     )
     vector_size = _int_or_default(
-        os.getenv("QDRANT_VECTOR_SIZE") or cfg.get("vector_size") or 384,
-        384,
+        os.getenv("QDRANT_VECTOR_SIZE") or cfg.get("vector_size") or 768,
+        768,
     )
     mode = str(os.getenv("QDRANT_MODE") or cfg.get("mode") or "remote").lower()
 

@@ -402,9 +402,7 @@ class OllamaClient:
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    resp = await client.post(
-                        f"{self.base_url}/api/generate", json=body
-                    )
+                    resp = await client.post(f"{self.base_url}/api/generate", json=body)
                     resp.raise_for_status()
                     payload = resp.json()
                     return payload.get("response", "{}")

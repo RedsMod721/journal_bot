@@ -25,8 +25,18 @@ class _FakeResponse:
 
 
 class _SyncClient:
-    def __init__(self, *, health_payload=None, gen_payload=None, emb_payload=None, fail=False, **kwargs):
-        self.health_payload = health_payload or {"models": [{"name": "llama3.2:latest"}]}
+    def __init__(
+        self,
+        *,
+        health_payload=None,
+        gen_payload=None,
+        emb_payload=None,
+        fail=False,
+        **kwargs,
+    ):
+        self.health_payload = health_payload or {
+            "models": [{"name": "llama3.2:latest"}]
+        }
         self.gen_payload = gen_payload or {"response": "{}"}
         self.emb_payload = emb_payload or {"embedding": [1, 2.5]}
         self.fail = fail
@@ -51,7 +61,9 @@ class _SyncClient:
 
 
 @pytest.mark.asyncio
-async def test_is_available_returns_true_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_is_available_returns_true_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Client:
         def __init__(self, *args, **kwargs):
             pass
@@ -85,8 +97,12 @@ def test_sync_health_generate_json_and_embed(monkeypatch: pytest.MonkeyPatch) ->
     assert embedding == [1.0, 2.5]
 
 
-def test_sync_health_returns_disconnected_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ollama_module.httpx, "Client", lambda **kwargs: _SyncClient(fail=True))
+def test_sync_health_returns_disconnected_on_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        ollama_module.httpx, "Client", lambda **kwargs: _SyncClient(fail=True)
+    )
     client = OllamaClient(base_url="http://localhost:11434", model="llama3.2:latest")
     out = client.health()
     assert out["connected"] is False
@@ -94,7 +110,9 @@ def test_sync_health_returns_disconnected_on_exception(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
-async def test_is_available_returns_false_on_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_is_available_returns_false_on_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Client:
         def __init__(self, *args, **kwargs):
             pass
@@ -116,12 +134,14 @@ async def test_is_available_returns_false_on_exception(monkeypatch: pytest.Monke
 
 def test_clean_json_response_strips_markdown_fences() -> None:
     client = OllamaClient(base_url="http://localhost:11434", model="llama3.2:latest")
-    raw = "```json\n{\"ok\": true}\n```"
+    raw = '```json\n{"ok": true}\n```'
     assert client._clean_json_response(raw) == '{"ok": true}'
 
 
 @pytest.mark.asyncio
-async def test_call_ollama_returns_response_text(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_call_ollama_returns_response_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Client:
         def __init__(self, *args, **kwargs):
             pass
@@ -147,7 +167,9 @@ async def test_call_ollama_returns_response_text(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_call_ollama_retries_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_call_ollama_retries_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     attempts = {"count": 0}
     sleeps: list[float] = []
 
@@ -242,7 +264,13 @@ async def test_call_ollama_non_retriable_http_error_is_raised(
 async def test_extract_activities_success(monkeypatch: pytest.MonkeyPatch) -> None:
     async def _fake_call(_prompt: str) -> str:
         return json_dumps(
-            [{"activity": "Python Programming", "duration_minutes": 60, "notes": "Focus"}]
+            [
+                {
+                    "activity": "Python Programming",
+                    "duration_minutes": 60,
+                    "notes": "Focus",
+                }
+            ]
         )
 
     client = OllamaClient(base_url="http://localhost:11434", model="llama3.2:latest")
@@ -309,17 +337,23 @@ async def test_assess_quality_returns_fallback_on_exception(
 
 
 @pytest.mark.asyncio
-async def test_generate_insight_success_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_generate_insight_success_and_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = OllamaClient(base_url="http://localhost:11434", model="llama3.2:latest")
 
     async def _good_call(_prompt: str) -> str:
-        return "```json\n" + json_dumps(
-            {
-                "insight_text": "Great momentum. Keep a daily review loop.",
-                "category": "skill_development",
-                "confidence": 0.88,
-            }
-        ) + "\n```"
+        return (
+            "```json\n"
+            + json_dumps(
+                {
+                    "insight_text": "Great momentum. Keep a daily review loop.",
+                    "category": "skill_development",
+                    "confidence": 0.88,
+                }
+            )
+            + "\n```"
+        )
 
     monkeypatch.setattr(client, "_call_ollama", _good_call)
     out = await client.generate_insight("summary", ["ctx1"])

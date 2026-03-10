@@ -19,7 +19,10 @@
       "Bash(conda run -n myenv pip install loguru -q)",
       "Bash(conda run -n myenv python scripts/init_db.py)",
       "Bash(conda run -n myenv python3 -c \"from src.core.quests import match_quests, check_quest_match, update_quest_progress; print\\(''imports OK''\\)\")",
-      "Bash(python -c \"print\\(''ok''\\)\")"
+      "Bash(python -c \"print\\(''ok''\\)\")",
+      "Bash(conda run -n myenv python3 -c \"from src.ai.recovery import RecoveryQueue; from src.ai.pipeline import JournalEntryPipeline, PipelineProcessor, PipelineStepError; print\\(''OK''\\)\")",
+      "Bash(conda run:*)",
+      "Bash(git stash)"
     ],
     "additionalDirectories": [
       "/Users/sebastian/Python/projects/journal_bot",

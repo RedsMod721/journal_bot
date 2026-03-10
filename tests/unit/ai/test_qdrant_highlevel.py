@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import types
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -108,7 +110,9 @@ def _patch_high_level_deps(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeAdapter.fail_search_times = 0
 
     monkeypatch.setattr(qdrant_module, "QdrantClientAdapter", _FakeAdapter)
-    monkeypatch.setattr(qdrant_module, "_SentenceTransformerLib", _FakeSentenceTransformer)
+    monkeypatch.setattr(
+        qdrant_module, "_SentenceTransformerLib", _FakeSentenceTransformer
+    )
     monkeypatch.setattr(qdrant_module, "Distance", _FakeDistance)
     monkeypatch.setattr(qdrant_module, "VectorParams", _FakeVectorParams)
 
@@ -119,6 +123,54 @@ def test_init_loads_embedding_and_encode_query() -> None:
     assert client.port == 6333
     assert client.collection == "rag_documents"
     assert client._encode_query("focus") == [0.11, 0.22, 0.33]
+
+
+def test_load_sentence_transformer_lib_uses_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _CachedModel:
+        pass
+
+    monkeypatch.setattr(qdrant_module, "_SentenceTransformerLib", _CachedModel)
+    assert qdrant_module._load_sentence_transformer_lib() is _CachedModel
+
+
+def test_load_sentence_transformer_lib_import_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_module = types.ModuleType("sentence_transformers")
+
+    class _ImportedModel:
+        pass
+
+    fake_module.SentenceTransformer = _ImportedModel
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    monkeypatch.setattr(qdrant_module, "_SentenceTransformerLib", None)
+    assert qdrant_module._load_sentence_transformer_lib() is _ImportedModel
+
+    bad_module = types.ModuleType("sentence_transformers")
+    monkeypatch.setitem(sys.modules, "sentence_transformers", bad_module)
+    monkeypatch.setattr(qdrant_module, "_SentenceTransformerLib", None)
+    assert qdrant_module._load_sentence_transformer_lib() is None
+
+
+def test_init_sets_embedding_model_none_when_model_load_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _BrokenSentenceTransformer:
+        def __init__(self, _model_name: str) -> None:
+            raise RuntimeError("model init failed")
+
+    monkeypatch.setattr(
+        qdrant_module, "_SentenceTransformerLib", _BrokenSentenceTransformer
+    )
+    client = qdrant_module.QdrantClient()
+    assert client.embedding_model is None
+
+
+def test_is_available_returns_true_when_backend_healthy() -> None:
+    client = qdrant_module.QdrantClient()
+    assert client.is_available() is True
 
 
 def test_is_available_retries_and_returns_false() -> None:
@@ -193,7 +245,9 @@ def test_search_formats_filters_auto_creates_and_retries() -> None:
     assert _FakeAdapter.backend.collection_names == ["rag_documents"]
 
 
-def test_search_returns_empty_on_encode_error_and_retry_exhaustion(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_search_returns_empty_on_encode_error_and_retry_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = qdrant_module.QdrantClient()
 
     def _boom(_text: str) -> list[float]:

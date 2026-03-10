@@ -21,7 +21,9 @@ def _required_sections(prompt: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_extract_activities_prompt_contract_and_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_extract_activities_prompt_contract_and_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = OllamaClient(base_url="http://localhost:11434", model="llama3.2:latest")
     captured = {"prompt": ""}
 
@@ -42,7 +44,9 @@ async def test_extract_activities_prompt_contract_and_shape(monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
-async def test_assess_quality_prompt_contract_and_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_assess_quality_prompt_contract_and_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = OllamaClient(base_url="http://localhost:11434", model="llama3.2:latest")
     captured = {"prompt": ""}
 

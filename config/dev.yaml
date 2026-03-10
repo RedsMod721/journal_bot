@@ -33,7 +33,7 @@ ai:
     port: 6333
     local_path: "data/qdrant_local"
     collection: "rag_documents"
-    vector_size: 3072
+    vector_size: 768
 
 testing:
   database:

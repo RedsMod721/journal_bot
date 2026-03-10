@@ -33,6 +33,7 @@ class TestLoggerCreatesJsonLogs:
 
         # Create a fresh handler for testing
         from logging.handlers import RotatingFileHandler
+
         try:
             from pythonjsonlogger.json import JsonFormatter
         except ModuleNotFoundError:

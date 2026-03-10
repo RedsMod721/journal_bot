@@ -18,17 +18,33 @@ DB writes
 ---------
 One ``Insight`` row + one ``InsightEvidence`` row are inserted per entry.
 Both are flushed inside the outer transaction, not committed independently.
+The DB write always happens regardless of whether the LLM result was cached —
+each entry must own its own ``Insight`` row.
+
+Caching
+-------
+When a *cache* object is provided, the **LLM output only** (insight text,
+category, confidence) is cached under a key derived from the entry summary
+and RAG context.  DB writes are never skipped on a cache hit.  This avoids
+redundant LLM calls when the same content is processed more than once (e.g.
+retries) while preserving the per-entry audit trail in the database.
+
+Cache key format: ``insight:{hash16(entry_summary + "|" + rag_context_joined)}``
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 import re
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from src.db.models.insight import Insight, InsightEvidence
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Fallback constant
@@ -46,7 +62,7 @@ _VALID_CATEGORIES = frozenset(
 
 
 # ---------------------------------------------------------------------------
-# Prompt builder
+# Internal helpers
 # ---------------------------------------------------------------------------
 
 
@@ -70,6 +86,18 @@ def _build_prompt(entry_summary: str, rag_context: list[str]) -> str:
     )
 
 
+def _insight_cache_key(entry_summary: str, rag_context: list[str]) -> str:
+    """Derive a stable cache key from the LLM prompt inputs.
+
+    Uses first 3 RAG context strings so the key reflects the actual evidence
+    used in the prompt without including the full text.
+    """
+    context_str = "|".join(c.strip() for c in rag_context[:3] if c.strip())
+    raw = f"{entry_summary}|{context_str}"
+    digest = hashlib.sha256(raw.encode()).hexdigest()[:16]
+    return f"insight:{digest}"
+
+
 # ---------------------------------------------------------------------------
 # Public step function
 # ---------------------------------------------------------------------------
@@ -85,6 +113,7 @@ def run(
     ollama_health: dict[str, Any],
     ollama: Any,
     db: Session,
+    cache: Any = None,
 ) -> dict[str, Any]:
     """Generate and persist a personalised insight for the current entry.
 
@@ -97,14 +126,20 @@ def run(
         ollama_health:  Result dict from the Ollama health step (step 04).
         ollama:         OllamaClient with a sync ``generate_json(prompt)`` method.
         db:             SQLAlchemy session (write — issues flushes).
+        cache:          Optional ``StepCache`` instance.  When provided, the
+                        LLM-generated insight data is read from / written to
+                        cache to avoid redundant Ollama calls.  DB writes are
+                        always performed regardless of cache state.
 
     Returns:
         Dict with keys:
-            ``insight_id``         — PK of the persisted Insight row.
-            ``insight_text``       — The generated (or fallback) insight text.
-            ``insight_category``   — Category string.
-            ``insight_confidence`` — Float 0.0–1.0.
-            ``from_ollama``        — True if the text came from the LLM.
+
+        ``insight_id``         — PK of the persisted Insight row.
+        ``insight_text``       — The generated (or fallback) insight text.
+        ``insight_category``   — Category string.
+        ``insight_confidence`` — Float 0.0–1.0.
+        ``from_ollama``        — True if the text came from the LLM (or cache).
+        ``from_cache``         — True if the insight text was served from cache.
     """
     # Build entry summary from first 200 words + detected signals.
     words = canonical_text.split()[:200]
@@ -123,9 +158,23 @@ def run(
 
     insight_data = _FALLBACK.copy()
     from_ollama = False
+    from_cache = False
 
-    # Skip LLM call silently if Ollama is reported down — no degraded code emitted.
-    if ollama_health.get("connected"):
+    # ── Cache read (LLM text only — DB write still happens below) ──────
+    cache_key: str | None = None
+    if cache is not None:
+        cache_key = _insight_cache_key(entry_summary, rag_context)
+        cached_llm = cache.get(cache_key)
+        if cached_llm is not None:
+            insight_data = cached_llm
+            from_ollama = True  # cached from a prior successful LLM call
+            from_cache = True
+            logger.debug(
+                "insights cache_hit entry_id=%s cache_key=%s", entry_id, cache_key
+            )
+
+    # ── LLM call (skipped on cache hit or when Ollama is down) ─────────
+    if not from_cache and ollama_health.get("connected"):
         prompt = _build_prompt(entry_summary, rag_context)
         raw_result = ollama.generate_json(prompt)
         response_text = raw_result.get("response", "{}")
@@ -149,7 +198,14 @@ def run(
             }
             from_ollama = True
 
-    # Persist to DB — always write, even the fallback, so each entry has a row.
+        # Cache the LLM output for future identical prompts.
+        if from_ollama and cache is not None and cache_key is not None:
+            cache.set(cache_key, insight_data)
+            logger.debug(
+                "insights cache_set entry_id=%s cache_key=%s", entry_id, cache_key
+            )
+
+    # ── DB write — always, so every entry has its own Insight row ──────
     insight_row = Insight(
         user_id=user_id,
         insight_type=insight_data["category"],
@@ -177,6 +233,7 @@ def run(
         "insight_category": insight_data["category"],
         "insight_confidence": insight_data["confidence"],
         "from_ollama": from_ollama,
+        "from_cache": from_cache,
     }
 
 

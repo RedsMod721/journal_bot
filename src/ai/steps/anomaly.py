@@ -128,7 +128,6 @@ def precheck(
     }
 
 
-
 def _troll_multiplier_from_score(score_01: float) -> tuple[float, int]:
     """Compute troll multiplier from a normalised 0-1 anomaly score.
 

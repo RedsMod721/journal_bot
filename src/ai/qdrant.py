@@ -32,12 +32,24 @@ except Exception:  # pragma: no cover - optional dependency fallback
 
 _SentenceTransformerLib: Any = None
 
-try:
-    from sentence_transformers import SentenceTransformer as _SentenceTransformerLib_  # type: ignore[import-untyped]
 
-    _SentenceTransformerLib = _SentenceTransformerLib_
-except Exception:  # pragma: no cover - optional dependency fallback
-    pass
+def _load_sentence_transformer_lib() -> Any:
+    """Return SentenceTransformer class if available, else ``None``.
+
+    Imported lazily to avoid heavy optional dependency loading at module
+    import time.
+    """
+    global _SentenceTransformerLib
+    if _SentenceTransformerLib is not None:
+        return _SentenceTransformerLib
+    try:
+        from sentence_transformers import SentenceTransformer as _SentenceTransformer  # type: ignore[import-untyped]
+
+        _SentenceTransformerLib = _SentenceTransformer
+    except Exception:  # pragma: no cover - optional dependency fallback
+        _SentenceTransformerLib = None
+    return _SentenceTransformerLib
+
 
 # all-mpnet-base-v2 produces 768-dimensional vectors.
 _EMBEDDING_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
@@ -194,8 +206,13 @@ class QdrantClient:
                 _EMBEDDING_MODEL_NAME,
                 _EMBEDDING_VECTOR_SIZE,
             )
+            self.vector_size = _EMBEDDING_VECTOR_SIZE
+            self._adapter.vector_size = _EMBEDDING_VECTOR_SIZE
 
-        if _SentenceTransformerLib is None:  # pragma: no cover
+        sentence_transformer_lib = (
+            _SentenceTransformerLib or _load_sentence_transformer_lib()
+        )
+        if sentence_transformer_lib is None:  # pragma: no cover
             logger.warning(
                 "sentence-transformers is not installed; "
                 "search() will return [] until it is available."
@@ -204,7 +221,7 @@ class QdrantClient:
         else:
             try:
                 logger.info("Loading embedding model: {}", _EMBEDDING_MODEL_NAME)
-                self.embedding_model = _SentenceTransformerLib(_EMBEDDING_MODEL_NAME)
+                self.embedding_model = sentence_transformer_lib(_EMBEDDING_MODEL_NAME)
             except Exception as exc:
                 logger.warning(
                     "Failed to load embedding model '{}': {}. "
@@ -266,9 +283,7 @@ class QdrantClient:
         warning if the required Qdrant primitives are unavailable.
         """
         if VectorParams is None or Distance is None:  # pragma: no cover
-            logger.warning(
-                "Qdrant primitives unavailable; cannot create collection."
-            )
+            logger.warning("Qdrant primitives unavailable; cannot create collection.")
             return
         try:
             self._adapter.client.create_collection(
@@ -321,9 +336,7 @@ class QdrantClient:
             return []
 
         if self.embedding_model is None:  # pragma: no cover
-            logger.warning(
-                "Embedding model unavailable; cannot perform search."
-            )
+            logger.warning("Embedding model unavailable; cannot perform search.")
             return []
 
         try:
@@ -350,9 +363,7 @@ class QdrantClient:
                     payload: dict[str, Any] = item.get("payload") or {}
                     results.append(
                         {
-                            "doc_id": payload.get(
-                                "doc_id", str(item["point_id"])
-                            ),
+                            "doc_id": payload.get("doc_id", str(item["point_id"])),
                             "content": payload.get("content", ""),
                             "category": payload.get("category", ""),
                             "score": item["score"],
@@ -371,9 +382,7 @@ class QdrantClient:
                 return results
 
             except Exception as exc:
-                logger.warning(
-                    "Search attempt {}/3 failed: {}", attempt, exc
-                )
+                logger.warning("Search attempt {}/3 failed: {}", attempt, exc)
 
         logger.warning(
             "All search attempts exhausted for query '{}'; returning [].",
@@ -416,6 +425,8 @@ class QdrantClient:
         Returns:
             Embedding as a plain Python ``list[float]`` (not a NumPy array).
         """
+        if self.embedding_model is None:
+            raise RuntimeError("Embedding model unavailable")
         vector = self.embedding_model.encode(text)
         # sentence-transformers returns a numpy array; convert for Qdrant.
         return vector.tolist()

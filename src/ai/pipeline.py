@@ -44,6 +44,7 @@ from sqlalchemy.orm import Session
 from src.ai.cache import StepCache
 from src.ai.ollama import OllamaClient
 from src.ai.qdrant import QdrantClientAdapter
+from src.ai.recovery import RecoveryQueue
 
 # Step modules — each encapsulates the business logic for one or more steps.
 from src.ai.steps import anomaly as _s_anomaly
@@ -147,11 +148,13 @@ class PipelineProcessor:
         ollama: OllamaClient | None = None,
         qdrant: QdrantClientAdapter | None = None,
         cache: StepCache | None = None,
+        recovery: RecoveryQueue | None = None,
     ) -> None:
         self.db = db
         self.ollama = ollama or OllamaClient()
         self.qdrant = qdrant or self._build_default_qdrant()
         self.cache = cache or StepCache(ttl_hours=24)
+        self.recovery = recovery
 
     @staticmethod
     def _build_default_qdrant() -> Any:
@@ -245,15 +248,33 @@ class PipelineProcessor:
                 if isinstance(exc, PipelineStepError)
                 else "PIPELINE_EXCEPTION"
             )
-            self._record_failure(
-                job_id=job.id,
-                user_id=user_id,
-                entry_id=entry_id,
-                key=idempotency_key,
-                processing_run_id=processing_run_id,
-                error=str(exc),
-                error_code=error_code,
-            )
+            try:
+                self._record_failure(
+                    job_id=job.id,
+                    user_id=user_id,
+                    entry_id=entry_id,
+                    key=idempotency_key,
+                    processing_run_id=processing_run_id,
+                    error=str(exc),
+                    error_code=error_code,
+                )
+            except Exception as record_exc:
+                # DB is likely down — fall back to the file-based recovery queue
+                # so no entry is silently lost.
+                logger.critical(
+                    "pipeline failure_recording failed run=%s entry=%s record_error=%s"
+                    " — saving to recovery queue",
+                    processing_run_id,
+                    entry_id,
+                    record_exc,
+                )
+                self._save_to_recovery(
+                    entry_id=entry_id,
+                    user_id=user_id,
+                    idempotency_key=idempotency_key,
+                    error=str(exc),
+                    error_code=error_code,
+                )
             raise
 
     # ------------------------------------------------------------------
@@ -420,10 +441,16 @@ class PipelineProcessor:
             fn=lambda: _s_rag.run(
                 vector=embedding.get("vector", []),
                 qdrant=self.qdrant,
+                cache=self.cache,
+                entry_id=entry_id,
             ),
         )
 
         # ── Step 07: Detect signals ──────────────────────────────────────
+        # allow_degraded=True: the Skill DB query may fail when the DB is
+        # partially unavailable (e.g. the skills table is locked).  Downstream
+        # steps tolerate empty skill/activity lists, so the pipeline can still
+        # award quests, persist XP, and produce insights in degraded mode.
         detection = run_step(
             step_name="step_07_detect_signals",
             step_input={
@@ -431,6 +458,15 @@ class PipelineProcessor:
                 "rag_hit_count": rag.get("hit_count", 0),
             },
             error_code="STEP_07_SIGNAL_DETECTION",
+            allow_degraded=True,
+            degraded_builder=lambda _exc: {
+                "detected_skills": [],
+                "detected_activities": [],
+                "dominant_emotions": [],
+                "energy_level": 5,
+                "self_compassion_score": 7,
+                "task_type": "analytical",
+            },
             fn=lambda: _s_signals.run(
                 user_id=user_id,
                 canonical_text=normalized["canonical_text"],
@@ -625,6 +661,7 @@ class PipelineProcessor:
                 ollama_health=ollama_health,
                 ollama=self.ollama,
                 db=self.db,
+                cache=self.cache,
             ),
         )
 
@@ -701,6 +738,20 @@ class PipelineProcessor:
             },
         )
 
+        # Emit cache statistics so operators can tune TTL / max_size.
+        _cache_stats = self.cache.get_stats()
+        logger.info(
+            "pipeline cache_stats run=%s hit_rate=%.2f hits=%s misses=%s"
+            " evictions=%s size=%s/%s",
+            processing_run_id,
+            _cache_stats["hit_rate"],
+            _cache_stats["hits"],
+            _cache_stats["misses"],
+            _cache_stats["evictions"],
+            _cache_stats["size"],
+            _cache_stats["max_size"],
+        )
+
         return {
             "entry_id": entry_id,
             "user_id": user_id,
@@ -709,7 +760,7 @@ class PipelineProcessor:
             "completed_at": _iso8601z(_now_utc()),
             "steps": steps,
             "summary": result_summary,
-            "meta": pipeline_meta,
+            "meta": {**pipeline_meta, "cache_stats": _cache_stats},
         }
 
     # ------------------------------------------------------------------
@@ -729,9 +780,7 @@ class PipelineProcessor:
         self.db.add(claim)
         self.db.flush()
 
-    def _get_idempotent_replay(
-        self, user_id: str, key: str
-    ) -> dict[str, Any] | None:
+    def _get_idempotent_replay(self, user_id: str, key: str) -> dict[str, Any] | None:
         claim = (
             self.db.query(EntryIdempotencyClaim)
             .filter(
@@ -893,6 +942,51 @@ class PipelineProcessor:
         )
         self.db.flush()
 
+    def _save_to_recovery(
+        self,
+        *,
+        entry_id: str,
+        user_id: str,
+        idempotency_key: str,
+        error: str,
+        error_code: str,
+    ) -> None:
+        """Persist a failed entry to the file-based recovery queue.
+
+        Called when normal DB-based failure recording (``_record_failure``)
+        is itself unavailable — typically because the database is completely
+        down.  Uses the file-based ``RecoveryQueue`` as a last-resort buffer
+        so no entry is silently lost.
+
+        If no ``RecoveryQueue`` is configured, logs a CRITICAL warning so the
+        operator is alerted that manual intervention may be needed.
+        """
+        if self.recovery is None:
+            logger.critical(
+                "pipeline no recovery_queue configured — entry=%s user=%s will NOT be"
+                " recoverable automatically. error_code=%s original_error=%s",
+                entry_id,
+                user_id,
+                error_code,
+                error[:300],
+            )
+            return
+        try:
+            self.recovery.save_failed_entry(
+                entry_id=entry_id,
+                user_id=user_id,
+                idempotency_key=idempotency_key,
+                error=error,
+                error_code=error_code,
+                pipeline_version=PIPELINE_VERSION,
+            )
+        except Exception as exc:
+            logger.critical(
+                "pipeline recovery_queue write also failed entry=%s error=%s",
+                entry_id,
+                exc,
+            )
+
     def _get_entry(self, *, user_id: str, entry_id: str) -> JournalEntry | None:
         return (
             self.db.query(JournalEntry)
@@ -921,6 +1015,17 @@ class JournalEntryPipeline:
     means every (user, entry) pair is automatically processed exactly once
     per pipeline version — no caller bookkeeping required.
 
+    Graceful degradation
+    --------------------
+    - **Ollama unavailable**: embedding (step 05) and insights (step 14b)
+      degrade silently; signal detection (step 07) falls back to rule-based
+      keyword matching.
+    - **Qdrant unavailable**: RAG search (step 06) returns empty context;
+      processing continues without evidence-based recommendations.
+    - **DB unavailable**: critical failure path — the entry is saved to a
+      file-based ``RecoveryQueue`` so it can be retried when the DB recovers.
+      Use ``check_services_health()`` as a pre-flight gate.
+
     Usage (FastAPI)::
 
         pipeline = JournalEntryPipeline(db_session=db)
@@ -936,6 +1041,12 @@ class JournalEntryPipeline:
         result = await pipeline.process_entry(
             entry_id, user_id, idempotency_key="worker-run-xyz"
         )
+
+    Pre-flight health check::
+
+        health = await pipeline.check_services_health()
+        if health["degraded"]:
+            logger.warning("Running in degraded mode: %s", health)
     """
 
     def __init__(
@@ -944,6 +1055,7 @@ class JournalEntryPipeline:
         ollama_client: OllamaClient | None = None,
         qdrant_client: QdrantClientAdapter | None = None,
         cache: StepCache | None = None,
+        recovery: RecoveryQueue | None = None,
     ) -> None:
         """Initialise the facade and its underlying ``PipelineProcessor``.
 
@@ -952,13 +1064,169 @@ class JournalEntryPipeline:
             ollama_client:  Optional OllamaClient; a default is created if omitted.
             qdrant_client:  Optional QdrantClientAdapter; a default is created if omitted.
             cache:          Optional StepCache for embedding results.
+            recovery:       Optional RecoveryQueue for file-based failure persistence.
+                            When omitted, a default queue writing to
+                            ``data/recovery/`` is created automatically.
         """
+        try:
+            self._recovery: RecoveryQueue = recovery or RecoveryQueue()
+        except Exception as exc:
+            logger.warning(
+                "pipeline could not initialise RecoveryQueue (entry data may be"
+                " lost on DB failure): %s",
+                exc,
+            )
+            # Provide a non-functional sentinel so type checks elsewhere pass.
+            self._recovery = recovery  # type: ignore[assignment]
+
         self._processor = PipelineProcessor(
             db=db_session,
             ollama=ollama_client,
             qdrant=qdrant_client,
             cache=cache,
+            recovery=self._recovery,
         )
+
+    # ------------------------------------------------------------------
+    # Pre-flight health check
+    # ------------------------------------------------------------------
+
+    async def check_services_health(self) -> dict[str, Any]:
+        """Pre-flight health check for Ollama and Qdrant.
+
+        Runs both probes concurrently on the thread-pool so the event loop
+        is not blocked.  Never raises — failures are reported in the result.
+
+        Returns:
+            Dict with keys:
+
+            ``ollama``       — True if Ollama HTTP endpoint is reachable.
+            ``ollama_model`` — True if the configured model is loaded.
+            ``qdrant``       — True if Qdrant collection is accessible.
+            ``degraded``     — True if *any* AI service is unavailable.
+        """
+        loop = asyncio.get_running_loop()
+
+        # Ollama: use the sync health() method (never raises, returns structured dict).
+        ollama_future = loop.run_in_executor(None, self._processor.ollama.health)
+
+        # Qdrant: probe via ensure_collection(); detect _NoQdrant sentinel.
+        def _qdrant_probe() -> bool:
+            qdrant = self._processor.qdrant
+            if not isinstance(qdrant, QdrantClientAdapter):
+                # _NoQdrant sentinel — real Qdrant was unavailable at startup.
+                return False
+            try:
+                qdrant.ensure_collection()
+                return True
+            except Exception as exc:
+                logger.warning("pipeline qdrant health probe failed: %s", exc)
+                return False
+
+        qdrant_future = loop.run_in_executor(None, _qdrant_probe)
+
+        ollama_health, qdrant_ok = await asyncio.gather(ollama_future, qdrant_future)
+        ollama_ok = bool(ollama_health.get("connected"))
+
+        logger.info(
+            "pipeline services_health ollama=%s ollama_model=%s qdrant=%s",
+            ollama_ok,
+            bool(ollama_health.get("model_available")),
+            qdrant_ok,
+        )
+        return {
+            "ollama": ollama_ok,
+            "ollama_model": bool(ollama_health.get("model_available")),
+            "qdrant": qdrant_ok,
+            "degraded": not (ollama_ok and qdrant_ok),
+        }
+
+    # ------------------------------------------------------------------
+    # Rule-based fallback utility
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _rule_based_activity_extraction(raw_text: str) -> list[dict[str, Any]]:
+        """Extract structured activities using keyword + duration pattern matching.
+
+        This is the rule-based fallback for when Ollama is unavailable.  It
+        returns the same schema as ``OllamaClient.extract_activities()`` so
+        callers are agnostic to which path was taken.
+
+        The function scans for known activity keywords and pairs each match
+        with the first duration expression (``"2 hours"``, ``"30 minutes"``)
+        found anywhere in the text.  When no duration is found, 30 minutes
+        is assumed.
+
+        Args:
+            raw_text: Raw journal entry text (not yet normalised).
+
+        Returns:
+            List of activity dicts, each with:
+            ``activity``         — Capitalised activity label.
+            ``duration_minutes`` — Estimated duration as an integer.
+            ``notes``            — Provenance note for traceability.
+        """
+        import re
+
+        lowered = raw_text.lower()
+
+        # Activity keyword registry — extend here without touching callers.
+        _ACTIVITY_KEYWORDS: dict[str, list[str]] = {
+            "coding": [
+                "coded",
+                "coding",
+                "programming",
+                "python",
+                "javascript",
+                "code",
+                "dev",
+            ],
+            "running": ["ran", "running", "jogged", "jogging", "sprint"],
+            "reading": ["read", "reading", "book", "article", "chapter"],
+            "writing": ["wrote", "writing", "journaled", "journaling", "drafted"],
+            "exercise": [
+                "workout",
+                "exercised",
+                "gym",
+                "lifted",
+                "weights",
+                "training",
+            ],
+            "meditation": ["meditated", "meditation", "mindfulness", "breathing"],
+            "studying": ["studied", "studying", "study", "revision", "flashcard"],
+            "walking": ["walked", "walking", "strolled", "hike", "hiking"],
+        }
+
+        # Duration pattern: captures value + unit.
+        _DURATION_RE = re.compile(
+            r"(\d+(?:\.\d+)?)\s*(hour|hr|minute|min)s?", re.IGNORECASE
+        )
+
+        # Find the first duration mention in the whole text (best-effort).
+        duration_minutes: int = 30  # default when no duration found
+        match = _DURATION_RE.search(lowered)
+        if match:
+            value_str, unit = match.group(1), match.group(2).lower()
+            value = float(value_str)
+            duration_minutes = int(value * 60) if unit.startswith("h") else int(value)
+
+        activities: list[dict[str, Any]] = []
+        for activity_label, keywords in _ACTIVITY_KEYWORDS.items():
+            if any(kw in lowered for kw in keywords):
+                activities.append(
+                    {
+                        "activity": activity_label.capitalize(),
+                        "duration_minutes": duration_minutes,
+                        "notes": "Detected via rule-based fallback (Ollama unavailable)",
+                    }
+                )
+
+        return activities
+
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
 
     async def process_entry(
         self,
@@ -972,6 +1240,16 @@ class JournalEntryPipeline:
         Dispatches ``PipelineProcessor.process_entry`` to the default thread-
         pool executor so the calling coroutine is not blocked.
 
+        Graceful degradation
+        --------------------
+        - Ollama / Qdrant unavailable → affected steps degrade individually;
+          the pipeline still completes and persists XP / quest progress.
+        - DB unavailable during setup (idempotency claim, job creation) →
+          critical failure; entry is saved to the ``RecoveryQueue`` so it can
+          be retried when the DB recovers.  ``PipelineStepError`` raised inside
+          ``_run_steps`` already routes through ``_record_failure`` which also
+          saves to recovery when the DB commit fails there.
+
         Args:
             entry_id:         Journal entry UUID.
             user_id:          Owning user UUID.
@@ -984,10 +1262,48 @@ class JournalEntryPipeline:
 
         Raises:
             PipelineStepError: When a mandatory step fails irrecoverably.
+            Exception:         Propagated from the processor for any other
+                               failure; entry is saved to recovery queue first.
         """
         key = idempotency_key or _derive_idempotency_key(user_id, entry_id)
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None,
-            functools.partial(self._processor.process_entry, entry_id, user_id, key),
-        )
+        try:
+            return await loop.run_in_executor(
+                None,
+                functools.partial(
+                    self._processor.process_entry, entry_id, user_id, key
+                ),
+            )
+        except PipelineStepError:
+            # PipelineProcessor already called _record_failure() (and _save_to_recovery()
+            # if the DB was down at that point).  Nothing more to do here.
+            raise
+        except Exception as exc:
+            # An exception escaped *before* PipelineProcessor's own error handler ran —
+            # typically the DB was unreachable during the setup phase (idempotency
+            # claim, job creation, initial commit).  Save to the recovery queue so the
+            # entry is not silently lost.
+            logger.critical(
+                "pipeline setup-phase failure entry=%s user=%s error=%s"
+                " — saving to recovery queue",
+                entry_id,
+                user_id,
+                exc,
+            )
+            if self._recovery is not None:
+                try:
+                    self._recovery.save_failed_entry(
+                        entry_id=entry_id,
+                        user_id=user_id,
+                        idempotency_key=key,
+                        error=str(exc),
+                        error_code="SETUP_EXCEPTION",
+                        pipeline_version=PIPELINE_VERSION,
+                    )
+                except Exception as queue_exc:
+                    logger.critical(
+                        "pipeline facade recovery_queue write failed entry=%s: %s",
+                        entry_id,
+                        queue_exc,
+                    )
+            raise
