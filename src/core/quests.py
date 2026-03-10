@@ -78,7 +78,14 @@ def _entry_date(entry: JournalEntry) -> Optional[date]:
 
 
 def _quest_last_progress_date(quest: Quest) -> Optional[date]:
-    """Best-effort date of the quest's latest progress mutation."""
+    """Best-effort date of the quest's latest *known* progress mutation.
+
+    Safety note:
+    ``created_at`` is intentionally NOT used as a fallback for active streaks.
+    Seeded/backfilled quests often have historical ``created_at`` values that
+    do not represent the user's real most-recent streak progress day. Using
+    that timestamp can cause false streak-break failures on first real entry.
+    """
     updated_at_utc_ms = getattr(quest, "updated_at_utc_ms", None)
     if isinstance(updated_at_utc_ms, int) and updated_at_utc_ms > 0:
         return datetime.fromtimestamp(updated_at_utc_ms / 1000, tz=timezone.utc).date()
@@ -87,9 +94,6 @@ def _quest_last_progress_date(quest: Quest) -> Optional[date]:
     if completed_at is not None:
         return completed_at.date()
 
-    created_at = getattr(quest, "created_at", None)
-    if created_at is not None and getattr(quest, "current_progress", 0) > 0:
-        return created_at.date()
     return None
 
 
@@ -267,8 +271,13 @@ def check_quest_match(
         if last_updated_date == entry_date:
             return False
 
+        # Unknown last-progress timestamp: do not fail streaks based on guessed
+        # history (e.g., seeded quests where created_at is not real progress).
+        if last_updated_date is None:
+            return True
+
         # Streak is broken if the last update was more than one day ago
-        if last_updated_date is not None and quest.current_progress > 0:
+        if quest.current_progress > 0:
             gap = (entry_date - last_updated_date).days
             if gap > 1:
                 # Broken streak: mark failed and do not match

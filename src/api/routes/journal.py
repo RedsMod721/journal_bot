@@ -30,7 +30,7 @@ from src.db.session import SessionLocal, get_db
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/journal", tags=["journal"])
+router = APIRouter(prefix="/journal", tags=["journal"])
 
 
 # ---------------------------------------------------------------------------

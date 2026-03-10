@@ -120,6 +120,26 @@ def test_streak_match_requires_entry_date() -> None:
     assert check_quest_match(quest, entry, ["running"], ["ran"]) is False
 
 
+def test_streak_unknown_last_progress_does_not_auto_fail() -> None:
+    quest = SimpleNamespace(
+        id="q-streak-unknown-last-progress",
+        name="Run Daily",
+        status="active",
+        completion_type="streak",
+        skill=_make_skill("Running"),
+        current_progress=3,
+        required_progress=30,
+        updated_at_utc_ms=None,
+        completed_at=None,
+        # Historical created_at should not be treated as last progress day.
+        created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+    )
+    entry = _make_entry(created_at=datetime(2026, 2, 27, tzinfo=timezone.utc))
+
+    assert check_quest_match(quest, entry, ["running"], ["ran"]) is True
+    assert quest.status == "active"
+
+
 def test_quest_last_progress_date_uses_completed_at_fallback() -> None:
     quest = SimpleNamespace(
         id="q-completed-at",

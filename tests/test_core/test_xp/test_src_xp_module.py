@@ -4,11 +4,14 @@ import math
 import pytest
 
 from src.core.xp import (
+    USER_LEVEL_XP_MULTIPLIER,
     apportion_by_bp,
     build_skill_award_identity_key,
     build_theme_award_identity_key,
     calculate_level_from_xp,
     calculate_session_xp,
+    calculate_user_level_from_xp,
+    calculate_user_xp_for_level,
     calculate_xp_for_level,
     canonical_json_bytes,
     choose_primary_recipient_id,
@@ -39,6 +42,23 @@ def test_level_from_xp_supports_levels_above_100() -> None:
     assert calculate_level_from_xp(xp_101 - 1) == 100
     assert calculate_level_from_xp(0) == 1
     assert calculate_level_from_xp(-100) == 1
+
+
+def test_user_level_curve_is_10000x_skill_curve() -> None:
+    assert USER_LEVEL_XP_MULTIPLIER == 10_000
+    assert calculate_user_xp_for_level(2) == calculate_xp_for_level(2) * 10_000
+    assert calculate_user_xp_for_level(5) == calculate_xp_for_level(5) * 10_000
+
+
+def test_user_level_from_xp_uses_scaled_curve() -> None:
+    lvl2_floor = calculate_user_xp_for_level(2)
+    lvl3_floor = calculate_user_xp_for_level(3)
+
+    assert calculate_user_level_from_xp(0) == 1
+    assert calculate_user_level_from_xp(lvl2_floor - 1) == 1
+    assert calculate_user_level_from_xp(lvl2_floor) == 2
+    assert calculate_user_level_from_xp(lvl3_floor - 1) == 2
+    assert calculate_user_level_from_xp(lvl3_floor) == 3
 
 
 def test_calculate_xp_for_level_cache_extension_reuse_path() -> None:

@@ -19,6 +19,8 @@ import hashlib
 import json
 import math
 
+USER_LEVEL_XP_MULTIPLIER = 10_000
+
 # ---------------------------------------------------------------------------
 # Precomputed cumulative XP table for levels 1–100 (generated at import time).
 # Architecture note: values are generated from the reference code, not manually
@@ -137,6 +139,23 @@ def calculate_level_from_xp(total_xp: int) -> int:
         else:
             hi = mid - 1
     return lo
+
+
+def calculate_user_xp_for_level(level: int) -> int:
+    """Return cumulative XP required to reach a *user* level.
+
+    User-level progression is intentionally slower than skill progression:
+    required XP per level is 10,000x the skill curve.
+    """
+    return calculate_xp_for_level(level) * USER_LEVEL_XP_MULTIPLIER
+
+
+def calculate_user_level_from_xp(total_xp: int) -> int:
+    """Return user level from total XP using the 10,000x user curve."""
+    if total_xp <= 0:
+        return 1
+    scaled_xp = total_xp // USER_LEVEL_XP_MULTIPLIER
+    return calculate_level_from_xp(scaled_xp)
 
 
 def round_half_up(x: float) -> int:
