@@ -78,27 +78,32 @@ def _load_global_skill_nodes(
             GlobalSkill.id,
             GlobalSkill.source_skill_id,
             GlobalSkill.canonical_name,
+            GlobalSkill.category,
             GlobalSkill.hierarchy_level,
             GlobalSkill.parent_skill_ids_json,
             GlobalSkill.related_themes_json,
         )
-        .filter(GlobalSkill.source_skill_id.isnot(None))
         .all()
     )
 
     by_id: dict[str, dict[str, Any]] = {}
     by_source: dict[str, dict[str, Any]] = {}
     for row in rows:
-        source_skill_id = str(row.source_skill_id)
+        source_skill_id = str(row.source_skill_id) if row.source_skill_id else None
+        related_themes = _parse_string_list(row.related_themes_json)
+        if not related_themes and row.category:
+            related_themes = [str(row.category)]
         node = {
             "source_skill_id": source_skill_id,
             "canonical_name": row.canonical_name,
+            "category": row.category,
             "hierarchy_level": row.hierarchy_level,
             "parent_source_ids": _parse_string_list(row.parent_skill_ids_json),
-            "related_themes": _parse_string_list(row.related_themes_json),
+            "related_themes": related_themes,
         }
         by_id[str(row.id)] = node
-        by_source[source_skill_id] = node
+        if source_skill_id:
+            by_source[source_skill_id] = node
 
     return by_id, by_source
 
@@ -183,10 +188,16 @@ def _quest_to_response(
                     related_skill_name = str(
                         global_skill_node.get("canonical_name")
                         or related_skill_source_id
+                        or global_skill_id
                     )
                 related_skill_ancestor_skills = _build_ancestor_skill_refs(
                     related_skill_source_id, global_skills_by_source
                 )
+                for ancestor in related_skill_ancestor_skills:
+                    ancestor_node = global_skills_by_source.get(ancestor.source_skill_id)
+                    if ancestor_node is not None:
+                        for theme_name in ancestor_node.get("related_themes", []):
+                            related_themes.add(theme_name)
 
         for mapping in quest.skill.theme_mappings:
             theme = mapping.theme
@@ -310,8 +321,9 @@ def complete_quest(
         )
 
     quest.status = "completed"
-    quest.completed_at = datetime.now(timezone.utc)
-    quest.updated_at_utc_ms = int(quest.completed_at.timestamp() * 1000)
+    completed_at = datetime.now(timezone.utc)
+    quest.completed_at = completed_at
+    quest.updated_at_utc_ms = int(completed_at.timestamp() * 1000)
     db.add(quest)
     db.commit()
 
