@@ -1,0 +1,354 @@
+{
+  "seed_version": "harmony_profiles_v1",
+  "reference_now_utc": "2026-03-11T12:00:00+00:00",
+  "profiles": [
+    {
+      "id": "3f0f158d-d814-43f9-b035-5f6b43edeb41",
+      "username": "maya_motion",
+      "display_name": "Maya Motion",
+      "email": "maya_motion@placeholder.local",
+      "timezone": "UTC",
+      "home_country": "FR",
+      "scenario": "balanced_generalist",
+      "forgiveness_preset": "balanced",
+      "refresh": {
+        "mode": "read_only",
+        "days_ago_sequence": [
+          0
+        ]
+      },
+      "profile_stats": {
+        "total_xp": 18420,
+        "current_level": 9,
+        "current_level_xp": 1420,
+        "next_level_xp": 2600,
+        "active_quests": 2,
+        "skills_practiced": 11,
+        "journal_entries": 7,
+        "current_streak": 7,
+        "xp_today": 220,
+        "xp_this_week": 1120,
+        "recent_gain": 180
+      },
+      "expected_harmony": {
+        "dimensions": {
+          "physical": 1.0,
+          "mental": 0.75,
+          "social": 1.0,
+          "productivity": 0.8,
+          "rest": 1.0,
+          "growth": 1.0,
+          "creative": 1.0
+        },
+        "overall_balance": 0.88445,
+        "overwork_stage": 0,
+        "overwork_consecutive_days": 0
+      },
+      "expected_variety": {
+        "variety_score": 0.355245,
+        "variety_bonus_pct": 0.03786,
+        "strategy_counts": {
+          "social": 0,
+          "study": 2,
+          "mundane": 0,
+          "troll": 0,
+          "grind": 4,
+          "harmony": 0
+        },
+        "window_start_date": "2026-02-09",
+        "window_end_date": "2026-03-11"
+      },
+      "journal_entries": [
+        {
+          "days_ago": 6,
+          "hour_utc": 7,
+          "minute_utc": 30,
+          "energy_level": 8,
+          "themes": ["Physical", "Rest", "Creative"],
+          "content": "Started the morning with mobility work, then wound down by sketching after dinner."
+        },
+        {
+          "days_ago": 5,
+          "hour_utc": 19,
+          "minute_utc": 0,
+          "energy_level": 7,
+          "themes": ["Mental", "Professional", "Adventure", "Rest"],
+          "content": "Solved a tricky system design problem, read outside my lane, and still protected the evening recovery block."
+        },
+        {
+          "days_ago": 4,
+          "hour_utc": 18,
+          "minute_utc": 30,
+          "energy_level": 8,
+          "themes": ["Social", "Rest", "Creative"],
+          "content": "Shared dinner with friends, swapped ideas for a side project, and kept the night light."
+        },
+        {
+          "days_ago": 3,
+          "hour_utc": 8,
+          "minute_utc": 0,
+          "energy_level": 7,
+          "themes": ["Physical", "Social", "Professional", "Rest"],
+          "content": "Trained early, handled a collaborative work block, and left enough room to recover before bed."
+        },
+        {
+          "days_ago": 2,
+          "hour_utc": 21,
+          "minute_utc": 0,
+          "energy_level": 6,
+          "themes": ["Mental", "Rest"],
+          "content": "Took a quiet evening to reflect, read, and let my brain cool off instead of forcing more output."
+        },
+        {
+          "days_ago": 1,
+          "hour_utc": 18,
+          "minute_utc": 0,
+          "energy_level": 7,
+          "themes": ["Professional", "Social", "Adventure", "Rest"],
+          "content": "Wrapped a work milestone, checked in with my people, and planned a fresh challenge without sacrificing rest."
+        },
+        {
+          "days_ago": 0,
+          "hour_utc": 7,
+          "minute_utc": 15,
+          "energy_level": 7,
+          "themes": ["Physical", "Mental", "Professional", "Rest"],
+          "content": "Kept the routine tight today: workout, focused thinking, clean execution, and an early reset."
+        }
+      ]
+    },
+    {
+      "id": "37b80e12-c72a-4c2c-979a-68b02caae381",
+      "username": "leo_connector",
+      "display_name": "Leo Connector",
+      "email": "leo_connector@placeholder.local",
+      "timezone": "UTC",
+      "home_country": "FR",
+      "scenario": "social_explorer",
+      "forgiveness_preset": "balanced",
+      "refresh": {
+        "mode": "read_only",
+        "days_ago_sequence": [
+          0
+        ]
+      },
+      "profile_stats": {
+        "total_xp": 13260,
+        "current_level": 8,
+        "current_level_xp": 1260,
+        "next_level_xp": 2400,
+        "active_quests": 3,
+        "skills_practiced": 8,
+        "journal_entries": 7,
+        "current_streak": 7,
+        "xp_today": 160,
+        "xp_this_week": 860,
+        "recent_gain": 130
+      },
+      "expected_harmony": {
+        "dimensions": {
+          "physical": 0.33333,
+          "mental": 1.0,
+          "social": 1.0,
+          "productivity": 0.4,
+          "rest": 0.57143,
+          "growth": 1.0,
+          "creative": 0.5
+        },
+        "overall_balance": 0.54628,
+        "overwork_stage": 0,
+        "overwork_consecutive_days": 0
+      },
+      "expected_variety": {
+        "variety_score": 0.27928,
+        "variety_bonus_pct": 0.023399,
+        "strategy_counts": {
+          "social": 0,
+          "study": 0,
+          "mundane": 1,
+          "troll": 0,
+          "grind": 4,
+          "harmony": 0
+        },
+        "window_start_date": "2026-02-09",
+        "window_end_date": "2026-03-11"
+      },
+      "journal_entries": [
+        {
+          "days_ago": 6,
+          "hour_utc": 12,
+          "minute_utc": 0,
+          "energy_level": 7,
+          "themes": ["Social", "Mental"],
+          "content": "Had a long coffee chat that left me thinking hard about how I show up for other people."
+        },
+        {
+          "days_ago": 5,
+          "hour_utc": 18,
+          "minute_utc": 30,
+          "energy_level": 7,
+          "themes": ["Social", "Adventure", "Rest"],
+          "content": "Tried a new meetup, stayed curious, and gave myself a calm landing afterward."
+        },
+        {
+          "days_ago": 4,
+          "hour_utc": 21,
+          "minute_utc": 0,
+          "energy_level": 6,
+          "themes": ["Mental", "Rest"],
+          "content": "Journaled through the day, processed a few emotions, and chose an easy night."
+        },
+        {
+          "days_ago": 3,
+          "hour_utc": 19,
+          "minute_utc": 0,
+          "energy_level": 7,
+          "themes": ["Social", "Creative", "Rest"],
+          "content": "Hosted friends, improvised dinner, and let the evening breathe instead of optimizing it."
+        },
+        {
+          "days_ago": 2,
+          "hour_utc": 14,
+          "minute_utc": 0,
+          "energy_level": 8,
+          "themes": ["Social", "Mental", "Adventure"],
+          "content": "Reached out to someone new, asked better questions, and learned a lot from the conversation."
+        },
+        {
+          "days_ago": 1,
+          "hour_utc": 20,
+          "minute_utc": 0,
+          "energy_level": 5,
+          "themes": ["Professional", "Rest"],
+          "content": "Took care of admin work, then deliberately logged off instead of dragging it into the night."
+        },
+        {
+          "days_ago": 0,
+          "hour_utc": 10,
+          "minute_utc": 0,
+          "energy_level": 6,
+          "themes": ["Physical", "Professional", "Mental"],
+          "content": "Went for a walk before handling inbox cleanup and mapping out a better plan for the week."
+        }
+      ]
+    },
+    {
+      "id": "1cf4f2e7-ccce-42d4-9f57-85ab00c6ab66",
+      "username": "alex_builder",
+      "display_name": "Alex Builder",
+      "email": "alex_builder@placeholder.local",
+      "timezone": "UTC",
+      "home_country": "FR",
+      "scenario": "overworked_builder",
+      "forgiveness_preset": "balanced",
+      "refresh": {
+        "mode": "advance",
+        "days_ago_sequence": [
+          3,
+          2,
+          1,
+          0
+        ]
+      },
+      "profile_stats": {
+        "total_xp": 21980,
+        "current_level": 11,
+        "current_level_xp": 1980,
+        "next_level_xp": 3200,
+        "active_quests": 4,
+        "skills_practiced": 13,
+        "journal_entries": 7,
+        "current_streak": 1,
+        "xp_today": 90,
+        "xp_this_week": 540,
+        "recent_gain": 75
+      },
+      "expected_harmony": {
+        "dimensions": {
+          "physical": 0.0,
+          "mental": 1.0,
+          "social": 0.33333,
+          "productivity": 1.0,
+          "rest": 0.14286,
+          "growth": 1.0,
+          "creative": 0.0
+        },
+        "overall_balance": 0.27257,
+        "overwork_stage": 2,
+        "overwork_consecutive_days": 4
+      },
+      "expected_variety": {
+        "variety_score": 0.0,
+        "variety_bonus_pct": 0.0,
+        "strategy_counts": {
+          "social": 0,
+          "study": 0,
+          "mundane": 0,
+          "troll": 0,
+          "grind": 2,
+          "harmony": 0
+        },
+        "window_start_date": "2026-02-09",
+        "window_end_date": "2026-03-11"
+      },
+      "journal_entries": [
+        {
+          "days_ago": 6,
+          "hour_utc": 8,
+          "minute_utc": 0,
+          "energy_level": 3,
+          "themes": ["Professional", "Mental"],
+          "content": "Jumped straight into bug triage and stayed locked into problem solving all morning."
+        },
+        {
+          "days_ago": 6,
+          "hour_utc": 22,
+          "minute_utc": 0,
+          "energy_level": 2,
+          "themes": ["Professional", "Mental"],
+          "content": "Kept pushing late to finish the feature branch and skipped the usual shutdown routine again."
+        },
+        {
+          "days_ago": 5,
+          "hour_utc": 9,
+          "minute_utc": 0,
+          "energy_level": 3,
+          "themes": ["Professional", "Discipline"],
+          "content": "Opened the laptop early, forced another deep work block, and told myself I would rest later."
+        },
+        {
+          "days_ago": 5,
+          "hour_utc": 23,
+          "minute_utc": 0,
+          "energy_level": 2,
+          "themes": ["Professional", "Mental"],
+          "content": "Finished reviews near midnight and still kept scanning logs after I should have stopped."
+        },
+        {
+          "days_ago": 4,
+          "hour_utc": 11,
+          "minute_utc": 0,
+          "energy_level": 3,
+          "themes": ["Professional", "Mental", "Social"],
+          "content": "Ran the project sync, handled the hard decisions, and carried the whole load instead of delegating."
+        },
+        {
+          "days_ago": 3,
+          "hour_utc": 10,
+          "minute_utc": 0,
+          "energy_level": 3,
+          "themes": ["Professional", "Discipline"],
+          "content": "Protected another output-only morning and kept chasing progress even though my body felt flat."
+        },
+        {
+          "days_ago": 0,
+          "hour_utc": 1,
+          "minute_utc": 0,
+          "energy_level": 4,
+          "themes": ["Rest"],
+          "content": "Collapsed into recovery after midnight, but it felt like damage control instead of real rest."
+        }
+      ]
+    }
+  ]
+}

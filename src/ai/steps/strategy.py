@@ -1,8 +1,9 @@
 """Step 08c - Classify entry into balance strategies; update StrategyTracking.
 
 Six deterministic detectors run in priority order; at most 2 are credited
-(top-2 cap). StrategyTracking.usage_count is incremented for each credited
-strategy so variety.py can compute the Shannon-entropy variety score next run.
+(top-2 cap). The named count column on the StrategyTracking row is incremented
+for each credited strategy so variety.py can compute the Shannon-entropy
+variety score on the next run.
 
 Architecture reference: sections 5.2.2-5.2.7.
 """
@@ -13,13 +14,26 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from sqlalchemy.orm import Session
+from src.core.harmony_classifier import HarmonyClassifier
 from src.db.models.harmony import HarmonyDimension
-from src.db.models.journal_entry import JournalEntry
+from src.db.models.insight import Pattern
+from src.db.models.journal_entry import JournalEntry, JournalEntryStructured
 from src.db.models.strategy import StrategyTracking
+from src.db.models.user import User
 
 logger = logging.getLogger(__name__)
 
 STRATEGY_KEYS = ("social", "study", "mundane", "troll", "grind", "harmony")
+
+# Maps internal strategy key → StrategyTracking column name (architecture §5.0.3).
+_STRATEGY_COLUMN_MAP: dict[str, str] = {
+    "social": "social_risk_count",
+    "study": "study_burst_count",
+    "mundane": "mundane_focus_count",
+    "troll": "troll_exploits_count",
+    "grind": "daily_grind_count",
+    "harmony": "harmony_balance_count",
+}
 
 _SOCIAL_KW = (
     "meeting",
@@ -82,44 +96,89 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _is_social_risk(content: str, goal_relation: str | None) -> bool:
+def _has_solo_preference(user_id: str, db: Session) -> bool:
+    return (
+        db.query(Pattern)
+        .filter(
+            Pattern.user_id == user_id,
+            Pattern.pattern_type == "behavioral",
+            Pattern.pattern_key.ilike("%prefers_solo%"),
+        )
+        .count()
+        > 0
+    )
+
+
+def _is_social_risk(
+    user_id: str,
+    content: str,
+    goal_relation: str | None,
+    db: Session,
+) -> bool:
     """Sec 5.2.2: social keywords AND goal_relation indicates first time."""
     text = content.lower()
     if not any(kw in text for kw in _SOCIAL_KW):
         return False
-    if not goal_relation:
-        return False
-    return "first" in goal_relation.lower()
+    first_time = bool(goal_relation) and "first" in goal_relation.lower()
+    return first_time or _has_solo_preference(user_id, db)
+
+
+def _is_learning_candidate(content: str, task_type: str | None) -> bool:
+    text = content.lower()
+    return any(kw in text for kw in _LEARNING_KW) or (
+        (task_type or "").lower() in _LEARNING_TYPES
+    )
 
 
 def _is_study_burst(
-    user_id: str, content: str, task_type: str | None, db: Session
+    user_id: str,
+    entry_id: str,
+    entry_created_at: datetime,
+    content: str,
+    task_type: str | None,
+    db: Session,
 ) -> bool:
     """Sec 5.2.3: entry is part of a >=3 learning-candidate burst within 7 days."""
-    cutoff = _now_utc() - timedelta(days=7)
     rows = (
-        db.query(JournalEntry)
+        db.query(JournalEntry, JournalEntryStructured)
+        .outerjoin(
+            JournalEntryStructured,
+            (JournalEntryStructured.user_id == JournalEntry.user_id)
+            & (JournalEntryStructured.entry_id == JournalEntry.id),
+        )
         .filter(
             JournalEntry.user_id == user_id,
             JournalEntry.status == "completed",
-            JournalEntry.created_at >= cutoff,
+            JournalEntry.created_at >= entry_created_at - timedelta(days=7),
+            JournalEntry.created_at <= entry_created_at + timedelta(days=7),
         )
         .all()
     )
 
-    def _candidate(e: JournalEntry) -> bool:
-        text = (e.content or "").lower()
-        return any(kw in text for kw in _LEARNING_KW) or (
-            (e.entry_type or "").lower() in _LEARNING_TYPES
-        )
-
-    this_text = content.lower()
-    this_ok = any(kw in this_text for kw in _LEARNING_KW) or (
-        (task_type or "").lower() in _LEARNING_TYPES
+    candidates = sorted(
+        [
+            (entry.id, entry.created_at)
+            for entry, structured in rows
+            if entry.created_at is not None
+            and _is_learning_candidate(
+                entry.content or "",
+                structured.task_type if structured is not None else None,
+            )
+        ]
+        + ([(entry_id, entry_created_at)] if _is_learning_candidate(content, task_type) else []),
+        key=lambda item: item[1],
     )
-    if not this_ok:
+    if not _is_learning_candidate(content, task_type):
         return False
-    return sum(1 for r in rows if _candidate(r)) + 1 >= 3
+    queue: list[tuple[str, datetime]] = []
+    members: set[str] = set()
+    for candidate_id, created_at in candidates:
+        queue.append((candidate_id, created_at))
+        while queue and (created_at - queue[0][1]) > timedelta(days=7):
+            queue.pop(0)
+        if len(queue) >= 3:
+            members.update(candidate_id for candidate_id, _ in queue)
+    return entry_id in members
 
 
 def _is_mundane_focus(
@@ -141,31 +200,63 @@ def _is_troll_exploits(anomaly_score: float) -> bool:
     return float(anomaly_score) >= 0.70
 
 
-def _is_daily_grind(user_id: str, db: Session) -> bool:
-    """Sec 5.2.6: completed entries exist on each of the last 2 UTC calendar days."""
-    now = _now_utc()
-    for days_back in (1, 2):
-        target = now - timedelta(days=days_back)
-        day_start = target.replace(hour=0, minute=0, second=0, microsecond=0)
-        if (
-            db.query(JournalEntry)
-            .filter(
-                JournalEntry.user_id == user_id,
-                JournalEntry.status == "completed",
-                JournalEntry.created_at >= day_start,
-                JournalEntry.created_at < day_start + timedelta(days=1),
-            )
-            .count()
-            == 0
-        ):
-            return False
-    return True
+def _is_daily_grind(
+    user_id: str,
+    entry_created_at: datetime,
+    db: Session,
+) -> bool:
+    """Sec 5.2.6: current local day plus the previous two local days have entries."""
+    user = db.query(User).filter(User.id == user_id).one_or_none()
+    tz = timezone.utc if user is None else _user_tz(user.timezone)
+    entry_day = entry_created_at.astimezone(tz).date()
+    rows = (
+        db.query(JournalEntry.created_at)
+        .filter(
+            JournalEntry.user_id == user_id,
+            JournalEntry.status == "completed",
+            JournalEntry.created_at >= entry_created_at - timedelta(days=3),
+            JournalEntry.created_at <= entry_created_at,
+        )
+        .all()
+    )
+    local_days = {
+        created_at.astimezone(tz).date()
+        for (created_at,) in rows
+        if created_at is not None
+    }
+    local_days.add(entry_day)
+    return all((entry_day - timedelta(days=offset)) in local_days for offset in (0, 1, 2))
 
 
-def _is_harmony_balance(user_id: str, db: Session) -> bool:
-    """Sec 5.2.7: user's lowest HarmonyDimension.score < 0.50."""
-    rows = db.query(HarmonyDimension).filter(HarmonyDimension.user_id == user_id).all()
-    return bool(rows) and min(r.score for r in rows) < 0.50
+def _is_harmony_balance(
+    user_id: str,
+    db: Session,
+    *,
+    task_type: str | None = None,
+    content: str = "",
+    skills_themes_involved: str | None = None,
+) -> bool:
+    """Sec 5.2.7: entry addresses the user's current lowest low dimension."""
+    row = db.query(HarmonyDimension).filter(HarmonyDimension.user_id == user_id).first()
+    if row is None:
+        return False
+
+    dim_scores = row.dim_scores()
+    lowest_dimension = min(dim_scores, key=dim_scores.get)
+    if dim_scores[lowest_dimension] >= 0.50:
+        return False
+
+    classifier = HarmonyClassifier(db)
+    structured = type(
+        "_StructuredProxy",
+        (),
+        {
+            "task_type": task_type,
+            "skills_themes_involved": skills_themes_involved,
+        },
+    )()
+    entry = type("_EntryProxy", (), {"content": content, "user_id": user_id})()
+    return lowest_dimension in classifier.classify_dimensions(entry, structured)
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +350,7 @@ def _update_strategy_streaks(
 def run(
     *,
     user_id: str,
+    entry_id: str,
     canonical_text: str,
     detection: dict[str, Any],
     anomaly_score: float,
@@ -288,6 +380,14 @@ def run(
     """
     task_type: str | None = detection.get("task_type")
     energy_level: int | None = detection.get("energy_level")
+    entry_row = (
+        db.query(JournalEntry)
+        .filter(JournalEntry.user_id == user_id, JournalEntry.id == entry_id)
+        .one_or_none()
+    )
+    entry_created_at = (
+        entry_row.created_at if entry_row is not None and entry_row.created_at is not None else _now_utc()
+    )
 
     # Read streak state BEFORE crediting today's entry (§5.9 "today affects tomorrow").
     tracking_row = (
@@ -297,12 +397,25 @@ def run(
     yesterday_local: date = datetime.now(timezone.utc).date() - timedelta(days=1)
 
     detectors = {
-        "social": lambda: _is_social_risk(canonical_text, goal_relation),
-        "study": lambda: _is_study_burst(user_id, canonical_text, task_type, db),
+        "social": lambda: _is_social_risk(user_id, canonical_text, goal_relation, db),
+        "study": lambda: _is_study_burst(
+            user_id,
+            entry_id,
+            entry_created_at,
+            canonical_text,
+            task_type,
+            db,
+        ),
         "mundane": lambda: _is_mundane_focus(canonical_text, task_type, energy_level),
         "troll": lambda: _is_troll_exploits(anomaly_score),
-        "grind": lambda: _is_daily_grind(user_id, db),
-        "harmony": lambda: _is_harmony_balance(user_id, db),
+        "grind": lambda: _is_daily_grind(user_id, entry_created_at, db),
+        "harmony": lambda: _is_harmony_balance(
+            user_id,
+            db,
+            task_type=task_type,
+            content=canonical_text,
+            skills_themes_involved=None,
+        ),
     }
 
     strategy_scores: dict[str, bool] = {}
@@ -339,27 +452,46 @@ def run(
     }
 
 
+def _user_tz(tz_name: str | None) -> timezone:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    try:
+        return ZoneInfo(tz_name or "UTC")
+    except (ZoneInfoNotFoundError, KeyError):
+        return timezone.utc
+
+
 def _increment_strategy_count(*, user_id: str, strategy_name: str, db: Session) -> None:
-    """Upsert and increment StrategyTracking.usage_count for the given strategy."""
+    """Upsert the single StrategyTracking row and increment the named count column.
+
+    Architecture §5.0.3: one row per user; each of the six strategies has its
+    own count column (e.g. social_risk_count, study_burst_count, …).
+    """
+    col_name = _STRATEGY_COLUMN_MAP.get(strategy_name)
+    if not col_name:
+        logger.warning("_increment_strategy_count: unknown strategy_name=%r", strategy_name)
+        return
+
     now = _now_utc()
     row = (
         db.query(StrategyTracking)
-        .filter(
-            StrategyTracking.user_id == user_id,
-            StrategyTracking.strategy_name == strategy_name,
-        )
+        .filter(StrategyTracking.user_id == user_id)
         .one_or_none()
     )
     if row is None:
+        today = now.date()
+        kwargs: dict[str, object] = {col_name: 1}
         db.add(
             StrategyTracking(
                 user_id=user_id,
-                strategy_name=strategy_name,
-                usage_count=1,
-                success_rate=0.0,
+                strategy_streaks_json="{}",
+                window_start_date=today - timedelta(days=30),
+                window_end_date=today,
                 updated_at=now,
+                **kwargs,
             )
         )
     else:
-        row.usage_count += 1
+        current = int(getattr(row, col_name, 0) or 0)
+        setattr(row, col_name, current + 1)
         row.updated_at = now

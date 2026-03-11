@@ -11,6 +11,10 @@ vi.mock("@/contexts/UserContext", () => ({
   }),
 }));
 
+vi.mock("@/components/settings/ForgivenessSettings", () => ({
+  ForgivenessSettings: () => <div>Forgiveness Settings</div>,
+}));
+
 describe("Settings page preferences", () => {
   afterEach(() => {
     vi.restoreAllMocks();

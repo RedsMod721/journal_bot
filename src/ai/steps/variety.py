@@ -2,9 +2,9 @@
 
 Variety score is computed using Shannon entropy normalised over the 6 balance
 strategies (social, study, mundane, troll, grind, harmony) from the cumulative
-``StrategyTracking.usage_count`` data (architecture §5.3).
+per-strategy counts in ``StrategyTracking`` (architecture §5.3).
 
-Variety multiplier schedule (architecture §5.3.1–5.3.2)
+Variety multiplier schedule (architecture §5.3.1–5.3.2, project override)
 ---------------------------------------------------------
     variety_score     = H / log2(6)             — 0.0 to 1.0
     variety_bonus_pct = score² × 0.30           — 0.0% to 30.0% (base)
@@ -14,17 +14,19 @@ Variety multiplier schedule (architecture §5.3.1–5.3.2)
     score 0.5 -> bp ~10 750  (1.075x — moderate diversity)
     score 1.0 -> bp 13 000  (1.30x — perfectly even distribution)
 
-    Harvest Festival event doubles the bonus to 60% max (1.60x); that
-    multiplier is applied separately by the event system, not here.
+    Harvest Festival may later double this base bonus to 60% max (1.60x);
+    that multiplier is applied separately by the event system, not here.
 
-The step also upserts the UserAnalytics row for today so the rolling
-dashboard stays current.
+The step also:
+  - Persists computed variety_score and variety_bonus_pct back to the
+    StrategyTracking row so the dashboard can read them without recalculating.
+  - Upserts the UserAnalytics row for today so the rolling dashboard stays current.
 """
 
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -34,6 +36,16 @@ from src.db.models.strategy import StrategyTracking
 
 # Canonical six balance strategies (architecture section 5.2).
 STRATEGY_KEYS = ("social", "study", "mundane", "troll", "grind", "harmony")
+
+# Maps internal strategy key → StrategyTracking column name (architecture §5.0.3).
+_STRATEGY_COUNT_COLUMNS: dict[str, str] = {
+    "social": "social_risk_count",
+    "study": "study_burst_count",
+    "mundane": "mundane_focus_count",
+    "troll": "troll_exploits_count",
+    "grind": "daily_grind_count",
+    "harmony": "harmony_balance_count",
+}
 
 
 def _now_utc() -> datetime:
@@ -49,7 +61,7 @@ def calculate_variety_score(strategy_counts: dict[str, int]) -> float:
     """Compute Shannon entropy normalised to [0.0, 1.0] over the 6 strategies.
 
     Args:
-        strategy_counts: Mapping of strategy name to cumulative usage count.
+        strategy_counts: Mapping of strategy key to cumulative usage count.
                          Missing keys are treated as count=0.
 
     Returns:
@@ -81,9 +93,10 @@ def run(
 ) -> dict[str, Any]:
     """Compute variety_multiplier_bp from cumulative strategy diversity.
 
-    Reads StrategyTracking.usage_count for all six balance strategies,
-    applies Shannon entropy normalisation (section 5.3.1), converts to a
-    quadratic bonus (section 5.3.2), then expresses the result in basis points.
+    Reads per-strategy counts from the StrategyTracking pivot row, applies
+    Shannon entropy normalisation (section 5.3.1), converts to a quadratic
+    bonus (section 5.3.2), then expresses the result in basis points.
+    Persists variety_score and variety_bonus_pct back to the row.
 
     Args:
         user_id:     Owning user UUID.
@@ -93,24 +106,38 @@ def run(
     Returns:
         Dict with keys:
             variety_score         -- float 0.0-1.0 (normalised Shannon entropy).
-            variety_bonus_pct     -- float 0.0-0.30 (bonus fraction, base cap).
-            variety_multiplier_bp -- int, 10 000-13 000 bp.
-            strategy_counts       -- dict of strategy_name -> usage_count.
+            variety_bonus_pct     -- float 0.0-0.30 (base cap; 0.60 only via future event arc).
+            variety_multiplier_bp -- int, 10 000-13 000 bp (base).
+            strategy_counts       -- dict of strategy_key -> count.
             window_days           -- echo of the input parameter (API compat).
     """
-    rows = (
+    row = (
         db.query(StrategyTracking)
-        .filter(
-            StrategyTracking.user_id == user_id,
-            StrategyTracking.strategy_name.in_(list(STRATEGY_KEYS)),
-        )
-        .all()
+        .filter(StrategyTracking.user_id == user_id)
+        .one_or_none()
     )
-    strategy_counts: dict[str, int] = {r.strategy_name: r.usage_count for r in rows}
+
+    if row is not None:
+        strategy_counts: dict[str, int] = {
+            k: int(getattr(row, col, 0) or 0)
+            for k, col in _STRATEGY_COUNT_COLUMNS.items()
+        }
+    else:
+        strategy_counts = {}
 
     variety_score = calculate_variety_score(strategy_counts)
     variety_bonus_pct = (variety_score**2) * 0.30
     variety_multiplier_bp = 10000 + int(variety_bonus_pct * 10000)
+
+    # Persist computed metrics back to the row so the dashboard can read
+    # variety_score / variety_bonus_pct without re-running the pipeline.
+    if row is not None:
+        row.variety_score = round(variety_score, 6)
+        row.variety_bonus_pct = round(variety_bonus_pct, 6)
+        # Refresh window_end_date to today
+        today = _now_utc().date()
+        row.window_end_date = today
+        row.window_start_date = today - timedelta(days=window_days)
 
     _upsert_daily_analytics(
         user_id=user_id,

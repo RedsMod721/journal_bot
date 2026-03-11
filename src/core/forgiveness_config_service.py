@@ -13,7 +13,11 @@ from typing import Optional
 from sqlalchemy import Date, cast, func
 from sqlalchemy.orm import Session
 
-from src.core.forgiveness_presets import FORGIVENESS_PRESETS, VALID_PRESETS, get_preset_params
+from src.core.forgiveness_presets import (
+    DEFAULT_FORGIVENESS_PRESET,
+    VALID_PRESETS,
+    get_preset_params,
+)
 from src.db.models.forgiveness import ForgivenessConfig
 from src.db.models.user import User
 from src.db.models.xp import XpAward
@@ -86,12 +90,12 @@ class ForgivenessConfigService:
         return config
 
     def _create_default_config(self, user_id: str) -> ForgivenessConfig:
-        """Create and persist a default config using the *balanced* preset."""
-        params = get_preset_params("balanced")
+        """Create and persist a default config using the default preset."""
+        params = get_preset_params(DEFAULT_FORGIVENESS_PRESET)
 
         config = ForgivenessConfig(
             user_id=user_id,
-            preset="balanced",
+            preset=DEFAULT_FORGIVENESS_PRESET,
             skill_decay_rate=params.skill_decay_rate,
             skill_grace_period_days=params.skill_grace_days,
             insight_decay_rate=params.insight_decay_rate,
@@ -100,6 +104,7 @@ class ForgivenessConfigService:
         )
 
         self.db.add(config)
+        self.db.flush()
         return config
 
     # ------------------------------------------------------------------

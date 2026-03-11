@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import forgiveness, jobs, journal, quests, skills, themes, users
+from src.api.routes import balance, forgiveness, harmony, jobs, journal, quests, skills, themes, users
 from src.db.session import check_connection, init_db
 from src.jobs.scheduler import init_scheduler, shutdown_scheduler
 
@@ -98,6 +98,8 @@ for prefix in ("/api", "/api/v1"):
     app.include_router(quests.router, prefix=prefix)
     app.include_router(jobs.router, prefix=prefix)
     app.include_router(forgiveness.router, prefix=prefix)
+    app.include_router(balance.router, prefix=prefix)
+    app.include_router(harmony.router, prefix=prefix)
 
 # ---------------------------------------------------------------------------
 # System endpoints

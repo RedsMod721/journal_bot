@@ -2,6 +2,8 @@ import { XPDisplay } from "@/components/xp/XPDisplay";
 import { XPStatsCard } from "@/components/xp/XPStatsCard";
 import { SkillList } from "@/components/skills/SkillList";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { HarmonyRadarChart } from "@/components/dashboard/HarmonyRadarChart";
+import { VarietyScoreCard } from "@/components/dashboard/VarietyScoreCard";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, TrendingUp } from "lucide-react";
@@ -271,21 +273,10 @@ export function Dashboard() {
         </Card>
       </div>
 
-      {/* Placeholder for Future Features */}
+      {/* Balance & Harmony Widgets */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle>Personality System</CardTitle>
-            <CardDescription>AI personality selection (Coming in Week 6/9)</CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle>Story Arcs</CardTitle>
-            <CardDescription>Narrative progression (Coming in Week 7/9)</CardDescription>
-          </CardHeader>
-        </Card>
+        <HarmonyRadarChart />
+        <VarietyScoreCard />
       </div>
     </div>
   );

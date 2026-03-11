@@ -62,7 +62,10 @@ from src.ai.steps import structured as _s_structured
 from src.ai.steps import summary as _s_summary
 from src.ai.steps import variety as _s_variety
 
-from src.db.models.journal_entry import JournalEntry
+from src.core.forgiveness_decay_service import ForgivenessDecayService
+from src.core.harmony_classifier import HarmonyClassifier
+from src.core.harmony_refresh_service import HarmonyRefreshService
+from src.db.models.journal_entry import JournalEntry, JournalEntryStructured
 from src.db.models.processing import (
     EntryIdempotencyClaim,
     OutboxEvent,
@@ -115,6 +118,85 @@ def _derive_idempotency_key(user_id: str, entry_id: str) -> str:
     """
     raw = f"{user_id}:{entry_id}:{PIPELINE_VERSION}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+
+# ---------------------------------------------------------------------------
+# Private step helpers — called from within _run_steps lambdas
+# ---------------------------------------------------------------------------
+
+
+def _harmony_step(
+    *,
+    user_id: str,
+    entry_id: str,
+    entry: Any,
+    db: Session,
+) -> dict[str, Any]:
+    """Classify harmony dimensions from structured data and refresh scores."""
+    structured_orm: JournalEntryStructured | None = (
+        db.query(JournalEntryStructured)
+        .filter(
+            JournalEntryStructured.user_id == user_id,
+            JournalEntryStructured.entry_id == entry_id,
+        )
+        .one_or_none()
+    )
+
+    dims: set[str] = set()
+    if structured_orm is not None:
+        dims = HarmonyClassifier(db).classify_dimensions(entry, structured_orm)
+
+    result = HarmonyRefreshService(db).refresh_harmony(
+        user_id=user_id,
+        now_utc=_now_utc(),
+        advance_overwork_state=True,
+    )
+    db.flush()
+
+    return {
+        "dimensions_addressed": sorted(dims),
+        "overall_balance": float(result.harmony.overall_balance or 0.5),
+        "overwork_stage": int(result.harmony.overwork_stage or 0),
+    }
+
+
+def _staleness_reset_step(
+    *,
+    user_id: str,
+    skill_awards: list[dict[str, Any]],
+    now_utc: datetime,
+    db: Session,
+) -> dict[str, Any]:
+    """Reinforce skill staleness for every skill that received XP this run."""
+    from src.db.models.skill import Skill
+
+    skill_xp: dict[str, int] = {}
+    for award in skill_awards:
+        if award.get("replayed"):
+            continue
+        sid = award.get("skill_id")
+        if sid:
+            skill_xp[sid] = skill_xp.get(sid, 0) + int(award.get("amount", 0))
+
+    if not skill_xp:
+        return {"skills_reset": 0}
+
+    skills = (
+        db.query(Skill)
+        .filter(Skill.user_id == user_id, Skill.id.in_(list(skill_xp.keys())))
+        .all()
+    )
+    decay_svc = ForgivenessDecayService(db)
+    for skill in skills:
+        decay_svc.reinforce_skill(
+            skill,
+            now_utc,
+            is_primary=True,
+            xp_amount=skill_xp.get(skill.id, 0),
+        )
+
+    db.flush()
+    return {"skills_reset": len(skills)}
 
 
 # ---------------------------------------------------------------------------
@@ -539,9 +621,29 @@ class PipelineProcessor:
             },
             fn=lambda: _s_strategy.run(
                 user_id=user_id,
+                entry_id=entry_id,
                 canonical_text=normalized["canonical_text"],
                 detection=detection,
                 anomaly_score=anomaly_precheck.get("anomaly_score", 0.0),
+                db=self.db,
+            ),
+        )
+
+        # ── Step 08d: Harmony classify & refresh ─────────────────────────
+        harmony_out = run_step(
+            step_name="step_08d_harmony_refresh",
+            step_input={"entry_id": entry_id, "user_id": user_id},
+            error_code="STEP_08D_HARMONY_REFRESH",
+            allow_degraded=True,
+            degraded_builder=lambda _exc: {
+                "dimensions_addressed": [],
+                "overall_balance": 0.5,
+                "overwork_stage": 0,
+            },
+            fn=lambda: _harmony_step(
+                user_id=user_id,
+                entry_id=entry_id,
+                entry=entry,
                 db=self.db,
             ),
         )
@@ -688,6 +790,21 @@ class PipelineProcessor:
                     for a in skill_awards["skill_awards"]
                     if not a.get("replayed")
                 ),
+                db=self.db,
+            ),
+        )
+
+        # ── Step 14d: Reset skill staleness ──────────────────────────────
+        run_step(
+            step_name="step_14d_reset_staleness",
+            step_input={"skill_award_count": len(skill_awards["skill_awards"])},
+            error_code="STEP_14D_STALENESS_RESET",
+            allow_degraded=True,
+            degraded_builder=lambda _exc: {"skills_reset": 0},
+            fn=lambda: _staleness_reset_step(
+                user_id=user_id,
+                skill_awards=skill_awards["skill_awards"],
+                now_utc=run_started,
                 db=self.db,
             ),
         )

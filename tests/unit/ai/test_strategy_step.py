@@ -80,6 +80,7 @@ def test_update_strategy_streaks_updates_today_yesterday_and_new() -> None:
 
 
 def test_increment_strategy_count_upsert_and_increment() -> None:
+    # CREATE path: no existing row → new StrategyTracking added with column set to 1
     create_db = _FakeDB(one_row=None)
     strategy._increment_strategy_count(  # noqa: SLF001 - testing internal helper
         user_id="u1",
@@ -87,15 +88,26 @@ def test_increment_strategy_count_upsert_and_increment() -> None:
         db=create_db,
     )
     assert len(create_db.added) == 1
-    assert create_db.added[0].usage_count == 1
-    assert create_db.added[0].strategy_name == "social"
+    assert create_db.added[0].social_risk_count == 1
 
-    row = SimpleNamespace(usage_count=4, updated_at=None)
+    # UPDATE path: existing row → named column incremented
+    row = SimpleNamespace(study_burst_count=4, updated_at=None)
     update_db = _FakeDB(one_row=row)
     strategy._increment_strategy_count(  # noqa: SLF001 - testing internal helper
         user_id="u1",
         strategy_name="study",
         db=update_db,
     )
-    assert row.usage_count == 5
+    assert row.study_burst_count == 5
     assert row.updated_at is not None
+
+
+def test_increment_strategy_count_unknown_strategy_is_noop() -> None:
+    # Unknown strategy names must not raise or add rows (architecture §5.0.3).
+    db = _FakeDB(one_row=None)
+    strategy._increment_strategy_count(  # noqa: SLF001 - testing internal helper
+        user_id="u1",
+        strategy_name="nonexistent",
+        db=db,
+    )
+    assert len(db.added) == 0

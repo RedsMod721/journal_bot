@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useRealmPreferences } from "@/hooks/useRealmPreferences";
+import { ForgivenessSettings } from "@/components/settings/ForgivenessSettings";
 
 export function Settings() {
   const {
@@ -120,6 +121,8 @@ export function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      <ForgivenessSettings />
     </div>
   );
 }

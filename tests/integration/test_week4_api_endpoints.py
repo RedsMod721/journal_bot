@@ -154,6 +154,22 @@ def seeded_user_id(db_session: Session) -> str:
     return user_id
 
 
+@pytest.fixture
+def demo_user_id(db_session: Session) -> str:
+    user_id = "37b80e12-c72a-4c2c-979a-68b02caae381"
+    user = User(
+        id=user_id,
+        username="leo_connector",
+        email="leo_connector@placeholder.local",
+        password_hash="hash",
+        timezone="UTC",
+        home_country="FR",
+    )
+    db_session.add(user)
+    db_session.commit()
+    return user_id
+
+
 def test_users_list_endpoint(client: TestClient, seeded_user_id: str):
     response = client.get("/api/users")
     assert response.status_code == 200
@@ -257,6 +273,19 @@ def test_user_stats_endpoint(client: TestClient, seeded_user_id: str):
     assert stats["xp_today"] >= 0
     assert stats["xp_this_week"] >= 0
     assert stats["recent_gain"] >= 0
+
+
+def test_user_stats_endpoint_uses_demo_profile_fallback(
+    client: TestClient, demo_user_id: str
+):
+    response = client.get(f"/api/users/{demo_user_id}/stats")
+    assert response.status_code == 200
+    stats = response.json()
+    assert stats["user_id"] == demo_user_id
+    assert stats["journal_entries"] == 7
+    assert stats["current_streak"] == 7
+    assert stats["active_quests"] == 3
+    assert stats["total_xp"] == 13260
 
 
 def test_skills_endpoint(client: TestClient, seeded_user_id: str):

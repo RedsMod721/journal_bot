@@ -24,6 +24,7 @@ from src.core.xp import (
     calculate_user_level_from_xp,
     calculate_user_xp_for_level,
 )
+from src.demo_profiles import demo_stats_payload, has_demo_profile, has_live_profile_activity
 from src.db.models.journal_entry import JournalEntry
 from src.db.models.quest import Quest
 from src.db.models.skill import Skill
@@ -338,6 +339,11 @@ def update_user_preferences(
 )
 def get_user_stats(user_id: str, db: Session = Depends(get_db)) -> UserStatsResponse:
     _load_user_or_404(db, user_id)
+
+    if has_demo_profile(user_id) and not has_live_profile_activity(db, user_id):
+        payload = demo_stats_payload(user_id)
+        if payload is not None:
+            return UserStatsResponse(**payload)
 
     total_xp = int(
         db.query(func.coalesce(func.sum(XpAward.amount), 0))

@@ -1,38 +1,26 @@
-"""Forgiveness preset definitions — canonical source of truth.
-
-Section 4.2.1 of the architecture spec defines six presets. The ``custom``
-preset has no fixed parameters; users supply their own rates.
-
-Usage::
-
-    from src.core.forgiveness_presets import get_preset_params, FORGIVENESS_PRESETS
-
-    params = get_preset_params("zen")
-    # params.skill_decay_rate == 0.01
-"""
+"""Forgiveness preset definitions and display metadata."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
 
 
 @dataclass(frozen=True)
 class PresetParams:
     """Immutable parameter bundle for a forgiveness preset."""
 
-    skill_decay_rate: float       # Staleness gained per 24 h (0.0–1.0)
-    skill_grace_days: int         # Days before skill decay starts
-    insight_decay_rate: float     # Strength lost per 24 h (0.0–1.0)
-    insight_grace_days: int       # Days before insight decay starts
-    critical_threshold: float     # Staleness fraction that triggers a critical flag (0.0–1.0)
+    skill_decay_rate: float
+    skill_grace_days: int
+    insight_decay_rate: float
+    insight_grace_days: int
+    critical_threshold: float
 
 
-# ---------------------------------------------------------------------------
-# Canonical preset table
-# ---------------------------------------------------------------------------
-FORGIVENESS_PRESETS: Dict[str, PresetParams] = {
-    "balanced": PresetParams(
+DEFAULT_FORGIVENESS_PRESET = "balanced"
+
+
+FORGIVENESS_PRESETS: dict[str, PresetParams] = {
+    DEFAULT_FORGIVENESS_PRESET: PresetParams(
         skill_decay_rate=0.05,
         skill_grace_days=7,
         insight_decay_rate=0.10,
@@ -60,8 +48,7 @@ FORGIVENESS_PRESETS: Dict[str, PresetParams] = {
         insight_grace_days=7,
         critical_threshold=0.90,
     ),
-    # adaptive: base rates equal to balanced; actual rates are modified at
-    # runtime based on the user's recent activity streak.
+    # Adaptive uses the balanced baseline and applies an in-memory overlay.
     "adaptive": PresetParams(
         skill_decay_rate=0.05,
         skill_grace_days=7,
@@ -69,8 +56,7 @@ FORGIVENESS_PRESETS: Dict[str, PresetParams] = {
         insight_grace_days=3,
         critical_threshold=0.80,
     ),
-    # custom: placeholder entry so membership tests work; callers that need
-    # the user-supplied rates must read them from ForgivenessConfig directly.
+    # Custom keeps user-supplied values; this placeholder supports validation.
     "custom": PresetParams(
         skill_decay_rate=0.05,
         skill_grace_days=7,
@@ -80,17 +66,35 @@ FORGIVENESS_PRESETS: Dict[str, PresetParams] = {
     ),
 }
 
+
+FORGIVENESS_PRESET_NAMES: dict[str, str] = {
+    DEFAULT_FORGIVENESS_PRESET: "Balanced",
+    "hardcore": "Hardcore",
+    "lenient": "Lenient",
+    "zen": "Zen",
+    "adaptive": "Adaptive",
+    "custom": "Custom",
+}
+
+
 VALID_PRESETS: frozenset[str] = frozenset(FORGIVENESS_PRESETS)
 
 
 def get_preset_params(preset: str) -> PresetParams:
-    """Return the :class:`PresetParams` for *preset*.
-
-    Raises :exc:`ValueError` for unknown preset names.
-    """
+    """Return canonical parameters for *preset*."""
     if preset not in FORGIVENESS_PRESETS:
         raise ValueError(
             f"Unknown forgiveness preset {preset!r}. "
             f"Valid presets: {sorted(VALID_PRESETS)}"
         )
     return FORGIVENESS_PRESETS[preset]
+
+
+def get_preset_name(preset: str) -> str:
+    """Return the display name for *preset*."""
+    if preset not in FORGIVENESS_PRESET_NAMES:
+        raise ValueError(
+            f"Unknown forgiveness preset {preset!r}. "
+            f"Valid presets: {sorted(VALID_PRESETS)}"
+        )
+    return FORGIVENESS_PRESET_NAMES[preset]

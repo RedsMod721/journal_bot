@@ -11,7 +11,9 @@ from typing import Any, Dict
 
 from sqlalchemy.orm import Session
 
+from src.core.balance_window_service import BalanceWindowService
 from src.core.forgiveness_decay_service import ForgivenessDecayService
+from src.core.harmony_refresh_service import HarmonyRefreshService
 from src.db.models.user import User
 from src.db.session import db_session
 
@@ -24,6 +26,8 @@ class DailyDecayJob:
     def __init__(self, db: Session) -> None:
         self.db = db
         self.decay_service = ForgivenessDecayService(db)
+        self.window_service = BalanceWindowService(db)
+        self.harmony_service = HarmonyRefreshService(db)
 
     async def run_for_user(
         self,
@@ -46,6 +50,8 @@ class DailyDecayJob:
             "skills": {},
             "insights": {},
             "snapshot_created": False,
+            "balance": {},
+            "harmony": {},
         }
 
         try:
@@ -67,16 +73,51 @@ class DailyDecayJob:
                 user_id,
             )
 
-            # 3. Create snapshot
-            snapshot_date = now_utc.date()
+            # 3. Create forgiveness snapshot
+            snapshot_date = self.decay_service.resolve_snapshot_date(user_id, now_utc)
             self.decay_service.create_decay_snapshot(user_id, snapshot_date, now_utc)
             results["snapshot_created"] = True
             logger.info(
                 "Created decay snapshot for user %s on %s", user_id, snapshot_date
             )
 
+            # 4. Refresh balance rolling window (recount 30-day strategy distribution)
+            tracking = self.window_service.refresh_window(user_id, now_utc)
+            results["balance"] = {
+                "variety_score": float(tracking.variety_score or 0.0),
+                "variety_bonus_pct": float(tracking.variety_bonus_pct or 0.0),
+            }
+            logger.info(
+                "Refreshed balance window for user %s (variety_score=%.4f)",
+                user_id,
+                tracking.variety_score or 0.0,
+            )
+
+            # 5. Refresh harmony dimensions + create daily snapshot
+            harmony_result = self.harmony_service.refresh_harmony(
+                user_id=user_id,
+                now_utc=now_utc,
+                advance_overwork_state=False,  # daily job — read-only overwork status
+            )
+            self.harmony_service.create_snapshot(
+                user_id=user_id,
+                snapshot_date=harmony_result.snapshot_date_local,
+            )
+            self.db.commit()
+            results["harmony"] = {
+                "overall_balance": float(harmony_result.harmony.overall_balance or 0.5),
+                "overwork_stage": int(harmony_result.harmony.overwork_stage or 0),
+                "snapshot_created": True,
+            }
+            logger.info(
+                "Refreshed harmony for user %s (overall_balance=%.4f, overwork_stage=%d)",
+                user_id,
+                harmony_result.harmony.overall_balance or 0.5,
+                harmony_result.harmony.overwork_stage or 0,
+            )
+
         except Exception as exc:
-            logger.error("Error running daily decay for user %s: %s", user_id, exc)
+            logger.error("Error running daily maintenance for user %s: %s", user_id, exc)
             results["error"] = str(exc)
             raise
 

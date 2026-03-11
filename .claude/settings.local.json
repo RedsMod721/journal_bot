@@ -27,7 +27,8 @@
       "Bash(npm --version)",
       "Bash(npx tsc --noEmit)",
       "Bash(./node_modules/.bin/tsc --noEmit)",
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "Bash(grep -l \"strategy\" c:/Users/vazqse01/journal_bot/alembic/versions/*.py)"
     ],
     "additionalDirectories": [
       "/Users/sebastian/Python/projects/journal_bot",

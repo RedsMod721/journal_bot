@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.core.forgiveness_config_service import ForgivenessConfigService
-from src.core.forgiveness_presets import FORGIVENESS_PRESETS
+from src.core.forgiveness_presets import FORGIVENESS_PRESET_NAMES, FORGIVENESS_PRESETS
 from src.db.models.forgiveness import DecaySnapshot, ForgivenessConfig
 from src.db.models.insight import Insight
 from src.db.models.skill import Skill
@@ -29,6 +29,7 @@ router = APIRouter(prefix="/forgiveness", tags=["forgiveness"])
 
 class PresetInfo(BaseModel):
     preset: str
+    name: str
     skill_decay_rate: float
     skill_grace_days: int
     insight_decay_rate: float
@@ -116,6 +117,7 @@ def get_available_presets() -> List[PresetInfo]:
     result = [
         PresetInfo(
             preset=name,
+            name=FORGIVENESS_PRESET_NAMES[name],
             skill_decay_rate=params.skill_decay_rate,
             skill_grace_days=params.skill_grace_days,
             insight_decay_rate=params.insight_decay_rate,

@@ -9,6 +9,7 @@ import json
 import math
 from datetime import date, datetime, timezone
 from typing import Dict
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session
 
@@ -16,6 +17,10 @@ from src.core.forgiveness_config_service import ForgivenessConfigService
 from src.db.models.forgiveness import DecaySnapshot
 from src.db.models.insight import Insight
 from src.db.models.skill import Skill
+from src.db.models.story import StoryArc
+from src.db.models.user import User
+
+_FALLBACK_TZ = "UTC"
 
 
 class ForgivenessDecayService:
@@ -36,6 +41,7 @@ class ForgivenessDecayService:
         Returns aggregate metrics describing what changed.
         """
         config = self.config_service.resolve_effective_config(user_id, now_utc)
+        arc_decay_multiplier = self._get_active_arc_decay_multiplier(user_id)
 
         skills = self.db.query(Skill).filter(Skill.user_id == user_id).all()
 
@@ -57,7 +63,7 @@ class ForgivenessDecayService:
             new_staleness = self._calculate_skill_staleness(
                 skill=skill,
                 now_utc=now_utc,
-                decay_rate=config.skill_decay_rate,
+                decay_rate=config.skill_decay_rate * arc_decay_multiplier,
                 grace_days=config.skill_grace_days,
             )
 
@@ -115,6 +121,7 @@ class ForgivenessDecayService:
         Returns aggregate metrics describing what changed.
         """
         config = self.config_service.resolve_effective_config(user_id, now_utc)
+        arc_decay_multiplier = self._get_active_arc_decay_multiplier(user_id)
 
         insights = self.db.query(Insight).filter(Insight.user_id == user_id).all()
 
@@ -132,7 +139,7 @@ class ForgivenessDecayService:
             new_strength = self._calculate_insight_strength(
                 insight=insight,
                 now_utc=now_utc,
-                decay_rate=config.insight_decay_rate,
+                decay_rate=config.insight_decay_rate * arc_decay_multiplier,
                 grace_days=config.insight_grace_days,
             )
 
@@ -207,14 +214,30 @@ class ForgivenessDecayService:
     # ------------------------------------------------------------------
 
     def reset_skill_staleness(self, skill: Skill, now_utc: datetime) -> None:
-        """Reset skill staleness to 0 and record activity timestamp."""
-        skill.staleness = 0.0
+        """Compatibility wrapper: apply normal reinforcement and record activity."""
         skill.last_activity_at = now_utc
+        if not skill.decay_paused:
+            skill.staleness = max(0.0, min(1.0, skill.staleness * 0.50))
+
+    def reinforce_skill(
+        self,
+        skill: Skill,
+        now_utc: datetime,
+        *,
+        is_primary: bool = False,
+        xp_amount: int = 0,
+    ) -> None:
+        """Reduce staleness according to the architecture reinforcement rules."""
+        skill.last_activity_at = now_utc
+        if skill.decay_paused:
+            return
+        multiplier = 0.25 if is_primary and xp_amount >= 480 else 0.50
+        skill.staleness = max(0.0, min(1.0, skill.staleness * multiplier))
 
     def reinforce_insight(self, insight: Insight, now_utc: datetime) -> None:
-        """Reset insight strength to 1.0 and record reinforcement timestamp."""
-        insight.strength = 1.0
+        """Increment insight strength and record reinforcement timestamp."""
         insight.last_reinforced_at = now_utc
+        insight.strength = max(0.0, min(1.0, insight.strength + 0.20))
 
     # ------------------------------------------------------------------
     # Snapshot
@@ -235,8 +258,20 @@ class ForgivenessDecayService:
         Insight "staleness" is stored as (1 - strength) so all maps share the
         same semantics (0.0 = fresh, 1.0 = fully decayed).
         """
-        skills = self.db.query(Skill).filter(Skill.user_id == user_id).all()
-        insights = self.db.query(Insight).filter(Insight.user_id == user_id).all()
+        skills = (
+            self.db.query(Skill)
+            .filter(
+                Skill.user_id == user_id,
+                Skill.decay_paused.is_(False),
+                ((Skill.xp > 0) | (Skill.level > 1) | Skill.last_activity_at.is_not(None)),
+            )
+            .all()
+        )
+        insights = (
+            self.db.query(Insight)
+            .filter(Insight.user_id == user_id, Insight.status == "active")
+            .all()
+        )
 
         config = self.config_service.resolve_effective_config(user_id, now_utc)
         near_critical_threshold = config.critical_threshold - 0.10
@@ -254,11 +289,9 @@ class ForgivenessDecayService:
             1 for s in skills if s.staleness >= near_critical_threshold
         )
 
-        skill_staleness_map = json.dumps(
-            {s.id: round(s.staleness, 6) for s in skills}
-        )
+        skill_staleness_map = json.dumps({s.id: round(s.staleness, 4) for s in skills})
         insight_staleness_map = json.dumps(
-            {i.id: round(1.0 - i.strength, 6) for i in insights}
+            {i.id: round(1.0 - i.strength, 4) for i in insights}
         )
 
         date_str = snapshot_date.isoformat()
@@ -293,3 +326,55 @@ class ForgivenessDecayService:
 
         self.db.commit()
         return snapshot
+
+    def resolve_snapshot_date(self, user_id: str, now_utc: datetime) -> date:
+        user = self.db.query(User).filter(User.id == user_id).one_or_none()
+        if user is None:
+            raise ValueError(f"User not found: {user_id}")
+        normalized = now_utc if now_utc.tzinfo is not None else now_utc.replace(tzinfo=timezone.utc)
+        return normalized.astimezone(self._user_tz(user.timezone)).date()
+
+    def _get_active_arc_decay_multiplier(self, user_id: str) -> float:
+        user = self.db.query(User).filter(User.id == user_id).one_or_none()
+        if user is None:
+            return 1.0
+
+        arc: StoryArc | None = None
+        if user.active_arc_id:
+            arc = (
+                self.db.query(StoryArc)
+                .filter(
+                    StoryArc.user_id == user_id,
+                    StoryArc.id == user.active_arc_id,
+                    StoryArc.status == "active",
+                )
+                .one_or_none()
+            )
+            if arc is None:
+                user.active_arc_id = None
+                self.db.flush()
+
+        if arc is None:
+            arc = (
+                self.db.query(StoryArc)
+                .filter(
+                    StoryArc.user_id == user_id,
+                    StoryArc.status == "active",
+                )
+                .order_by(StoryArc.started_at.desc(), StoryArc.id.desc())
+                .first()
+            )
+            if arc is not None and user.active_arc_id != arc.id:
+                user.active_arc_id = arc.id
+                self.db.flush()
+
+        if arc is None:
+            return 1.0
+        return max(0.0, min(1.0, float(arc.decay_rate_multiplier)))
+
+    @staticmethod
+    def _user_tz(tz_name: str | None) -> ZoneInfo:
+        try:
+            return ZoneInfo(tz_name or _FALLBACK_TZ)
+        except (ZoneInfoNotFoundError, KeyError):
+            return ZoneInfo(_FALLBACK_TZ)
