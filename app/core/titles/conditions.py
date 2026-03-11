@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Iterable
 
 from sqlalchemy import func
 
+from src.core.enums import SkillRank
+
 from app.core.titles.base import ConditionEvaluator
 from app.models.item import ItemTemplate, UserItem
 from app.models.journal_entry import JournalEntry
@@ -60,14 +62,7 @@ def _max_consecutive_streak(dates: list[date]) -> int:
 CORROSION_LEVELS = ["Fresh", "Familiar", "Dusty", "Rusty", "Forgotten"]
 
 # Skill ranks from lowest to highest
-SKILL_RANK_ORDER = [
-    "Beginner",
-    "Amateur",
-    "Intermediate",
-    "Advanced",
-    "Expert",
-    "Master",
-]
+SKILL_RANK_ORDER = [rank.value for rank in SkillRank]
 
 
 def _get_corrosion_index(level: str) -> int:
@@ -365,9 +360,9 @@ class SkillRankCondition(ConditionEvaluator):
     Checks if any of the user's skills has reached a specific rank.
 
     Condition format:
-        {"type": "skill_rank", "rank": "Expert"}
+        {"type": "skill_rank", "rank": "A"}
 
-    Valid ranks: Beginner, Amateur, Intermediate, Advanced, Expert, Master
+    Valid ranks: F, E, D, C, B, A, S, SS, SSS
     """
 
     def evaluate(self, db: "Session", user_id: str, condition: dict) -> bool:

@@ -14,10 +14,12 @@ Exponent schedule (target-level semantics):
 Reference: Architecture Appendix A.1.2–A.1.3
 """
 
-from typing import Dict
+from typing import Dict, Optional
 import hashlib
 import json
 import math
+
+from src.core.enums import get_rank_from_level
 
 USER_LEVEL_XP_MULTIPLIER = 10_000
 
@@ -99,10 +101,10 @@ def calculate_xp_for_level(level: int) -> int:
         where required_xp(t) = int(50 * t ** exponent(t))
 
     Exponent tiers (target-level semantics):
-        t < 60  → 1.5   (F–A)
-        t < 75  → 1.6   (S)
-        t < 100 → 1.8   (SS)
-        t ≥ 100 → 2.0   (SSS)
+        t < 60  → 1.5
+        t < 75  → 1.6
+        t < 100 → 1.8
+        t ≥ 100 → 2.0
 
     Reference values (Architecture Appendix A.1.4):
         level  1 →          0
@@ -139,6 +141,29 @@ def calculate_level_from_xp(total_xp: int) -> int:
         else:
             hi = mid - 1
     return lo
+
+
+def effective_level_from_xp(total_xp: int) -> int:
+    """Derived progression level used by API/UI surfaces.
+
+    Semantics:
+    - total_xp <= 0 -> level 0
+    - total_xp > 0  -> level >= 1 via canonical curve
+    """
+    if total_xp <= 0:
+        return 0
+    return calculate_level_from_xp(total_xp)
+
+
+def effective_rank_from_xp(total_xp: int) -> Optional[str]:
+    """Derived rank used by API/UI surfaces.
+
+    Level 0 has no rank and is represented as None.
+    """
+    level = effective_level_from_xp(total_xp)
+    if level <= 0:
+        return None
+    return get_rank_from_level(level).value
 
 
 def calculate_user_xp_for_level(level: int) -> int:
@@ -271,23 +296,33 @@ def derive_theme_awards_from_skill_award(
     source_skill_id: str,
     theme_weights_bp: list[tuple[str, int]],
 ) -> list[dict[str, int | str]]:
-    """Deterministically derive theme awards from one persisted skill award."""
+    """Derive per-theme awards from one persisted skill award.
+
+    Canonical rule (Q22 EXTRA):
+    - Every mapped theme receives full 1% of source skill XP
+    - Minimum 1 XP per mapped theme
+    - Amount is NOT split across themes
+    """
     skill_xp = int(source_skill_xp)
     if skill_xp <= 0:
         return []
-    allocations = apportion_by_bp(skill_xp, theme_weights_bp)
+
+    # Input keeps legacy shape (theme_id, weight_bp), but weights are ignored
+    # under the canonical non-split propagation rule.
+    theme_ids = sorted({str(theme_id) for theme_id, _ in theme_weights_bp if theme_id})
+    if not theme_ids:
+        return []
+
+    amount = max(1, round_half_up(skill_xp * 0.01))
     out: list[dict[str, int | str]] = []
-    for theme_id in sorted(allocations.keys()):
-        amount = int(allocations[theme_id])
-        if amount <= 0:
-            continue
+    for theme_id in theme_ids:
         out.append(
             {
                 "distribution_type": "theme",
                 "theme_id": str(theme_id),
                 "source_skill_id": str(source_skill_id),
                 "source_skill_xp": skill_xp,
-                "amount": amount,
+                "amount": int(amount),
             }
         )
     return out
@@ -429,8 +464,8 @@ def calculate_session_xp(
 def calculate_theme_xp_from_skill(skill_xp: int) -> int:
     """Return the theme XP derived from an awarded skill XP amount.
 
-    Compatibility helper for legacy 0.1% propagation behavior:
-        theme_xp = max(1, int(skill_xp × 0.001))
+    Compatibility helper for percentage-based propagation behavior:
+        theme_xp = max(1, round_half_up(skill_xp × 0.01))
 
     Note:
         Canonical Section 10 production behavior derives theme awards via
@@ -443,4 +478,4 @@ def calculate_theme_xp_from_skill(skill_xp: int) -> int:
     Returns:
         Theme XP to award (always ≥ 1).
     """
-    return max(1, int(skill_xp * 0.001))
+    return max(1, round_half_up(skill_xp * 0.01))

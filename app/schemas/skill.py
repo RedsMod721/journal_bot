@@ -105,7 +105,7 @@ class SkillResponse(SkillBase):
         level: Current level (starts at 0)
         xp: Current XP towards next level
         xp_to_next_level: XP required for next level-up
-        rank: Current rank (Beginner -> Master)
+        rank: Current rank (F -> E -> D -> C -> B -> A -> S -> SS -> SSS)
         practice_time_minutes: Total practice time accumulated
         metadata: JSON field for extensibility
 
@@ -121,7 +121,7 @@ class SkillResponse(SkillBase):
             "level": 10,
             "xp": 75.0,
             "xp_to_next_level": 309.59,
-            "rank": "Amateur",
+            "rank": "E",
             "practice_time_minutes": 1200,
             "metadata": {}
         }

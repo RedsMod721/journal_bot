@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Annotated
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.core.realm import (
+    RealmRankWordingPreset,
+    list_rank_wording_presets,
+    normalize_realm_preferences,
+    normalize_user_preferences,
+)
+from src.core.skill_unlocks import SkillUnlockService
+from src.core.themes import ensure_user_themes
 from src.core.xp import (
     calculate_user_level_from_xp,
     calculate_user_xp_for_level,
@@ -21,7 +31,20 @@ from src.db.models.user import User
 from src.db.models.xp import XpAward
 from src.db.session import get_db
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+class UserCreate(BaseModel):
+    """Request body for creating a new user."""
+
+    email: Optional[str] = Field(None, description="Unique e-mail address (auto-generated placeholder if omitted)")
+    password: str = Field(..., min_length=8, description="Plain-text password (hashed server-side)")
+    username: Optional[str] = Field(None, max_length=50)
+    display_name: Optional[str] = Field(None, max_length=100)
+    timezone: str = Field("UTC", description="IANA timezone string")
+    home_country: str = Field("FR", min_length=2, max_length=2, description="ISO 3166-1 alpha-2")
 
 
 class UserListItem(BaseModel):
@@ -44,6 +67,50 @@ class UserStatsResponse(BaseModel):
     xp_today: int
     xp_this_week: int
     recent_gain: int
+
+
+class RealmScopePreferences(BaseModel):
+    visual: bool = True
+    naming: bool = False
+    messages: bool = False
+    llm: bool = False
+
+
+class RealmRanksWordingPreference(BaseModel):
+    preset: RealmRankWordingPreset = RealmRankWordingPreset.STANDARD
+
+
+class RealmPreferences(BaseModel):
+    scope: RealmScopePreferences = Field(default_factory=RealmScopePreferences)
+    ranks_wording: RealmRanksWordingPreference = Field(
+        default_factory=RealmRanksWordingPreference
+    )
+
+
+class SkillHierarchyPreferences(BaseModel):
+    default_blocked_preference: bool = False
+
+
+class UserPreferencesResponse(BaseModel):
+    user_id: str
+    realm: RealmPreferences
+    skill_hierarchy: SkillHierarchyPreferences
+
+
+class UserPreferencesUpdateRequest(BaseModel):
+    realm: Optional[RealmPreferences] = None
+    skill_hierarchy: Optional[SkillHierarchyPreferences] = None
+
+
+class RankWordingOption(BaseModel):
+    rank: str
+    wording: str
+
+
+class RankWordingPresetResponse(BaseModel):
+    preset: RealmRankWordingPreset
+    name: str
+    ranks: list[RankWordingOption]
 
 
 def _calculate_streak(entry_dates: list[date]) -> int:
@@ -72,6 +139,104 @@ def _calculate_streak(entry_dates: list[date]) -> int:
     return streak
 
 
+def _load_user_or_404(db: Session, user_id: str) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User {user_id!r} not found.")
+    return user
+
+
+def _serialize_user_preferences(
+    *, user_id: str, preferences: dict[str, Any], default_blocked_preference: bool
+) -> UserPreferencesResponse:
+    return UserPreferencesResponse(
+        user_id=user_id,
+        realm=RealmPreferences.model_validate(preferences["realm"]),
+        skill_hierarchy=SkillHierarchyPreferences(
+            default_blocked_preference=default_blocked_preference
+        ),
+    )
+
+
+@router.post(
+    "",
+    response_model=UserListItem,
+    status_code=201,
+    summary="Create a new user",
+    responses={
+        201: {"description": "User created; L1 skills + canonical themes initialized"},
+        409: {"description": "E-mail already registered"},
+    },
+)
+def create_user(
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+) -> UserListItem:
+    """
+    Create a new user account and initialize L1 skills + canonical themes.
+
+    L1 skills (top-level categories in the global hierarchy) are created in
+    ACTIVATED state immediately so the user can start earning XP from their
+    first journal entry.
+
+    ``email`` is optional.  When omitted a UUID-based placeholder is stored;
+    the user can update it later.
+
+    Password storage
+    ----------------
+    The plain-text password is SHA-256 hashed before storage.  Replace with
+    bcrypt/argon2 when adding production auth.
+    """
+    import uuid as _uuid
+
+    # Resolve email — generate placeholder if not supplied
+    email = payload.email or f"user_{_uuid.uuid4().hex[:12]}@placeholder.local"
+
+    # Conflict check (only meaningful when a real email is provided)
+    existing = db.query(User.id).filter(User.email == email).first()
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"E-mail {email!r} is already registered.",
+        )
+
+    password_hash = hashlib.sha256(payload.password.encode()).hexdigest()
+
+    user = User(
+        email=email,
+        password_hash=password_hash,
+        username=payload.username,
+        display_name=payload.display_name,
+        timezone=payload.timezone,
+        home_country=payload.home_country.upper(),
+    )
+    db.add(user)
+    db.flush()  # populate user.id before L1 init
+
+    # Initialize L1 skills + canonical themes (idempotent — safe on retry)
+    try:
+        unlock_service = SkillUnlockService(db)
+        unlock_service.initialize_user_skills(user.id)
+        ensure_user_themes(db, user.id)
+        logger.info("Initialized L1 skills and canonical themes for new user %s.", user.id)
+    except Exception:
+        logger.warning(
+            "Could not initialize L1 skills/themes for user %s — hierarchy data may "
+            "not yet be seeded.",
+            user.id,
+            exc_info=True,
+        )
+
+    db.commit()
+
+    return UserListItem(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        email=user.email,
+    )
+
+
 @router.get("", response_model=list[UserListItem], summary="List users (dev helper)")
 def list_users(
     skip: Annotated[int, Query(ge=0, description="Pagination offset")] = 0,
@@ -93,14 +258,82 @@ def list_users(
 
 
 @router.get(
+    "/preferences/realm/rank-wording-presets",
+    response_model=list[RankWordingPresetResponse],
+    summary="List available realm rank-wording presets",
+)
+def get_realm_rank_wording_presets() -> list[RankWordingPresetResponse]:
+    presets = list_rank_wording_presets()
+    return [
+        RankWordingPresetResponse(
+            preset=RealmRankWordingPreset(str(item["preset"])),
+            name=str(item["name"]),
+            ranks=[
+                RankWordingOption(rank=str(row["rank"]), wording=str(row["wording"]))
+                for row in item["ranks"]
+            ],
+        )
+        for item in presets
+    ]
+
+
+@router.get(
+    "/{user_id}/preferences",
+    response_model=UserPreferencesResponse,
+    summary="Get user preferences",
+)
+def get_user_preferences(
+    user_id: str,
+    db: Session = Depends(get_db),
+) -> UserPreferencesResponse:
+    user = _load_user_or_404(db, user_id)
+    normalized = normalize_user_preferences(user.user_preferences)
+    if user.user_preferences != normalized:
+        user.user_preferences = normalized
+        db.flush()
+    return _serialize_user_preferences(
+        user_id=user.id,
+        preferences=normalized,
+        default_blocked_preference=user.default_blocked_preference,
+    )
+
+
+@router.put(
+    "/{user_id}/preferences",
+    response_model=UserPreferencesResponse,
+    summary="Update user preferences",
+)
+def update_user_preferences(
+    user_id: str,
+    payload: UserPreferencesUpdateRequest,
+    db: Session = Depends(get_db),
+) -> UserPreferencesResponse:
+    user = _load_user_or_404(db, user_id)
+    normalized = normalize_user_preferences(user.user_preferences)
+    if payload.realm is not None:
+        normalized["realm"] = normalize_realm_preferences(
+            payload.realm.model_dump(mode="python")
+        )
+    if payload.skill_hierarchy is not None:
+        user.default_blocked_preference = (
+            payload.skill_hierarchy.default_blocked_preference
+        )
+    user.user_preferences = normalized
+    db.flush()
+    return _serialize_user_preferences(
+        user_id=user.id,
+        preferences=normalized,
+        default_blocked_preference=user.default_blocked_preference,
+    )
+
+
+@router.get(
     "/{user_id}/stats",
     response_model=UserStatsResponse,
     summary="Get aggregate RPG stats for a user",
 )
 def get_user_stats(user_id: str, db: Session = Depends(get_db)) -> UserStatsResponse:
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail=f"User {user_id!r} not found.")
+    _load_user_or_404(db, user_id)
 
     total_xp = int(
         db.query(func.coalesce(func.sum(XpAward.amount), 0))

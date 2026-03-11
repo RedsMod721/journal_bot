@@ -5,6 +5,8 @@ interface SkillListProps {
   skills: Skill[];
   variant?: "default" | "compact";
   onSkillClick?: (skill: Skill) => void;
+  /** Reserved for hierarchy-aware views — passed through to SkillCard */
+  showParents?: boolean;
   className?: string;
 }
 
@@ -12,6 +14,7 @@ export function SkillList({
   skills,
   variant = "default",
   onSkillClick,
+  showParents: _showParents,
   className,
 }: SkillListProps) {
   if (skills.length === 0) {

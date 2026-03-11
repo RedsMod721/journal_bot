@@ -636,6 +636,8 @@ class PipelineProcessor:
                 skill_awards=skill_awards["skill_awards"],
                 theme_awards=theme_awards["theme_awards"],
                 db=self.db,
+                user_id=user_id,
+                entry_id=entry_id,
             ),
         )
 

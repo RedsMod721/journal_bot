@@ -16,6 +16,8 @@ from src.core.xp import (
     canonical_json_bytes,
     choose_primary_recipient_id,
     derive_theme_awards_from_skill_award,
+    effective_level_from_xp,
+    effective_rank_from_xp,
     finalize_quest_xp,
     float_multiplier_to_bp,
     round_half_up,
@@ -42,6 +44,30 @@ def test_level_from_xp_supports_levels_above_100() -> None:
     assert calculate_level_from_xp(xp_101 - 1) == 100
     assert calculate_level_from_xp(0) == 1
     assert calculate_level_from_xp(-100) == 1
+
+
+def test_effective_level_from_xp_supports_lv0() -> None:
+    assert effective_level_from_xp(0) == 0
+    assert effective_level_from_xp(-1) == 0
+    assert effective_level_from_xp(1) >= 1
+
+
+def test_effective_rank_from_xp_is_none_at_lv0() -> None:
+    assert effective_rank_from_xp(0) is None
+    assert effective_rank_from_xp(-100) is None
+    assert effective_rank_from_xp(1) is not None
+
+
+def test_effective_rank_from_xp_tracks_rank_thresholds() -> None:
+    assert effective_rank_from_xp(calculate_xp_for_level(9)) == "F"
+    assert effective_rank_from_xp(calculate_xp_for_level(10)) == "E"
+    assert effective_rank_from_xp(calculate_xp_for_level(20)) == "D"
+    assert effective_rank_from_xp(calculate_xp_for_level(30)) == "C"
+    assert effective_rank_from_xp(calculate_xp_for_level(40)) == "B"
+    assert effective_rank_from_xp(calculate_xp_for_level(50)) == "A"
+    assert effective_rank_from_xp(calculate_xp_for_level(60)) == "S"
+    assert effective_rank_from_xp(calculate_xp_for_level(75)) == "SS"
+    assert effective_rank_from_xp(calculate_xp_for_level(100)) == "SSS"
 
 
 def test_user_level_curve_is_10000x_skill_curve() -> None:
@@ -92,7 +118,7 @@ def test_round_half_up_and_bp_conversion() -> None:
 
 def test_session_xp_compatibility_wrapper_uses_canonical_pipeline() -> None:
     result = calculate_session_xp(480, 60, 1.2, 0.30, 1.0)
-    assert result == {"skill_xp": 1497, "theme_xp": 1}
+    assert result == {"skill_xp": 1497, "theme_xp": 15}
 
 
 def test_session_xp_rejects_non_canonical_minutes() -> None:
@@ -123,14 +149,14 @@ def test_derive_theme_awards_from_skill_award() -> None:
             "theme_id": "theme_c",
             "source_skill_id": "skill_a",
             "source_skill_xp": 317,
-            "amount": 222,
+            "amount": 3,
         },
         {
             "distribution_type": "theme",
             "theme_id": "theme_d",
             "source_skill_id": "skill_a",
             "source_skill_xp": 317,
-            "amount": 95,
+            "amount": 3,
         },
     ]
 
@@ -305,7 +331,7 @@ def test_derive_theme_awards_returns_empty_for_non_positive_skill_xp() -> None:
     assert derive_theme_awards_from_skill_award(-5, "s1", [("t1", 10000)]) == []
 
 
-def test_derive_theme_awards_drops_zero_amount_rows() -> None:
+def test_derive_theme_awards_gives_minimum_one_xp_per_theme() -> None:
     rows = derive_theme_awards_from_skill_award(
         source_skill_xp=1,
         source_skill_id="skill_a",
@@ -315,6 +341,13 @@ def test_derive_theme_awards_drops_zero_amount_rows() -> None:
         {
             "distribution_type": "theme",
             "theme_id": "theme_a",
+            "source_skill_id": "skill_a",
+            "source_skill_xp": 1,
+            "amount": 1,
+        },
+        {
+            "distribution_type": "theme",
+            "theme_id": "theme_b",
             "source_skill_id": "skill_a",
             "source_skill_xp": 1,
             "amount": 1,

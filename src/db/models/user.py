@@ -24,10 +24,12 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from src.core.realm import default_user_preferences
 from src.db.base import Base
 
 if TYPE_CHECKING:
@@ -35,6 +37,7 @@ if TYPE_CHECKING:
     from src.db.models.journal_entry import JournalEntry
     from src.db.models.quest import Quest, QuestFailureTracker
     from src.db.models.skill import Skill, Theme
+    from src.db.models.user_skill_state import UserSkillState
     from src.db.models.xp import XpAward  # noqa: F401
 
 
@@ -153,6 +156,20 @@ class User(Base):
     )
 
     # ------------------------------------------------------------------
+    # Skill hierarchy preferences
+    # ------------------------------------------------------------------
+    # When True, newly discovered sub-skills default to user_blocked=True
+    # in user_skill_states (user must manually unblock them).
+    default_blocked_preference: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    # Future-facing personalization container. For now:
+    # user_preferences.realm.scope + user_preferences.realm.ranks_wording.preset
+    user_preferences: Mapped[dict[str, object]] = mapped_column(
+        JSON, nullable=False, default=default_user_preferences
+    )
+
+    # ------------------------------------------------------------------
     # Moderation / admin
     # ------------------------------------------------------------------
     is_banned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -217,6 +234,11 @@ class User(Base):
     )
     decay_snapshots: Mapped[list["DecaySnapshot"]] = relationship(
         "DecaySnapshot",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    skill_states: Mapped[list["UserSkillState"]] = relationship(
+        "UserSkillState",
         back_populates="user",
         cascade="all, delete-orphan",
     )

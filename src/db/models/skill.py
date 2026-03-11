@@ -26,6 +26,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from src.core.enums import SKILL_RANK_VALUES, get_rank_from_level
 from src.db.base import Base
 
 if TYPE_CHECKING:
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
     from src.db.models.xp import XpAward
 
 # Valid rank progression order
-_RANK_ENUM = "rank IN ('F','E','D','C','B','A','S','SS','SSS')"
+_RANK_ENUM = f"rank IN ({','.join(repr(rank) for rank in SKILL_RANK_VALUES)})"
 
 # The 12 core life themes (fixed set — do not extend without a migration)
 _THEME_NAMES = (
@@ -47,8 +48,8 @@ class Skill(Base):
     """
     A user skill that grows through XP and levels up.
 
-    Rank progression: F → E → D → C → B → A → S → SS → SSS
-    XP curve exponents: 1.5 (F-A), 1.6 (S), 1.8 (SS), 2.0 (SSS)
+    Rank set: F, E, D, C, B, A, S, SS, SSS
+    XP curve exponents: 1.5 (Lv<60), 1.6 (Lv<75), 1.8 (Lv<100), 2.0 (Lv>=100)
 
     Decay:
         `staleness` (0.0–1.0) increases daily when the skill is inactive.
@@ -92,7 +93,11 @@ class Skill(Base):
     # Progression
     # ------------------------------------------------------------------
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    rank: Mapped[str] = mapped_column(String(3), nullable=False, default="F")
+    rank: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default=lambda: get_rank_from_level(1).value,
+    )
     xp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # ------------------------------------------------------------------
@@ -184,7 +189,7 @@ class Theme(Base):
     """
     One of 12 broad life themes assigned to every user on signup.
 
-    Themes gain XP at 0.1% of the XP awarded to any linked skill
+    Themes gain XP at 1% of the XP awarded to any linked skill
     (minimum 1 XP per award). They use the same rank/level curve as
     skills but progress roughly 1000× slower by design.
 
@@ -212,7 +217,11 @@ class Theme(Base):
 
     # Progression — same curve as skills
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    rank: Mapped[str] = mapped_column(String(3), nullable=False, default="F")
+    rank: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default=lambda: get_rank_from_level(1).value,
+    )
     xp: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -266,8 +275,8 @@ class SkillThemeMapping(Base):
     """
     Many-to-many mapping between a skill and one or more themes (Q22).
 
-    When a skill gains XP, every theme it is mapped to receives 0.1% of that
-    XP (minimum 1 XP). Each theme receives the full 0.1% — the amount is NOT
+    When a skill gains XP, every theme it is mapped to receives 1% of that
+    XP (minimum 1 XP). Each theme receives the full 1% — the amount is NOT
     split between themes.
 
     Example:

@@ -1,16 +1,34 @@
+export type SkillState =
+  | "locked"
+  | "discovered"
+  | "unlocked_hidden"
+  | "activated";
+
 export interface Skill {
   skill_id: string;
-  user_id: string;
+  user_id?: string;
   canonical_name: string;
   category: string;
   total_xp: number;
   current_level: number;
-  current_level_xp: number;
-  next_level_xp: number;
-  last_practiced_at: string; // ISO datetime
-  created_at: string;
+  rank?: string | null;
+  /** Present from /api/skills; may be absent from /api/skills/hierarchy */
+  current_level_xp?: number;
+  /** Present from /api/skills; may be absent from /api/skills/hierarchy */
+  next_level_xp?: number;
+  last_practiced_at?: string; // ISO datetime
+  created_at?: string;
 
-  // Future fields (optional)
+  // Hierarchy fields — present from /api/skills/hierarchy
+  hierarchy_level?: number;
+  parent_skill_ids?: string[];
+  state?: SkillState;
+  user_blocked?: boolean;
+  discovered_at?: string;
+  unlocked_at?: string;
+  activated_at?: string;
+
+  // Future fields (optional - will be used in Weeks 5-8)
   staleness_days?: number;
   retained_xp_pct?: number;
   decay_rate?: number;

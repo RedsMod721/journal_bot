@@ -20,9 +20,10 @@ from sqlalchemy.orm import Session
 from src.core.xp import (
     build_skill_award_identity_key,
     build_theme_award_identity_key,
-    derive_theme_awards_from_skill_award,
     finalize_quest_xp,
+    round_half_up,
 )
+from src.core.themes import ensure_skill_theme_mappings, ensure_user_themes
 from src.db.models.skill import SkillThemeMapping
 from src.db.models.xp import XpAward
 
@@ -199,9 +200,10 @@ def persist_theme_awards(
 ) -> dict[str, Any]:
     """Derive and insert theme XpAward rows from persisted skill awards.
 
-    For each skill award the function looks up the skill's theme mappings,
-    apportions 0.1% of the skill XP across the linked themes, and inserts
-    one XpAward row per theme — again guarded by ``award_identity_key``.
+    For each skill award the function looks up the skill's theme mappings and
+    awards every mapped theme the full 1% share (minimum 1 XP), i.e. the
+    amount is NOT split across mapped themes. Rows are guarded by
+    ``award_identity_key`` for idempotency.
 
     Args:
         user_id:            Owning user UUID.
@@ -219,44 +221,56 @@ def persist_theme_awards(
     """
     persisted: list[dict[str, Any]] = []
 
+    all_skill_ids = sorted(
+        {
+            str(skill_award["skill_id"])
+            for skill_award in skill_awards
+            if skill_award.get("skill_id")
+        }
+    )
+    if not all_skill_ids:
+        return {"theme_awards": persisted}
+
+    # Lazy repair so partially initialized users still receive canonical theme XP.
+    ensure_user_themes(db, user_id)
+    ensure_skill_theme_mappings(db, user_id, all_skill_ids)
+
+    mappings_by_skill: dict[str, list[str]] = {}
+    for mapping in (
+        db.query(SkillThemeMapping.skill_id, SkillThemeMapping.theme_id)
+        .filter(
+            SkillThemeMapping.user_id == user_id,
+            SkillThemeMapping.skill_id.in_(all_skill_ids),
+        )
+        .all()
+    ):
+        mappings_by_skill.setdefault(str(mapping.skill_id), []).append(str(mapping.theme_id))
+
     for skill_award in skill_awards:
         skill_id = skill_award.get("skill_id")
-        if not skill_id:
+        quest_id = skill_award.get("quest_id")
+        if not skill_id or not quest_id:
             continue
 
-        mappings: list[SkillThemeMapping] = (
-            db.query(SkillThemeMapping)
-            .filter(
-                SkillThemeMapping.user_id == user_id,
-                SkillThemeMapping.skill_id == skill_id,
-            )
-            .all()
-        )
-        if not mappings:
+        source_skill_xp = int(skill_award["amount"])
+        if source_skill_xp <= 0:
+            continue
+        theme_award_amount = max(1, round_half_up(source_skill_xp * 0.01))
+
+        theme_ids = sorted(set(mappings_by_skill.get(str(skill_id), [])))
+        if not theme_ids:
             continue
 
-        # Equal-weight apportionment; last bucket absorbs rounding remainder.
-        bp = int(10000 / len(mappings))
-        weights: list[tuple[str, int]] = [(m.theme_id, bp) for m in mappings]
-        weights[-1] = (weights[-1][0], 10000 - bp * (len(mappings) - 1))
-
-        derived = derive_theme_awards_from_skill_award(
-            # Theme propagation is 0.1% of skill XP (architecture §10).
-            source_skill_xp=max(1, int(int(skill_award["amount"]) * 0.001)),
-            source_skill_id=str(skill_id),
-            theme_weights_bp=weights,
-        )
-
-        for t_award in derived:
+        for theme_id in theme_ids:
             identity_key = build_theme_award_identity_key(
                 user_id=user_id,
                 entry_id=entry_id,
-                quest_id=skill_award["quest_id"],
+                quest_id=quest_id,
                 xp_reason="quest_complete",
                 distribution_type="theme",
-                theme_id=str(t_award["theme_id"]),
-                source_skill_id=str(t_award.get("source_skill_id")),
-                source_skill_xp=int(t_award.get("source_skill_xp") or 0),
+                theme_id=theme_id,
+                source_skill_id=str(skill_id),
+                source_skill_xp=source_skill_xp,
                 ruleset_version=ruleset_version,
             )
             existing = (
@@ -288,13 +302,13 @@ def persist_theme_awards(
                 ruleset_version=ruleset_version,
                 pipeline_version=pipeline_version,
                 skill_id=None,
-                theme_id=str(t_award["theme_id"]),
-                quest_id=skill_award["quest_id"],
-                amount=int(t_award["amount"]),
+                theme_id=theme_id,
+                quest_id=quest_id,
+                amount=theme_award_amount,
                 distribution_type="theme",
                 skill_weight=None,
-                source_skill_id=str(t_award.get("source_skill_id")),
-                source_skill_xp=int(t_award.get("source_skill_xp") or 0),
+                source_skill_id=str(skill_id),
+                source_skill_xp=source_skill_xp,
             )
             db.add(row)
             db.flush()

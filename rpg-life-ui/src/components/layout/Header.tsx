@@ -1,5 +1,6 @@
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useNavigate } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +22,8 @@ interface HeaderProps {
 }
 
 export function Header({ title, user, onLogout }: HeaderProps) {
+  const navigate = useNavigate();
+
   return (
     <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
       <div className="flex items-center justify-between px-8 py-4">
@@ -59,11 +62,11 @@ export function Header({ title, user, onLogout }: HeaderProps) {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => navigate("/profile")}>
                   <User className="mr-2 h-4 w-4" aria-hidden="true" />
                   <span>Profile</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => navigate("/settings")}>
                   <Settings className="mr-2 h-4 w-4" aria-hidden="true" />
                   <span>Settings</span>
                 </DropdownMenuItem>

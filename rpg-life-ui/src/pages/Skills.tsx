@@ -89,13 +89,17 @@ class SkillTreeErrorBoundary extends Component<
 }
 
 type SortKey = "level" | "xp" | "recent" | "name";
-type CategoryFilter =
-  | "all"
-  | "Physical"
-  | "Mental"
-  | "Professional"
-  | "Creative"
-  | "Social";
+type CategoryFilter = "all" | string;
+
+function getSafeTimestamp(value?: string): number {
+  if (!value) return Number.NEGATIVE_INFINITY;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+function normalizeCategory(value?: string): string {
+  return (value ?? "").trim().toLowerCase();
+}
 
 function sortSkills(skills: Skill[], key: SortKey): Skill[] {
   return [...skills].sort((a, b) => {
@@ -106,8 +110,8 @@ function sortSkills(skills: Skill[], key: SortKey): Skill[] {
         return b.total_xp - a.total_xp;
       case "recent":
         return (
-          new Date(b.last_practiced_at).getTime() -
-          new Date(a.last_practiced_at).getTime()
+          getSafeTimestamp(b.last_practiced_at) -
+          getSafeTimestamp(a.last_practiced_at)
         );
       case "name":
         return a.canonical_name.localeCompare(b.canonical_name);
@@ -123,13 +127,22 @@ export function Skills() {
   const [category, setCategory] = useState<CategoryFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("level");
 
+  const categories = Array.from(
+    new Set(
+      skills
+        .map((skill) => (skill.category ?? "").trim())
+        .filter((value) => value.length > 0)
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
   const filteredSkills = sortSkills(
     skills.filter((skill) => {
       const matchesSearch = skill.canonical_name
         .toLowerCase()
         .includes(searchQuery.toLowerCase());
       const matchesCategory =
-        category === "all" || skill.category === category;
+        category === "all" ||
+        normalizeCategory(skill.category) === normalizeCategory(category);
       return matchesSearch && matchesCategory;
     }),
     sortKey
@@ -217,11 +230,11 @@ export function Skills() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="Physical">Physical</SelectItem>
-                <SelectItem value="Mental">Mental</SelectItem>
-                <SelectItem value="Professional">Professional</SelectItem>
-                <SelectItem value="Creative">Creative</SelectItem>
-                <SelectItem value="Social">Social</SelectItem>
+                {categories.map((categoryName) => (
+                  <SelectItem key={categoryName} value={categoryName}>
+                    {categoryName}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 

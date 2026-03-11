@@ -14,12 +14,18 @@ vi.mock("@/contexts/UserContext", () => ({
     error: null,
   }),
 }));
+vi.mock("@/contexts/RealmPreferencesContext", () => ({
+  RealmPreferencesProvider: ({ children }: { children: ReactNode }) => children,
+}));
 
 vi.mock("@/pages/Dashboard", () => ({ Dashboard: () => <div>Dashboard Page</div> }));
 vi.mock("@/pages/Journal", () => ({ Journal: () => <div>Journal Page</div> }));
-vi.mock("@/pages/Skills", () => ({ Skills: () => <div>Skills Page</div> }));
+vi.mock("@/pages/ThemesSkills", () => ({
+  ThemesSkills: () => <div>Themes & Skills Page</div>,
+}));
 vi.mock("@/pages/Quests", () => ({ Quests: () => <div>Quests Page</div> }));
 vi.mock("@/pages/Profile", () => ({ Profile: () => <div>Profile Page</div> }));
+vi.mock("@/pages/Settings", () => ({ Settings: () => <div>Settings Page</div> }));
 vi.mock("@/hooks/useUserStats", () => ({
   useUserStats: () => ({
     data: { current_level: 7 },

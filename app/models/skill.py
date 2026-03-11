@@ -8,7 +8,7 @@ implement practice tracking with XP rewards.
 Features:
 - XP accumulation with automatic level-up handling
 - Exponential XP scaling (50 * 1.2^level)
-- Rank progression (Beginner -> Amateur -> Intermediate -> Advanced -> Expert -> Master)
+- Rank set (F, E, D, C, B, A, S, SS, SSS)
 - Practice time tracking with XP multipliers
 - Self-referential hierarchy (parent/child skills for skill trees)
 - Optional association with themes
@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import Boolean, Float, ForeignKey, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.core.enums import get_rank_from_level
 
 from app.utils.database import Base
 
@@ -51,13 +53,7 @@ class Skill(Base):
         parent_skill: Optional parent skill (self-referential)
         child_skills: Child skills (backref from parent_skill)
 
-    Rank Thresholds:
-        - Level 0-4: Beginner
-        - Level 5-14: Amateur
-        - Level 15-29: Intermediate
-        - Level 30-49: Advanced
-        - Level 50-79: Expert
-        - Level 80+: Master
+    Rank thresholds are derived from src.core.enums.get_rank_from_level().
     """
 
     __tablename__ = "skills"
@@ -103,8 +99,12 @@ class Skill(Base):
     xp: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     xp_to_next_level: Mapped[float] = mapped_column(Float, default=50.0, nullable=False)
 
-    # Rank system (Beginner -> Amateur -> Intermediate -> Advanced -> Expert -> Master)
-    rank: Mapped[str] = mapped_column(String(20), default="Beginner", nullable=False)
+    # Rank system (F -> E -> D -> C -> B -> A -> S -> SS -> SSS)
+    rank: Mapped[str] = mapped_column(
+        String(3),
+        default=lambda: get_rank_from_level(0).value,
+        nullable=False,
+    )
 
     # Practice tracking
     practice_time_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -252,31 +252,9 @@ class Skill(Base):
 
     def update_rank(self) -> None:
         """
-        Update rank based on current level.
-
-        Rank thresholds:
-            - Level 0-4: Beginner
-            - Level 5-14: Amateur
-            - Level 15-29: Intermediate
-            - Level 30-49: Advanced
-            - Level 50-79: Expert
-            - Level 80+: Master
-
-        This method is called automatically by level_up() but can also
-        be called directly to ensure rank consistency.
+        Update rank based on current level using the canonical mapper.
         """
-        if self.level < 5:
-            self.rank = "Beginner"
-        elif self.level < 15:
-            self.rank = "Amateur"
-        elif self.level < 30:
-            self.rank = "Intermediate"
-        elif self.level < 50:
-            self.rank = "Advanced"
-        elif self.level < 80:
-            self.rank = "Expert"
-        else:
-            self.rank = "Master"
+        self.rank = get_rank_from_level(int(self.level)).value
 
     def __repr__(self) -> str:
         """String representation for debugging."""

@@ -22,12 +22,18 @@
       "Bash(python -c \"print\\(''ok''\\)\")",
       "Bash(conda run -n myenv python3 -c \"from src.ai.recovery import RecoveryQueue; from src.ai.pipeline import JournalEntryPipeline, PipelineProcessor, PipelineStepError; print\\(''OK''\\)\")",
       "Bash(conda run:*)",
-      "Bash(git stash)"
+      "Bash(git stash)",
+      "Bash(node --version)",
+      "Bash(npm --version)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(npm run build)"
     ],
     "additionalDirectories": [
       "/Users/sebastian/Python/projects/journal_bot",
       "/Users/sebastian/Python/projects/journal_bot/app/core",
-      "c:\\Users\\vazqse01\\.claude\\projects\\c--Users-vazqse01-journal-bot\\memory"
+      "c:\\Users\\vazqse01\\.claude\\projects\\c--Users-vazqse01-journal-bot\\memory",
+      "/Users/sebastian/journal_bot"
     ]
   }
 }

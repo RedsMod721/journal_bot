@@ -282,8 +282,8 @@ class TestPipelineE2E:
         assert len(theme_awards) >= 1
         assert all(a.amount >= 1 for a in theme_awards)
 
-        # With one theme mapping, each theme award should be max(1, floor(skill_xp * 0.001)).
-        expected_amounts = {max(1, int(a.amount * 0.001)) for a in skill_awards}
+        # With one theme mapping, each theme award should be max(1, round(skill_xp * 0.01)).
+        expected_amounts = {max(1, int(a.amount * 0.01 + 0.5)) for a in skill_awards}
         assert {a.amount for a in theme_awards}.issubset(expected_amounts)
 
         themes = test_db.query(Theme).filter(Theme.user_id == test_user.id).all()

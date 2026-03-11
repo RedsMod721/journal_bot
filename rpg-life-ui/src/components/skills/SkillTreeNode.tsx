@@ -1,11 +1,8 @@
 import { memo, useState } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { Lock, Star, Zap } from "lucide-react";
+import { Eye, Lock, Star, Zap } from "lucide-react";
 import type { SkillTreeNodeData } from "@/types/skillHierarchy";
-import {
-  TREE_CATEGORY_STYLES,
-  CATEGORY_LABELS,
-} from "@/types/skillHierarchy";
+import { TREE_CATEGORY_STYLES } from "@/types/skillHierarchy";
 
 const UNLOCK_RANK_REQUIRED = 5; // placeholder until backend drives this
 
@@ -16,8 +13,14 @@ interface TooltipProps {
   data: SkillTreeNodeData;
 }
 
+function formatL1SkillLine(labels: string[]): string {
+  if (labels.length === 0) return "Unclassified";
+  if (labels.length === 1) return labels[0];
+  return `${labels[0]} +${labels.length - 1}`;
+}
+
 function SkillTooltip({ data }: TooltipProps) {
-  const { node, category, parentNames, childNames } = data;
+  const { node, category, l1SkillLabels, parentNames, childNames } = data;
   const style = TREE_CATEGORY_STYLES[category];
 
   return (
@@ -31,27 +34,22 @@ function SkillTooltip({ data }: TooltipProps) {
           {node.canonical_name}
         </div>
         <div className="text-white/70 text-xs mt-0.5">
-          {CATEGORY_LABELS[category]} · Level {node.hierarchy_level} skill
+          {formatL1SkillLine(l1SkillLabels)} · Level {node.hierarchy_level} skill
         </div>
       </div>
 
       <div className="px-4 py-3 space-y-3">
-        {/* Unlock state */}
+        {/* State */}
         <div className="flex items-center gap-2">
-          {data.unlockState === "locked" ? (
+          {data.state === "discovered" ? (
             <>
-              <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="text-slate-400">Locked</span>
-            </>
-          ) : data.unlockState === "available" ? (
-            <>
-              <Star className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
-              <span className="text-yellow-400">Available to practice</span>
+              <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="text-slate-400">Discovered</span>
             </>
           ) : (
             <>
               <Zap className="w-3.5 h-3.5 text-green-400 shrink-0" />
-              <span className="text-green-400">Active</span>
+              <span className="text-green-400">Activated</span>
             </>
           )}
         </div>
@@ -122,14 +120,14 @@ export const SkillTreeNode = memo(function SkillTreeNode({
   data,
 }: NodeProps<SkillNode>) {
   const [hovered, setHovered] = useState(false);
-  const { node, category, unlockState } = data;
+  const { node, category, state, userBlocked } = data;
   const style = TREE_CATEGORY_STYLES[category];
-  const isLocked = unlockState === "locked";
+  const isDiscovered = state === "discovered";
   const isRoot = node.hierarchy_level === 1;
 
-  const bg = isLocked ? style.dimBg : style.bg;
-  const border = isLocked ? style.dimBorder : style.border;
-  const opacity = isLocked ? 0.55 : 1;
+  const bg = isDiscovered ? style.dimBg : style.bg;
+  const border = isDiscovered ? style.dimBorder : style.border;
+  const opacity = isDiscovered ? 0.55 : 1;
 
   return (
     <div
@@ -141,6 +139,17 @@ export const SkillTreeNode = memo(function SkillTreeNode({
 
       <Handle type="target" position={Position.Top} className="!opacity-0" />
 
+      {userBlocked && (
+        <div
+          className="absolute -top-1.5 -right-1.5 z-20 w-4 h-4 rounded-full border flex items-center justify-center pointer-events-none"
+          style={{ background: "#7f1d1d", borderColor: "#ef4444" }}
+          aria-label="Blocked skill"
+          title="Blocked skill"
+        >
+          <Lock className="w-2.5 h-2.5 text-white" />
+        </div>
+      )}
+
       <div
         className="flex items-center gap-2 px-3 rounded-lg cursor-default select-none transition-all duration-150"
         style={{
@@ -150,7 +159,7 @@ export const SkillTreeNode = memo(function SkillTreeNode({
           border: `1.5px solid ${border}`,
           opacity,
           boxShadow:
-            hovered && !isLocked
+            hovered && !isDiscovered
               ? `0 0 16px 2px ${style.bg}55`
               : isRoot
               ? `0 0 10px 1px ${style.bg}33`
@@ -158,10 +167,10 @@ export const SkillTreeNode = memo(function SkillTreeNode({
         }}
       >
         <div className="shrink-0">
-          {isRoot ? (
+          {isDiscovered ? (
+            <Eye className="w-3.5 h-3.5 text-white/40" />
+          ) : isRoot ? (
             <Star className="w-4 h-4 text-white/90" />
-          ) : isLocked ? (
-            <Lock className="w-3.5 h-3.5 text-white/40" />
           ) : (
             <Zap className="w-3.5 h-3.5 text-white/90" />
           )}
@@ -169,7 +178,7 @@ export const SkillTreeNode = memo(function SkillTreeNode({
 
         <span
           className="text-xs font-medium leading-tight line-clamp-2"
-          style={{ color: isLocked ? "rgba(255,255,255,0.45)" : "#fff" }}
+          style={{ color: isDiscovered ? "rgba(255,255,255,0.45)" : "#fff" }}
         >
           {node.canonical_name}
         </span>

@@ -105,7 +105,7 @@ class XpAward(Base):
     # ------------------------------------------------------------------
     # Which skill triggered this theme XP award
     source_skill_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
-    # How much XP the source skill gained (to derive the 0.1% theme share)
+    # How much XP the source skill gained (to derive the 1% theme share)
     source_skill_xp: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     awarded_at: Mapped[datetime] = mapped_column(

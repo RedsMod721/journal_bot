@@ -1,3 +1,5 @@
+import type { SkillState } from "@/types/skill";
+
 export type SkillTreeCategory =
   | "creative"
   | "mental"
@@ -10,15 +12,20 @@ export interface SkillHierarchyNode {
   canonical_name: string;
   hierarchy_level: number;
   parent_skill_ids: string[];
+  state?: SkillState;
+  user_blocked?: boolean;
 }
 
-export type SkillUnlockState = "locked" | "available" | "active" | "mastered";
+export type SkillTreeDisplayState = "discovered" | "activated";
 
 // Must extend Record<string, unknown> for @xyflow/react Node<TData> constraint
 export interface SkillTreeNodeData extends Record<string, unknown> {
   node: SkillHierarchyNode;
   category: SkillTreeCategory;
-  unlockState: SkillUnlockState;
+  l1SkillIds: string[];
+  l1SkillLabels: string[];
+  state: SkillTreeDisplayState;
+  userBlocked: boolean;
   /** Names of parent skills required to unlock this */
   parentNames: string[];
   /** Names of skills this unlocks */

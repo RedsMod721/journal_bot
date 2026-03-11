@@ -1,5 +1,5 @@
 """API route modules."""
 
-from . import journal, quests, skills, users
+from . import journal, quests, skills, themes, users
 
-__all__ = ["journal", "quests", "skills", "users"]
+__all__ = ["journal", "quests", "skills", "themes", "users"]

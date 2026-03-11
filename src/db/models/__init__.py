@@ -42,6 +42,7 @@ from src.db.models.journal_entry import (
 
 # 5. Skills & themes
 from src.db.models.skill import Skill, SkillThemeMapping, Theme
+from src.db.models.user_skill_state import UserSkillState
 
 # 6. Quests
 from src.db.models.quest import Quest, QuestFailureTracker, QuestTemplate
@@ -108,6 +109,7 @@ __all__ = [
     "Skill",
     "Theme",
     "SkillThemeMapping",
+    "UserSkillState",
     # Quests
     "QuestTemplate",
     "Quest",
