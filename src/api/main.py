@@ -17,8 +17,9 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import journal, quests, skills, themes, users
+from src.api.routes import forgiveness, jobs, journal, quests, skills, themes, users
 from src.db.session import check_connection, init_db
+from src.jobs.scheduler import init_scheduler, shutdown_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +48,11 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     else:
         logger.info("Database connection OK.")
 
+    init_scheduler()
+
     yield
 
+    shutdown_scheduler()
     logger.info("RPG Life Tracker API shutting down.")
 
 
@@ -92,6 +96,8 @@ for prefix in ("/api", "/api/v1"):
     app.include_router(skills.router, prefix=prefix)
     app.include_router(themes.router, prefix=prefix)
     app.include_router(quests.router, prefix=prefix)
+    app.include_router(jobs.router, prefix=prefix)
+    app.include_router(forgiveness.router, prefix=prefix)
 
 # ---------------------------------------------------------------------------
 # System endpoints
