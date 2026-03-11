@@ -46,6 +46,9 @@ export function ThemesList({ themes }: ThemesListProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
       {themes.map((theme) => {
+        const relatedSkillNames = Array.isArray(theme.related_skill_names)
+          ? theme.related_skill_names
+          : [];
         const hasLevelProgress = theme.current_level > 0 && theme.next_level_xp > 0;
         const levelProgressPercent =
           hasLevelProgress
@@ -58,6 +61,13 @@ export function ThemesList({ themes }: ThemesListProps) {
         const isHovered = hoveredThemeId === theme.theme_id;
         const skillLabel =
           theme.related_skills_count === 1 ? "related skill" : "related skills";
+        const relatedSkillsCountLine = `${theme.related_skills_count} ${skillLabel}`;
+        const relatedSkillsLine =
+          relatedSkillNames.length > 0
+            ? relatedSkillNames.join(", ")
+            : theme.related_skills_count > 0
+              ? relatedSkillsCountLine
+              : "No related skills yet.";
 
         return (
           <Card
@@ -111,7 +121,7 @@ export function ThemesList({ themes }: ThemesListProps) {
                 </div>
               )}
               <div className="text-sm text-muted-foreground">
-                {theme.related_skills_count} {skillLabel}
+                {isHovered ? relatedSkillsLine : relatedSkillsCountLine}
               </div>
             </CardContent>
           </Card>

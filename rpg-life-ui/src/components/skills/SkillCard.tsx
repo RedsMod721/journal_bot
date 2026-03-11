@@ -71,6 +71,17 @@ export function SkillCard({
   const realmRankLabel = getRankLabel(skill.rank);
   const rankLine =
     skill.rank && realmRankLabel ? `${skill.rank} - ${realmRankLabel}` : null;
+  const parentNamesLine =
+    skill.parent_skill_names && skill.parent_skill_names.length > 0
+      ? `Parents: ${skill.parent_skill_names.join(", ")}`
+      : null;
+  const hoverMetaLines = [rankLine, parentNamesLine].filter(
+    (line): line is string => Boolean(line)
+  );
+  const parentSkillBadges =
+    skill.parent_skill_names && skill.parent_skill_names.length > 0
+      ? skill.parent_skill_names
+      : (skill.parent_skill_ids ?? []).map((parentId) => parentId.split("_").pop() ?? parentId);
 
   const handleToggleBlock = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -131,8 +142,12 @@ export function SkillCard({
           <div className="text-xs text-muted-foreground">
             {skill.total_xp.toLocaleString()} XP
           </div>
-          {isHovered && rankLine && (
-            <div className="text-[11px] text-muted-foreground">{rankLine}</div>
+          {isHovered && hoverMetaLines.length > 0 && (
+            <div className="text-[11px] text-muted-foreground space-y-0.5">
+              {hoverMetaLines.map((line) => (
+                <div key={line}>{line}</div>
+              ))}
+            </div>
           )}
         </div>
       </motion.div>
@@ -202,8 +217,12 @@ export function SkillCard({
                   </Badge>
                 )}
               </div>
-              {isHovered && rankLine && (
-                <p className="text-xs text-muted-foreground mt-2">{rankLine}</p>
+              {isHovered && hoverMetaLines.length > 0 && (
+                <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                  {hoverMetaLines.map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
               )}
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-2 text-primary">
@@ -249,13 +268,13 @@ export function SkillCard({
           )}
 
           {/* Parent Skills */}
-          {showParents && skill.parent_skill_ids && skill.parent_skill_ids.length > 0 && (
+          {showParents && parentSkillBadges.length > 0 && (
             <div className="pt-2 border-t border-border">
               <div className="text-xs text-muted-foreground mb-1">Parent Skills:</div>
               <div className="flex flex-wrap gap-1">
-                {skill.parent_skill_ids.map((parentId) => (
-                  <Badge key={parentId} variant="secondary" className="text-xs">
-                    {parentId.split("_").pop()}
+                {parentSkillBadges.map((parentName) => (
+                  <Badge key={parentName} variant="secondary" className="text-xs">
+                    {parentName}
                   </Badge>
                 ))}
               </div>

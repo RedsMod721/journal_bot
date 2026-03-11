@@ -23,6 +23,7 @@ export interface Theme {
   current_level_xp: number;
   next_level_xp: number;
   related_skills_count: number;
+  related_skill_names: string[];
   created_at: string;
   updated_at: string;
 }

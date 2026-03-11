@@ -33,8 +33,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(USER_ID_STORAGE_KEY, picked.id);
     setUser({
       id: picked.id,
-      name: picked.display_name || picked.username || picked.email,
-      email: picked.email,
+      name:
+        picked.display_name ||
+        picked.username ||
+        picked.email ||
+        `User ${picked.id.slice(0, 8)}`,
+      email: picked.email ?? undefined,
     });
     setError(null);
   };

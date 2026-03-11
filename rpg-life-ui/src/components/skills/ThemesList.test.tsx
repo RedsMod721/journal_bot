@@ -30,6 +30,7 @@ describe("ThemesList", () => {
         current_level_xp: 109,
         next_level_xp: 123,
         related_skills_count: 2,
+        related_skill_names: ["Running", "Mobility"],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -44,6 +45,7 @@ describe("ThemesList", () => {
         current_level_xp: 0,
         next_level_xp: 141,
         related_skills_count: 0,
+        related_skill_names: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -78,6 +80,7 @@ describe("ThemesList", () => {
         current_level_xp: 100,
         next_level_xp: 500,
         related_skills_count: 1,
+        related_skill_names: ["Journaling"],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -86,8 +89,39 @@ describe("ThemesList", () => {
     render(<ThemesList themes={themes} />);
 
     expect(screen.queryByText("E - Amateur")).not.toBeInTheDocument();
+    expect(screen.queryByText("Journaling")).not.toBeInTheDocument();
     await user.hover(screen.getByText("Emotional"));
     expect(await screen.findByText("E - Amateur")).toBeInTheDocument();
+    expect(screen.getByText("Journaling")).toBeInTheDocument();
+    expect(screen.queryByText("1 related skill")).not.toBeInTheDocument();
     expect(screen.getByText("Lv")).toBeInTheDocument();
+  });
+
+  it("falls back to the related skill count on hover when names are missing", async () => {
+    const user = userEvent.setup();
+    const themes = [
+      {
+        theme_id: "theme-4",
+        user_id: "user-1",
+        name: "Professional",
+        description: "Professional skills",
+        rank: "D",
+        total_xp: 1200,
+        current_level: 4,
+        current_level_xp: 200,
+        next_level_xp: 400,
+        related_skills_count: 2,
+        related_skill_names: undefined,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ] as unknown as Theme[];
+
+    render(<ThemesList themes={themes} />);
+
+    expect(screen.getByText("2 related skills")).toBeInTheDocument();
+    await user.hover(screen.getByText("Professional"));
+    expect(screen.getByText("2 related skills")).toBeInTheDocument();
+    expect(screen.queryByText("No related skills yet.")).not.toBeInTheDocument();
   });
 });

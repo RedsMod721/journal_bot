@@ -95,6 +95,7 @@
     },
     "pytest": true,
     "/opt/anaconda3/bin/conda": true,
-    "c:/Users/vazqse01/journal_bot/.venv/Scripts/python.exe": true
+    "c:/Users/vazqse01/journal_bot/.venv/Scripts/python.exe": true,
+    ".\\.venv\\Scripts\\python.exe": true
   }
 }

@@ -236,8 +236,8 @@ def list_quests(
     ] = None,
     db: Session = Depends(get_db),
 ) -> list[QuestResponse]:
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
+    user_exists = db.query(User.id).filter(User.id == user_id).first()
+    if user_exists is None:
         raise HTTPException(status_code=404, detail=f"User {user_id!r} not found.")
 
     global_skills_by_id, global_skills_by_source = _load_global_skill_nodes(db)

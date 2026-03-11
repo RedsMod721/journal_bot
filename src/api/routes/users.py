@@ -51,7 +51,7 @@ class UserListItem(BaseModel):
     id: str
     username: str | None
     display_name: str | None
-    email: str
+    email: str | None
 
 
 class UserStatsResponse(BaseModel):
@@ -244,7 +244,11 @@ def list_users(
     db: Session = Depends(get_db),
 ) -> list[UserListItem]:
     users = (
-        db.query(User).order_by(User.created_at.asc()).offset(skip).limit(limit).all()
+        db.query(User.id, User.username, User.display_name, User.email)
+        .order_by(User.created_at.asc())
+        .offset(skip)
+        .limit(limit)
+        .all()
     )
     return [
         UserListItem(

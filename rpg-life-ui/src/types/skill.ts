@@ -22,6 +22,7 @@ export interface Skill {
   // Hierarchy fields — present from /api/skills/hierarchy
   hierarchy_level?: number;
   parent_skill_ids?: string[];
+  parent_skill_names?: string[];
   state?: SkillState;
   user_blocked?: boolean;
   discovered_at?: string;

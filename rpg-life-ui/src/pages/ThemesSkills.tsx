@@ -20,11 +20,12 @@ import { useSkillHierarchy } from "@/hooks/useSkillHierarchy";
 import { useThemes } from "@/hooks/useThemes";
 import { useUser } from "@/contexts/UserContext";
 import { buildL1SkillResolver } from "@/lib/skillHierarchyRoots";
+import { UserIdSelector } from "@/components/user/UserIdSelector";
 
 type L1SkillFilter = "all" | string;
 
 export function ThemesSkills() {
-  const { user } = useUser();
+  const { user, isLoading: userLoading } = useUser();
   const {
     data: hierarchy,
     isLoading: hierarchyLoading,
@@ -39,6 +40,7 @@ export function ThemesSkills() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [l1SkillFilter, setL1SkillFilter] = useState<L1SkillFilter>("all");
+  const [themeFilter, setThemeFilter] = useState("all");
   const [showDiscovered, setShowDiscovered] = useState(true);
   const [showBlocked, setShowBlocked] = useState(false);
 
@@ -50,6 +52,25 @@ export function ThemesSkills() {
     () => l1SkillResolver.getL1SkillOptions(),
     [l1SkillResolver]
   );
+  const skillNamesByTheme = useMemo(
+    () =>
+      new Map(
+        (themes ?? []).map((theme) => [
+          theme.name,
+          new Set(
+            (theme.related_skill_names ?? []).map((name) => name.toLowerCase())
+          ),
+        ])
+      ),
+    [themes]
+  );
+  const themeOptions = useMemo(
+    () =>
+      (themes ?? [])
+        .filter((theme) => (theme.related_skill_names ?? []).length > 0)
+        .map((theme) => theme.name),
+    [themes]
+  );
 
   // Skills shown in "My Skills" tab — activated + optionally discovered
   const mySkills = (hierarchy ?? []).filter((skill) => {
@@ -59,7 +80,9 @@ export function ThemesSkills() {
 
     if (
       searchQuery &&
-      !skill.canonical_name.toLowerCase().includes(searchQuery.toLowerCase())
+      !(skill.canonical_name ?? "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase())
     ) {
       return false;
     }
@@ -71,8 +94,41 @@ export function ThemesSkills() {
       return false;
     }
 
+    if (themeFilter !== "all") {
+      const themeSkillNames = skillNamesByTheme.get(themeFilter);
+      if (!themeSkillNames?.has((skill.canonical_name ?? "").toLowerCase())) {
+        return false;
+      }
+    }
+
     return true;
   });
+
+  if (userLoading) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-3xl font-display font-bold mb-2">Themes & Skills</h1>
+          <p className="text-muted-foreground">Loading active user...</p>
+        </div>
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-bold mb-2">Themes & Skills</h1>
+          <p className="text-muted-foreground">
+            Select an active user before viewing themes and skills.
+          </p>
+        </div>
+        <UserIdSelector />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -145,6 +201,20 @@ export function ThemesSkills() {
                     {l1SkillOptions.map((l1Skill) => (
                       <SelectItem key={l1Skill.skillId} value={l1Skill.skillId}>
                         {l1Skill.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={themeFilter} onValueChange={setThemeFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Theme" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All themes</SelectItem>
+                    {themeOptions.map((themeName) => (
+                      <SelectItem key={themeName} value={themeName}>
+                        {themeName}
                       </SelectItem>
                     ))}
                   </SelectContent>

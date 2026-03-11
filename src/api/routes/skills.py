@@ -250,8 +250,8 @@ def list_skills(
     user_id: Annotated[str, Query(description="User UUID")],
     db: Session = Depends(get_db),
 ) -> list[SkillResponse]:
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
+    user_exists = db.query(User.id).filter(User.id == user_id).first()
+    if user_exists is None:
         raise HTTPException(status_code=404, detail=f"User {user_id!r} not found.")
 
     skills = (

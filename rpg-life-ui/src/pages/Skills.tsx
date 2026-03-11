@@ -1,5 +1,6 @@
 import {
   useState,
+  useMemo,
   lazy,
   Suspense,
   Component,
@@ -148,6 +149,43 @@ export function Skills() {
     sortKey
   );
 
+  const hierarchyByName = useMemo(
+    () =>
+      new Map(
+        HIERARCHY_SKILLS.map((node) => [
+          node.canonical_name.trim().toLowerCase(),
+          node,
+        ])
+      ),
+    []
+  );
+
+  const hierarchyNameById = useMemo(
+    () => new Map(HIERARCHY_SKILLS.map((node) => [node.skill_id, node.canonical_name])),
+    []
+  );
+
+  const filteredSkillsWithParents = useMemo(
+    () =>
+      filteredSkills.map((skill) => {
+        const hierarchyNode = hierarchyByName.get(skill.canonical_name.trim().toLowerCase());
+        if (!hierarchyNode) {
+          return skill;
+        }
+
+        const parentSkillNames = (hierarchyNode.parent_skill_ids ?? [])
+          .map((parentId) => hierarchyNameById.get(parentId))
+          .filter((name): name is string => Boolean(name));
+
+        return {
+          ...skill,
+          parent_skill_ids: skill.parent_skill_ids ?? hierarchyNode.parent_skill_ids,
+          parent_skill_names: parentSkillNames,
+        };
+      }),
+    [filteredSkills, hierarchyByName, hierarchyNameById]
+  );
+
   if (!user) {
     return (
       <div className="space-y-6">
@@ -274,7 +312,7 @@ export function Skills() {
           </div>
 
           <SkillList
-            skills={filteredSkills}
+            skills={filteredSkillsWithParents}
             variant={viewMode === "list" ? "compact" : "default"}
             onSkillClick={(skill) => console.log("Clicked skill:", skill)}
           />

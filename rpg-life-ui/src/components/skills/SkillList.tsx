@@ -14,7 +14,7 @@ export function SkillList({
   skills,
   variant = "default",
   onSkillClick,
-  showParents: _showParents,
+  showParents = false,
   className,
 }: SkillListProps) {
   if (skills.length === 0) {
@@ -37,6 +37,7 @@ export function SkillList({
               key={skill.skill_id}
               skill={skill}
               variant="compact"
+              showParents={showParents}
               onClick={() => onSkillClick?.(skill)}
             />
           ))}
@@ -52,6 +53,7 @@ export function SkillList({
           <SkillCard
             key={skill.skill_id}
             skill={skill}
+            showParents={showParents}
             onClick={() => onSkillClick?.(skill)}
           />
         ))}

@@ -369,10 +369,57 @@ def test_themes_endpoint_returns_canonical_order_and_related_skill_counts(
 
     by_name = {row["name"]: row for row in themes}
     assert by_name["Professional"]["related_skills_count"] == 1
+    assert by_name["Professional"]["related_skill_names"] == ["Programming"]
     assert by_name["Physical"]["related_skills_count"] == 0
     assert all("theme_id" in row for row in themes)
     assert all("current_level_xp" in row for row in themes)
     assert all("next_level_xp" in row for row in themes)
+
+
+def test_themes_endpoint_repairs_missing_skill_theme_mappings_on_read(
+    client: TestClient, db_session: Session, seeded_user_id: str
+):
+    global_skill = GlobalSkill(
+        id="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        source_skill_id="skill_physical_running",
+        canonical_name="Running",
+        hierarchy_level=2,
+        parent_skill_ids_json='["skill_physical_physical_health"]',
+        related_themes_json='["Physical", "Discipline"]',
+    )
+    db_session.add(global_skill)
+    db_session.flush()
+
+    running_skill = Skill(
+        id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        user_id=seeded_user_id,
+        name="Running",
+        canonical_name="running",
+        global_skill_id=global_skill.id,
+        xp=250,
+        level=2,
+    )
+    db_session.add(running_skill)
+    db_session.commit()
+
+    response = client.get("/api/themes", params={"user_id": seeded_user_id})
+    assert response.status_code == 200
+
+    themes = response.json()
+    by_name = {row["name"]: row for row in themes}
+
+    assert by_name["Physical"]["related_skills_count"] == 1
+    assert by_name["Physical"]["related_skill_names"] == ["Running"]
+    assert by_name["Discipline"]["related_skills_count"] == 1
+    assert by_name["Discipline"]["related_skill_names"] == ["Running"]
+
+    persisted_pairs = {
+        (mapping.skill_id, mapping.theme.name)
+        for mapping in db_session.query(SkillThemeMapping).all()
+        if mapping.theme is not None
+    }
+    assert (running_skill.id, "Physical") in persisted_pairs
+    assert (running_skill.id, "Discipline") in persisted_pairs
 
 
 def test_themes_endpoint_is_available_on_v1_prefix(

@@ -6,7 +6,9 @@ export function useSkills(userId: string) {
     queryKey: ["skills", userId],
     queryFn: () => skillsService.getSkills(userId),
     enabled: !!userId,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
   });
 }
 

@@ -242,7 +242,43 @@ def init_db() -> None:
     _ensure_sqlite_parent_dir(DATABASE_URL)
 
     Base.metadata.create_all(bind=engine)
+    _ensure_sqlite_users_compat_columns()
     _create_sqlite_tenant_integrity_triggers()
+
+
+def _ensure_sqlite_users_compat_columns() -> None:
+    """Backfill legacy SQLite schemas missing newer ``users`` columns."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    preferences_default = (
+        '{"realm":{"scope":{"visual":true,"naming":false,"messages":false,'
+        '"llm":false},"ranks_wording":{"preset":"standard"}},'
+        '"skill_hierarchy":{"default_blocked_preference":false}}'
+    )
+
+    with engine.begin() as conn:
+        existing_columns = {
+            row[1]
+            for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()
+        }
+
+        if "default_blocked_preference" not in existing_columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE users "
+                    "ADD COLUMN default_blocked_preference BOOLEAN NOT NULL DEFAULT 0"
+                )
+            )
+
+        if "user_preferences" not in existing_columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE users "
+                    "ADD COLUMN user_preferences TEXT NOT NULL "
+                    f"DEFAULT '{preferences_default}'"
+                )
+            )
 
 
 def _create_sqlite_tenant_integrity_triggers() -> None:

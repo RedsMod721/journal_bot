@@ -229,8 +229,8 @@ async def submit_journal_entry(
     re-running the pipeline for the same entry replays the cached result.
     """
     # -- Verify user exists --------------------------------------------------
-    user = db.query(User).filter(User.id == payload.user_id).first()
-    if user is None:
+    user_exists = db.query(User.id).filter(User.id == payload.user_id).first()
+    if user_exists is None:
         raise HTTPException(
             status_code=404,
             detail=f"User {payload.user_id!r} not found.",

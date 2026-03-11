@@ -66,6 +66,23 @@ describe("SkillCard", () => {
     expect(await screen.findByText("F - Novice")).toBeInTheDocument();
   });
 
+  it("shows parent skill names on hover", async () => {
+    const user = userEvent.setup();
+    render(
+      <SkillCard
+        skill={{
+          ...baseSkill,
+          parent_skill_names: ["Focus", "Study Habits"],
+        }}
+      />
+    );
+
+    expect(screen.queryByText("Parents: Focus, Study Habits")).not.toBeInTheDocument();
+
+    await user.hover(screen.getByText("Arcane Mastery"));
+    expect(await screen.findByText("Parents: Focus, Study Habits")).toBeInTheDocument();
+  });
+
   it("hides level progression when current level is zero", () => {
     render(
       <SkillCard

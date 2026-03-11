@@ -19,7 +19,7 @@ export interface UserListItem {
   id: string;
   username?: string | null;
   display_name?: string | null;
-  email: string;
+  email?: string | null;
 }
 
 export type RealmRankWordingPreset =
