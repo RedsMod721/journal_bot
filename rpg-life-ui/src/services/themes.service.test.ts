@@ -20,7 +20,7 @@ describe("themesService", () => {
     getMock.mockReset();
   });
 
-  it("falls back to localhost:8001 when localhost:8000 omits related skill names", async () => {
+  it("falls back to localhost:8002 when localhost:8000 omits related skill names", async () => {
     getMock
       .mockResolvedValueOnce({
         data: [
@@ -64,7 +64,7 @@ describe("themesService", () => {
     });
     expect(getMock).toHaveBeenNthCalledWith(
       2,
-      "http://localhost:8001/api/themes",
+      "http://localhost:8002/api/themes",
       { params: { user_id: "user-1" } }
     );
     expect(result[0].related_skill_names).toEqual(["Running", "Mobility"]);

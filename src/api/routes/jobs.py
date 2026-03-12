@@ -27,7 +27,7 @@ async def trigger_decay_job(
     Manually trigger the daily decay job.
 
     Useful for testing and manual execution without waiting for the
-    2 AM UTC scheduled run.
+    next user-local maintenance window.
     """
     job = DailyDecayJob(db)
     now_utc = datetime.now(timezone.utc)
@@ -43,7 +43,12 @@ async def trigger_decay_job(
 @router.get("/decay/status", summary="Decay scheduler status")
 def get_decay_status() -> Dict[str, Any]:
     """Return current scheduler state and next scheduled run times."""
-    from src.jobs.scheduler import scheduler
+    from src.jobs.scheduler import (
+        LOCAL_CUTOFF_HOUR,
+        LOCAL_CUTOFF_MINUTE,
+        SCHEDULE_CADENCE_MINUTES,
+        scheduler,
+    )
 
     jobs_info = []
     for job in scheduler.get_jobs():
@@ -60,5 +65,8 @@ def get_decay_status() -> Dict[str, Any]:
 
     return {
         "scheduler_running": scheduler.running,
+        "schedule_strategy": "user_local_after_00_15",
+        "cadence_minutes": SCHEDULE_CADENCE_MINUTES,
+        "local_cutoff_time": f"{LOCAL_CUTOFF_HOUR:02d}:{LOCAL_CUTOFF_MINUTE:02d}",
         "jobs": jobs_info,
     }

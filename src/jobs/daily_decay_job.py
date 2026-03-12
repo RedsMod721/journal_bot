@@ -6,18 +6,24 @@ Runs once per day per user to update skill staleness and insight strength.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session
 
 from src.core.balance_window_service import BalanceWindowService
 from src.core.forgiveness_decay_service import ForgivenessDecayService
 from src.core.harmony_refresh_service import HarmonyRefreshService
+from src.db.models.forgiveness import DecaySnapshot
+from src.db.models.harmony import HarmonySnapshot
+from src.db.models.strategy import StrategyTracking
 from src.db.models.user import User
 from src.db.session import db_session
 
 logger = logging.getLogger(__name__)
+_LOCAL_CUTOFF = time(hour=0, minute=15)
+_FALLBACK_TZ = "UTC"
 
 
 class DailyDecayJob:
@@ -29,6 +35,84 @@ class DailyDecayJob:
         self.window_service = BalanceWindowService(db)
         self.harmony_service = HarmonyRefreshService(db)
 
+    @staticmethod
+    def _normalize_now(now_utc: datetime | None) -> datetime:
+        if now_utc is None:
+            return datetime.now(timezone.utc)
+        if now_utc.tzinfo is None:
+            return now_utc.replace(tzinfo=timezone.utc)
+        return now_utc.astimezone(timezone.utc)
+
+    @staticmethod
+    def _user_tz(tz_name: str | None) -> ZoneInfo:
+        try:
+            return ZoneInfo(tz_name or _FALLBACK_TZ)
+        except (ZoneInfoNotFoundError, KeyError):
+            return ZoneInfo(_FALLBACK_TZ)
+
+    def _local_dates_for_user(
+        self,
+        user: User,
+        now_utc: datetime,
+    ) -> tuple[datetime, date, date]:
+        local_now = now_utc.astimezone(self._user_tz(user.timezone))
+        today_local = local_now.date()
+        return local_now, today_local, today_local - timedelta(days=1)
+
+    def _maintenance_completed_for_local_day(
+        self,
+        user_id: str,
+        *,
+        today_local: date,
+        yesterday_local: date,
+    ) -> bool:
+        decay_exists = (
+            self.db.query(DecaySnapshot.id)
+            .filter(
+                DecaySnapshot.user_id == user_id,
+                DecaySnapshot.snapshot_date == today_local.isoformat(),
+            )
+            .first()
+            is not None
+        )
+        harmony_exists = (
+            self.db.query(HarmonySnapshot.user_id)
+            .filter(
+                HarmonySnapshot.user_id == user_id,
+                HarmonySnapshot.snapshot_date == yesterday_local,
+            )
+            .first()
+            is not None
+        )
+        tracking_up_to_date = (
+            self.db.query(StrategyTracking.user_id)
+            .filter(
+                StrategyTracking.user_id == user_id,
+                StrategyTracking.window_end_date == today_local,
+            )
+            .first()
+            is not None
+        )
+        return decay_exists and harmony_exists and tracking_up_to_date
+
+    def _due_status_for_user(
+        self,
+        user: User,
+        now_utc: datetime,
+    ) -> tuple[bool, str, date]:
+        local_now, today_local, yesterday_local = self._local_dates_for_user(
+            user, now_utc
+        )
+        if local_now.timetz().replace(tzinfo=None) < _LOCAL_CUTOFF:
+            return False, "before_local_cutoff", today_local
+        if self._maintenance_completed_for_local_day(
+            user.id,
+            today_local=today_local,
+            yesterday_local=yesterday_local,
+        ):
+            return False, "already_completed_for_local_day", today_local
+        return True, "due", today_local
+
     async def run_for_user(
         self,
         user_id: str,
@@ -39,8 +123,7 @@ class DailyDecayJob:
 
         Returns metrics about decay applied.
         """
-        if now_utc is None:
-            now_utc = datetime.now(timezone.utc)
+        now_utc = self._normalize_now(now_utc)
 
         logger.info("Running daily decay for user %s", user_id)
 
@@ -123,6 +206,72 @@ class DailyDecayJob:
 
         return results
 
+    async def run_for_due_users(
+        self,
+        now_utc: datetime | None = None,
+    ) -> Dict[str, Any]:
+        """
+        Run daily maintenance only for users whose local day is eligible.
+
+        A user is eligible once their local clock is past 00:15 and the
+        previous scheduled run for that local day has not already completed.
+        """
+        now_utc = self._normalize_now(now_utc)
+        logger.info("Running scheduled daily maintenance for due users")
+
+        users = self.db.query(User).all()
+        summary: Dict[str, Any] = {
+            "timestamp": now_utc.isoformat(),
+            "total_users": len(users),
+            "eligible": 0,
+            "successful": 0,
+            "failed": 0,
+            "skipped": 0,
+            "results": [],
+        }
+
+        for user in users:
+            is_due, reason, today_local = self._due_status_for_user(user, now_utc)
+            if not is_due:
+                summary["skipped"] += 1
+                summary["results"].append(
+                    {
+                        "user_id": user.id,
+                        "status": "skipped",
+                        "reason": reason,
+                        "local_date": today_local.isoformat(),
+                    }
+                )
+                continue
+
+            summary["eligible"] += 1
+            try:
+                result = await self.run_for_user(user.id, now_utc)
+                result["status"] = "success"
+                result["local_date"] = today_local.isoformat()
+                summary["successful"] += 1
+                summary["results"].append(result)
+            except Exception as exc:
+                logger.error("Failed to run decay for due user %s: %s", user.id, exc)
+                summary["failed"] += 1
+                summary["results"].append(
+                    {
+                        "user_id": user.id,
+                        "status": "error",
+                        "reason": str(exc),
+                        "local_date": today_local.isoformat(),
+                    }
+                )
+
+        logger.info(
+            "Scheduled daily maintenance complete: %d eligible, %d successful, %d failed, %d skipped",
+            summary["eligible"],
+            summary["successful"],
+            summary["failed"],
+            summary["skipped"],
+        )
+        return summary
+
     async def run_for_all_users(
         self,
         now_utc: datetime | None = None,
@@ -132,8 +281,7 @@ class DailyDecayJob:
 
         Returns summary metrics.
         """
-        if now_utc is None:
-            now_utc = datetime.now(timezone.utc)
+        now_utc = self._normalize_now(now_utc)
 
         logger.info("Running daily decay for all users")
 
@@ -169,4 +317,4 @@ async def run_daily_decay_job() -> Dict[str, Any]:
     """Entrypoint for scheduled job. Opens its own DB session."""
     with db_session() as db:
         job = DailyDecayJob(db)
-        return await job.run_for_all_users()
+        return await job.run_for_due_users()

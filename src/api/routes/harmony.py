@@ -193,7 +193,7 @@ def refresh_harmony(
     user_id: Annotated[str, Query(description="User UUID")],
     db: Session = Depends(get_db),
 ) -> HarmonyRefreshResponse:
-    """Recalculate harmony scores from the 30-day journal window.
+    """Recalculate harmony scores from the rolling 7-day journal window.
 
     Does NOT advance the overwork stage (read-only refresh).  The pipeline
     advances the overwork stage automatically when processing new entries.

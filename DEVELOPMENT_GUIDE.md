@@ -61,7 +61,7 @@ app = FastAPI(
 # CORS for local frontend development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:8000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:1420"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,10 +89,12 @@ def check_ollama():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("src.api.main:app", host="127.0.0.1", port=8002, reload=True)
 ```
 
-**Checkpoint:** Run `uvicorn app.main:app --reload` and visit `http://localhost:8000/docs` to see Swagger UI
+**Checkpoint:** Run `.\.venv\Scripts\python.exe -m uvicorn src.api.main:app --app-dir . --host 127.0.0.1 --port 8002 --reload` and visit `http://127.0.0.1:8002/docs` to see Swagger UI
+
+**Current runtime note:** For this repo, treat `src.api.main:app` as the canonical backend entrypoint and use port `8002` for local development. If localhost appears to serve stale routes, use `powershell -File scripts\refresh_app_cache.ps1` to stop old reload processes, clear caches, and relaunch the stack.
 
 ---
 

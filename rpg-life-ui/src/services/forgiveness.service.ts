@@ -49,7 +49,7 @@ function getLocalFallbackBaseURL(): string | null {
     return null;
   }
 
-  const fallbackBaseURL = baseURL.replace(":8000", ":8001");
+  const fallbackBaseURL = baseURL.replace(":8000", ":8002");
   return fallbackBaseURL === baseURL ? null : fallbackBaseURL;
 }
 

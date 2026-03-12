@@ -44,7 +44,38 @@ def _existing_indexes(table_name: str) -> set[str]:
     return {idx["name"] for idx in inspector.get_indexes(table_name)}
 
 
+def _existing_columns(table_name: str) -> set[str]:
+    bind = op.get_bind()
+    inspector = Inspector.from_engine(bind)
+    return {column["name"] for column in inspector.get_columns(table_name)}
+
+
 def upgrade() -> None:
+    required_columns = {
+        "id",
+        "user_id",
+        "social_risk_count",
+        "study_burst_count",
+        "mundane_focus_count",
+        "troll_exploits_count",
+        "daily_grind_count",
+        "harmony_balance_count",
+        "strategy_streaks_json",
+        "variety_score",
+        "variety_bonus_pct",
+        "window_start_date",
+        "window_end_date",
+        "created_at",
+        "updated_at",
+    }
+
+    if _table_exists("strategy_tracking"):
+        existing_columns = _existing_columns("strategy_tracking")
+        if not required_columns.issubset(existing_columns):
+            for idx in _existing_indexes("strategy_tracking"):
+                op.drop_index(idx, table_name="strategy_tracking")
+            op.drop_table("strategy_tracking")
+
     if not _table_exists("strategy_tracking"):
         op.create_table(
             "strategy_tracking",

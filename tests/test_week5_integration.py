@@ -298,7 +298,7 @@ class TestHarmonyIntegration:
             )
         )
         db_session.commit()
-        _add_work_entries(db_session, seeded_user.id, count=3)
+        _add_work_entries(db_session, seeded_user.id, count=5)
 
         response = client.get(
             "/api/harmony/overwork-status", params={"user_id": seeded_user.id}
@@ -307,7 +307,7 @@ class TestHarmonyIntegration:
 
         stage = payload["stage"]
         stage_name = payload["stage_name"]
-        expected_names = {0: "Normal", 1: "Warning", 2: "Warning", 3: "Critical"}
+        expected_names = {0: "Normal", 1: "Watch", 2: "Warning", 3: "Crisis"}
         assert stage_name == expected_names.get(stage, stage_name)
 
     def test_dimensions_endpoint_does_not_advance_overwork_persistence(

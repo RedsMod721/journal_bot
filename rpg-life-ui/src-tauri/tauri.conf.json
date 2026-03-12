@@ -1,8 +1,8 @@
 {
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 1420 --strictPort",
     "beforeBuildCommand": "npm run build",
-    "devPath": "http://localhost:1420",
+    "devPath": "http://127.0.0.1:1420",
     "distDir": "../dist"
   },
   "package": {
@@ -19,7 +19,7 @@
       "http": {
         "all": true,
         "request": true,
-        "scope": ["http://localhost:8000/**"]
+        "scope": ["http://127.0.0.1:8002/**", "http://localhost:8002/**"]
       }
     },
     "bundle": {

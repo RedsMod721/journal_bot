@@ -62,8 +62,8 @@ export function JournalEditor({
         setText("");
         setWordCount(0);
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit entry");
+    } catch {
+      setSuccess(false);
     }
   };
 

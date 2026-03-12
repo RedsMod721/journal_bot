@@ -1,5 +1,7 @@
 """Unit tests for src.db.session."""
 
+import shutil
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -9,6 +11,13 @@ from sqlalchemy.pool import StaticPool
 from src.db import session
 
 
+def _repo_tmp_dir() -> Path:
+    base = session._REPO_ROOT / ".pytest_tmp"
+    path = base / f"db-session-{uuid.uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=False)
+    return path
+
+
 def test_load_db_url_prefers_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "sqlite:///env-priority.db")
     monkeypatch.setenv("CONFIG_PATH", "/does/not/matter.yaml")
@@ -16,12 +25,12 @@ def test_load_db_url_prefers_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     assert session._load_db_url() == "sqlite:///env-priority.db"
 
 
-def test_load_db_url_reads_postgres_from_yaml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config_path = tmp_path / "dev.yaml"
-    config_path.write_text(
-        """
+def test_load_db_url_reads_postgres_from_yaml(monkeypatch: pytest.MonkeyPatch) -> None:
+    tmp_dir = _repo_tmp_dir()
+    try:
+        config_path = tmp_dir / "dev.yaml"
+        config_path.write_text(
+            """
 database:
   type: postgresql
   postgresql:
@@ -31,31 +40,37 @@ database:
     port: 5433
     database: journal_bot
 """.strip()
-    )
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.setenv("CONFIG_PATH", str(config_path))
+        )
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setenv("CONFIG_PATH", str(config_path))
 
-    url = session._load_db_url()
-    assert url == "postgresql://app:secret@localhost:5433/journal_bot"
+        url = session._load_db_url()
+        assert url == "postgresql://app:secret@localhost:5433/journal_bot"
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def test_load_db_url_reads_relative_sqlite_from_yaml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_path = tmp_path / "dev.yaml"
-    config_path.write_text(
-        """
+    tmp_dir = _repo_tmp_dir()
+    try:
+        config_path = tmp_dir / "dev.yaml"
+        config_path.write_text(
+            """
 database:
   type: sqlite
   sqlite:
     path: data/db/custom.sqlite
 """.strip()
-    )
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.setenv("CONFIG_PATH", str(config_path))
+        )
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setenv("CONFIG_PATH", str(config_path))
 
-    expected = f"sqlite:///{session._REPO_ROOT / 'data/db/custom.sqlite'}"
-    assert session._load_db_url() == expected
+        expected = f"sqlite:///{session._REPO_ROOT / 'data/db/custom.sqlite'}"
+        assert session._load_db_url() == expected
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def test_load_db_url_falls_back_when_config_missing(
@@ -68,14 +83,18 @@ def test_load_db_url_falls_back_when_config_missing(
 
 
 def test_load_db_url_falls_back_when_yaml_parse_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config_path = tmp_path / "bad.yaml"
-    config_path.write_text("database: [broken")
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.setenv("CONFIG_PATH", str(config_path))
+    tmp_dir = _repo_tmp_dir()
+    try:
+        config_path = tmp_dir / "bad.yaml"
+        config_path.write_text("database: [broken")
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.setenv("CONFIG_PATH", str(config_path))
 
-    assert session._load_db_url() == f"sqlite:///{session._DEFAULT_SQLITE}"
+        assert session._load_db_url() == f"sqlite:///{session._DEFAULT_SQLITE}"
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def test_build_engine_uses_static_pool_for_in_memory_sqlite() -> None:
@@ -184,17 +203,21 @@ def test_db_session_context_manager_rolls_back_on_error(
 
 
 def test_init_db_creates_parent_dir_for_sqlite_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sqlite_path = tmp_path / "nested" / "db.sqlite"
-    create_all = MagicMock()
-    monkeypatch.setattr(session, "DATABASE_URL", f"sqlite:///{sqlite_path}")
-    monkeypatch.setattr(session.Base.metadata, "create_all", create_all)
+    tmp_dir = _repo_tmp_dir()
+    try:
+        sqlite_path = tmp_dir / "nested" / "db.sqlite"
+        create_all = MagicMock()
+        monkeypatch.setattr(session, "DATABASE_URL", f"sqlite:///{sqlite_path}")
+        monkeypatch.setattr(session.Base.metadata, "create_all", create_all)
 
-    session.init_db()
+        session.init_db()
 
-    assert sqlite_path.parent.exists()
-    create_all.assert_called_once_with(bind=session.engine)
+        assert sqlite_path.parent.exists()
+        create_all.assert_called_once_with(bind=session.engine)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 def test_drop_db_calls_drop_all(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -257,3 +280,88 @@ def test_enforce_sqlite_fks_swallows_backend_errors() -> None:
 
     # Should not raise.
     session._enforce_sqlite_fks(dbapi_connection, None)
+
+
+def test_schema_status_reports_ready_when_current_revision_matches_head(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(session, "check_connection", lambda: True)
+    monkeypatch.setattr(session, "get_current_schema_revision", lambda: "mb76")
+    monkeypatch.setattr(session, "get_head_schema_revision", lambda: "mb76")
+
+    status = session.schema_status()
+
+    assert status == {
+        "connected": True,
+        "current_revision": "mb76",
+        "head_revision": "mb76",
+        "ready": True,
+    }
+
+
+def test_schema_status_reports_not_ready_when_revision_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(session, "check_connection", lambda: True)
+    monkeypatch.setattr(session, "get_current_schema_revision", lambda: None)
+    monkeypatch.setattr(session, "get_head_schema_revision", lambda: "mb76")
+
+    status = session.schema_status()
+
+    assert status["connected"] is True
+    assert status["current_revision"] is None
+    assert status["head_revision"] == "mb76"
+    assert status["ready"] is False
+
+
+def test_assert_schema_ready_passes_when_db_is_at_head(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        session,
+        "schema_status",
+        lambda: {
+            "connected": True,
+            "current_revision": "mb76",
+            "head_revision": "mb76",
+            "ready": True,
+        },
+    )
+
+    session.assert_schema_ready()
+
+
+def test_assert_schema_ready_raises_when_schema_uninitialized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        session,
+        "schema_status",
+        lambda: {
+            "connected": True,
+            "current_revision": None,
+            "head_revision": "mb76",
+            "ready": False,
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="alembic upgrade head"):
+        session.assert_schema_ready()
+
+
+def test_assert_schema_ready_raises_when_schema_is_behind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        session,
+        "schema_status",
+        lambda: {
+            "connected": True,
+            "current_revision": "mb75",
+            "head_revision": "mb76",
+            "ready": False,
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="Current revision: mb75. Head revision: mb76"):
+        session.assert_schema_ready()

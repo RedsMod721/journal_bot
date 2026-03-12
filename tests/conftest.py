@@ -1,56 +1,66 @@
-"""
-Global pytest fixtures for Status Window API tests.
+"""Shared pytest helpers.
 
-This module provides shared fixtures used across all test modules:
-- Database fixtures (in-memory SQLite for fast, isolated tests)
-- Test data generators (Faker)
-- Sample model instances (User, Theme, Skill)
-
-Usage:
-    def test_something(db_session, fake, sample_user):
-        # db_session: SQLAlchemy session for database operations
-        # fake: Faker instance for generating test data
-        # sample_user: Pre-created user instance
-        ...
+Default validation targets the canonical ``src`` stack. Legacy ``app``-stack
+tests are still available, but they are ignored unless
+``INCLUDE_LEGACY_APP_TESTS=1`` is set in the environment.
 """
 
-import pytest
+from __future__ import annotations
+
+import os
+from pathlib import Path
 from typing import Generator
 
+import pytest
+from faker import Faker
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.utils.database import Base
-from faker import Faker
-
-# Import all models to ensure SQLAlchemy registers them with Base.metadata
-# This is necessary for create_all() to create all tables with proper foreign keys
-from app.models.user import User  # noqa: F401
-from app.models.theme import Theme  # noqa: F401
-from app.models.skill import Skill  # noqa: F401
-from app.models.title import TitleTemplate, UserTitle  # noqa: F401
-import app.models.mission_quest  # noqa: F401
-from app.models.journal_entry import JournalEntry  # noqa: F401
-from app.models.user_stats import UserStats  # noqa: F401
-from app.models.event_log import EventLog  # noqa: F401
-from app.models.item import ItemTemplate, UserItem  # noqa: F401
-
-
-# Use in-memory SQLite for tests (fast, isolated, no cleanup needed)
 TEST_DATABASE_URL = "sqlite:///:memory:"
+_LEGACY_ENV_FLAG = "INCLUDE_LEGACY_APP_TESTS"
+_LEGACY_IMPORT_MARKERS = (
+    "from app.",
+    "import app.",
+    "app.main",
+    "app.utils.database",
+)
+
+
+def _is_legacy_app_test(path: Path) -> bool:
+    if path.suffix != ".py" or path.name == "conftest.py":
+        return False
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return False
+    return any(marker in text for marker in _LEGACY_IMPORT_MARKERS)
+
+
+def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
+    if os.getenv(_LEGACY_ENV_FLAG) == "1":
+        return False
+    return _is_legacy_app_test(collection_path)
+
+
+def _legacy_base():
+    from app.utils.database import Base
+    from app.models.user import User  # noqa: F401
+    from app.models.theme import Theme  # noqa: F401
+    from app.models.skill import Skill  # noqa: F401
+    from app.models.title import TitleTemplate, UserTitle  # noqa: F401
+    import app.models.mission_quest  # noqa: F401
+    from app.models.journal_entry import JournalEntry  # noqa: F401
+    from app.models.user_stats import UserStats  # noqa: F401
+    from app.models.event_log import EventLog  # noqa: F401
+    from app.models.item import ItemTemplate, UserItem  # noqa: F401
+
+    return Base
 
 
 @pytest.fixture(scope="function")
 def db_engine():
-    """
-    Create a fresh database engine for each test.
-
-    Uses in-memory SQLite for speed. Creates all tables before the test
-    and drops them after, ensuring complete isolation between tests.
-
-    Yields:
-        Engine: SQLAlchemy engine connected to in-memory database
-    """
+    """Create a fresh in-memory engine for legacy ``app`` tests."""
+    Base = _legacy_base()
     engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
     yield engine
@@ -59,18 +69,7 @@ def db_engine():
 
 @pytest.fixture(scope="function")
 def db_session(db_engine) -> Generator[Session, None, None]:
-    """
-    Create a database session for each test.
-
-    Provides a fresh session connected to the test database engine.
-    Session is automatically closed after the test completes.
-
-    Args:
-        db_engine: The database engine fixture
-
-    Yields:
-        Session: SQLAlchemy session for database operations
-    """
+    """Create a database session for each legacy ``app`` test."""
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=db_engine)
     session = SessionLocal()
     try:
@@ -81,44 +80,14 @@ def db_session(db_engine) -> Generator[Session, None, None]:
 
 @pytest.fixture
 def fake() -> Faker:
-    """
-    Faker instance for generating realistic test data.
-
-    Provides consistent fake data generation across tests.
-    Use for generating usernames, emails, text, dates, etc.
-
-    Returns:
-        Faker: Configured Faker instance
-
-    Example:
-        def test_user_creation(fake):
-            username = fake.user_name()
-            email = fake.email()
-            bio = fake.text(max_nb_chars=200)
-    """
+    """Faker instance for generating realistic test data."""
     return Faker()
-
-
-# =============================================================================
-# MODEL FIXTURES
-# =============================================================================
 
 
 @pytest.fixture
 def sample_user(db_session, fake):
-    """
-    Create a sample user for testing.
-
-    Provides a persisted User instance with realistic fake data.
-    Useful as a dependency for fixtures that require a user (themes, skills, etc.)
-
-    Args:
-        db_session: Database session fixture
-        fake: Faker instance fixture
-
-    Returns:
-        User: A persisted User instance
-    """
+    """Create a persisted sample user for legacy ``app`` tests."""
+    from app.models.user import User
 
     user = User(username=fake.user_name(), email=fake.email())
     db_session.add(user)
@@ -129,23 +98,13 @@ def sample_user(db_session, fake):
 
 @pytest.fixture
 def sample_theme(db_session, sample_user):
-    """
-    Create a sample theme for testing.
-
-    Provides a persisted Theme instance linked to a sample user.
-    Useful for testing theme-related functionality and as a dependency
-    for skill fixtures.
-
-    Args:
-        db_session: Database session fixture
-        sample_user: Sample user fixture
-
-    Returns:
-        Theme: A persisted Theme instance
-    """
+    """Create a persisted sample theme for legacy ``app`` tests."""
+    from app.models.theme import Theme
 
     theme = Theme(
-        user_id=sample_user.id, name="Education", description="Learning and growing"
+        user_id=sample_user.id,
+        name="Education",
+        description="Learning and growing",
     )
     db_session.add(theme)
     db_session.commit()
@@ -155,20 +114,8 @@ def sample_theme(db_session, sample_user):
 
 @pytest.fixture
 def sample_skill(db_session, sample_user, sample_theme):
-    """
-    Create a sample skill for testing.
-
-    Provides a persisted Skill instance linked to a sample user and theme.
-    Useful for testing skill-related functionality including XP and leveling.
-
-    Args:
-        db_session: Database session fixture
-        sample_user: Sample user fixture
-        sample_theme: Sample theme fixture
-
-    Returns:
-        Skill: A persisted Skill instance
-    """
+    """Create a persisted sample skill for legacy ``app`` tests."""
+    from app.models.skill import Skill
 
     skill = Skill(
         user_id=sample_user.id,

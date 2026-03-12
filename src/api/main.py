@@ -2,69 +2,109 @@
 FastAPI application for RPG Life Tracker.
 
 Run (development):
-    uvicorn src.api.main:app --reload --port 8000
+    uvicorn src.api.main:app --app-dir . --host 127.0.0.1 --port 8002 --reload
 
 Run (production):
-    uvicorn src.api.main:app --workers 4 --port 8000
+    uvicorn src.api.main:app --app-dir . --host 127.0.0.1 --port 8002 --workers 4
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import balance, forgiveness, harmony, jobs, journal, quests, skills, themes, users
-from src.db.session import check_connection, init_db
+from src.db.session import assert_schema_ready, check_connection, get_db, schema_status
 from src.jobs.scheduler import init_scheduler, shutdown_scheduler
 
 logger = logging.getLogger(__name__)
+_DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "config" / "dev.yaml"
+_DEFAULT_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+]
 
 
-# ---------------------------------------------------------------------------
-# Lifespan (replaces deprecated @app.on_event)
-# ---------------------------------------------------------------------------
+def _load_allowed_origins() -> list[str]:
+    """Resolve CORS origins from env, config, or safe local-development defaults."""
+    env_origins = os.getenv("CORS_ALLOW_ORIGINS")
+    if env_origins is not None:
+        parsed = [item.strip() for item in env_origins.split(",") if item.strip()]
+        return parsed or list(_DEFAULT_CORS_ORIGINS)
+
+    config_path = Path(os.getenv("CONFIG_PATH", str(_DEFAULT_CONFIG)))
+    if config_path.exists():
+        try:
+            import yaml  # type: ignore[import-untyped]
+
+            with config_path.open(encoding="utf-8") as fh:
+                cfg = yaml.safe_load(fh) or {}
+
+            origins = cfg.get("api", {}).get("cors_allow_origins")
+            if isinstance(origins, list):
+                parsed = [str(item).strip() for item in origins if str(item).strip()]
+                if parsed:
+                    return parsed
+        except Exception:
+            logger.warning("Could not load api.cors_allow_origins from %s", config_path)
+
+    return list(_DEFAULT_CORS_ORIGINS)
+
+
+def _using_dependency_overridden_db(app: FastAPI) -> bool:
+    """
+    Detect isolated tests that inject their own DB session via ``get_db``.
+
+    Canonical runtime startup must validate the configured ``src`` database and
+    may start the scheduler. Test suites often override ``get_db`` with an
+    in-memory SQLite session built directly from metadata; those helpers are
+    intentionally outside the Alembic-managed runtime path.
+    """
+    return get_db in app.dependency_overrides
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
-    """
-    Application lifespan handler.
-
-    Startup:  ensure all DB tables exist (idempotent CREATE IF NOT EXISTS).
-    Shutdown: log graceful teardown — connection pool cleanup is automatic.
-    """
+    """Manage startup and shutdown for the canonical ``src`` runtime."""
     logger.info("RPG Life Tracker API starting up.")
-    init_db()
+    scheduler_started = False
 
-    db_ok = check_connection()
-    if not db_ok:
-        logger.warning(
-            "Database connection check failed at startup — running degraded."
+    if _using_dependency_overridden_db(app):
+        logger.info(
+            "Detected dependency-overridden DB session; skipping canonical "
+            "schema startup checks and scheduler initialization."
         )
     else:
-        logger.info("Database connection OK.")
-
-    init_scheduler()
+        db_ok = check_connection()
+        if not db_ok:
+            logger.warning("Database connection check failed at startup; running degraded.")
+        else:
+            assert_schema_ready()
+            logger.info("Database connection OK and schema is at head.")
+            init_scheduler()
+            scheduler_started = True
 
     yield
 
-    shutdown_scheduler()
+    if scheduler_started:
+        shutdown_scheduler()
     logger.info("RPG Life Tracker API shutting down.")
-
-
-# ---------------------------------------------------------------------------
-# Application factory
-# ---------------------------------------------------------------------------
 
 
 app = FastAPI(
     title="RPG Life Tracker API",
     description=(
-        "Journal-based gamification system.  "
+        "Journal-based gamification system. "
         "Submit journal entries and track AI-powered XP, quests, and skill progression."
     ),
     version="1.0.0",
@@ -74,21 +114,15 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# ---------------------------------------------------------------------------
-# Middleware
-# ---------------------------------------------------------------------------
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: restrict to UI origin(s) before production
+    allow_origins=_load_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---------------------------------------------------------------------------
-# Routers
-# ---------------------------------------------------------------------------
 
 for prefix in ("/api", "/api/v1"):
     app.include_router(journal.router, prefix=prefix)
@@ -101,10 +135,6 @@ for prefix in ("/api", "/api/v1"):
     app.include_router(balance.router, prefix=prefix)
     app.include_router(harmony.router, prefix=prefix)
 
-# ---------------------------------------------------------------------------
-# System endpoints
-# ---------------------------------------------------------------------------
-
 
 @app.get("/health", tags=["system"], summary="API health check")
 def health_check() -> dict[str, Any]:
@@ -112,18 +142,22 @@ def health_check() -> dict[str, Any]:
     Lightweight liveness probe.
 
     Returns ``healthy`` when the API process is running and can reach the
-    database.  Degraded mode is reported when the DB is unreachable but the
-    process itself is alive (pipeline will use RecoveryQueue in that case).
+    canonical database at the current Alembic head revision. Degraded mode is
+    reported when the DB is unreachable or behind, while the process itself is
+    still alive.
     """
-    db_ok = check_connection()
-    status = "healthy" if db_ok else "degraded"
+    schema = schema_status()
+    status = "healthy" if schema["connected"] and schema["ready"] else "degraded"
     return {
         "status": status,
         "service": "RPG Life Tracker API",
-        "database": "connected" if db_ok else "unreachable",
+        "database": "connected" if schema["connected"] else "unreachable",
+        "schema_ready": schema["ready"],
+        "schema_revision": schema["current_revision"],
+        "schema_head": schema["head_revision"],
     }
 
 
 @app.get("/", tags=["system"], include_in_schema=False)
 def root() -> dict[str, str]:
-    return {"message": "RPG Life Tracker API — see /docs for usage."}
+    return {"message": "RPG Life Tracker API - see /docs for usage."}

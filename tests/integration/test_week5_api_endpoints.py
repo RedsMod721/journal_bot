@@ -125,7 +125,7 @@ def test_harmony_overwork_status_returns_effective_read_stage(
     seeded_user: User,
 ) -> None:
     now = datetime.now(timezone.utc)
-    for offset in range(4):
+    for offset in range(5):
         entry = JournalEntry(
             user_id=seeded_user.id,
             content="Work sprint",

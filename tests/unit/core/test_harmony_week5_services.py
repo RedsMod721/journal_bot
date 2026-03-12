@@ -98,7 +98,7 @@ def test_read_only_refresh_does_not_mutate_overwork_persistence(db_session: Sess
     user = _create_user(db_session)
     _create_balanced_config(db_session, user)
     now = datetime(2026, 3, 11, 12, 0, tzinfo=timezone.utc)
-    for offset in range(3):
+    for offset in range(5):
         _add_entry(
             db_session,
             user.id,

@@ -28,7 +28,7 @@ class HarmonyDimension(Base):
     """One row per user — 7 dimension scores + overwork tracking.
 
     Dimension scores are proportions in [0.0, 1.0] reflecting the share of
-    entries in a 30-day window that address each dimension.
+    entries in a rolling 7-day window that address each dimension.
     """
 
     __tablename__ = "harmony_dimensions"

@@ -275,6 +275,44 @@ def test_user_stats_endpoint(client: TestClient, seeded_user_id: str):
     assert stats["recent_gain"] >= 0
 
 
+def test_journal_submit_and_status_endpoints(client: TestClient, seeded_user_id: str):
+    submit_response = client.post(
+        "/api/journal/entries",
+        json={
+            "user_id": seeded_user_id,
+            "raw_text": "I practiced Python today.",
+        },
+    )
+    assert submit_response.status_code == 201
+
+    payload = submit_response.json()
+    assert payload["status"] == "submitted"
+    assert payload["entry_id"]
+
+    status_response = client.get(
+        f"/api/journal/entries/{payload['entry_id']}",
+        params={"user_id": seeded_user_id},
+    )
+    assert status_response.status_code == 200
+
+    status_payload = status_response.json()
+    assert status_payload["entry_id"] == payload["entry_id"]
+    assert status_payload["status"] in {"pending", "processing", "completed", "failed"}
+    assert status_payload["word_count"] == 4
+
+
+def test_openapi_exposes_public_journal_paths(client: TestClient):
+    response = client.get("/openapi.json")
+    assert response.status_code == 200
+
+    paths = response.json()["paths"]
+    assert "/api/journal/entries" in paths
+    assert "/api/journal/entries/{entry_id}" in paths
+    assert "/api/v1/journal/entries" in paths
+    assert "/api/api/journal/entries" not in paths
+    assert "/api/v1/api/journal/entries" not in paths
+
+
 def test_user_stats_endpoint_uses_demo_profile_fallback(
     client: TestClient, demo_user_id: str
 ):

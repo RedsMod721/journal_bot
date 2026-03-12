@@ -20,17 +20,11 @@ export function Journal() {
 
   const handleSubmit = async (text: string) => {
     if (!user) return;
-
-    try {
-      const response = await submitMutation.mutateAsync({
-        user_id: user.id,
-        raw_text: text,
-      });
-      setLatestEntryId(response.entry_id);
-    } catch {
-      // Error handled by mutation's onError toast — prevent JournalEditor
-      // from also showing an inline error for the same failure.
-    }
+    const response = await submitMutation.mutateAsync({
+      user_id: user.id,
+      raw_text: text,
+    });
+    setLatestEntryId(response.entry_id);
   };
 
   if (!user) {

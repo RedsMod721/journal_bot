@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ForgivenessSettings } from "@/components/settings/ForgivenessSettings";
@@ -81,7 +81,9 @@ describe("ForgivenessSettings", () => {
     expect(screen.getAllByText("Fast decay")).toHaveLength(2);
     expect(screen.getAllByText("Never decays")).toHaveLength(2);
 
-    await user.click(screen.getByRole("combobox"));
+    await act(async () => {
+      await user.click(screen.getByRole("combobox"));
+    });
 
     expect(await screen.findByRole("option", { name: "Balanced" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Lenient" })).toBeInTheDocument();

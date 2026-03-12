@@ -29,9 +29,9 @@ PostgreSQL notes:
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Iterator
+from typing import Any, Generator, Iterator
 
-from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -233,16 +233,16 @@ def db_session() -> Iterator[Session]:
 # ---------------------------------------------------------------------------
 def init_db() -> None:
     """
-    Create all tables defined in Base.metadata.
+    Create all tables defined in Base.metadata for isolated test databases.
 
-    Intended for initial setup and automated tests. In production, use Alembic
-    migrations instead. This function is idempotent (CREATE TABLE IF NOT EXISTS).
+    Production startup must rely on Alembic migrations instead of implicit
+    ``create_all`` bootstrap. This helper is retained for tests and one-off
+    local scratch databases only.
     """
     # Ensure the data directory exists for file-based SQLite
     _ensure_sqlite_parent_dir(DATABASE_URL)
 
     Base.metadata.create_all(bind=engine)
-    _ensure_sqlite_users_compat_columns()
     _create_sqlite_tenant_integrity_triggers()
 
 
@@ -336,3 +336,92 @@ def check_connection() -> bool:
         return True
     except Exception:
         return False
+
+
+def get_database_url() -> str:
+    """Return the active SQLAlchemy database URL used by the canonical stack."""
+    return DATABASE_URL
+
+
+def get_head_schema_revision() -> str | None:
+    """Return the Alembic head revision for the canonical ``src`` stack."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+    except Exception:
+        return None
+
+    cfg = Config(str(_REPO_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(_REPO_ROOT / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+    script = ScriptDirectory.from_config(cfg)
+    heads = sorted(script.get_heads())
+    return ",".join(heads) if heads else None
+
+
+def get_current_schema_revision() -> str | None:
+    """Return the current DB Alembic revision, or ``None`` if unversioned."""
+    try:
+        with engine.connect() as conn:
+            inspector = inspect(conn)
+            if "alembic_version" not in inspector.get_table_names():
+                return None
+
+            rows = conn.execute(text("SELECT version_num FROM alembic_version")).fetchall()
+            revisions = sorted(
+                row[0]
+                for row in rows
+                if row and isinstance(row[0], str) and row[0].strip()
+            )
+            return ",".join(revisions) if revisions else None
+    except Exception:
+        return None
+
+
+def schema_status() -> dict[str, Any]:
+    """Return connectivity and revision status for the canonical schema."""
+    connected = check_connection()
+    current_revision = get_current_schema_revision() if connected else None
+    head_revision = get_head_schema_revision()
+    return {
+        "connected": connected,
+        "current_revision": current_revision,
+        "head_revision": head_revision,
+        "ready": bool(
+            connected
+            and current_revision is not None
+            and head_revision is not None
+            and current_revision == head_revision
+        ),
+    }
+
+
+def assert_schema_ready() -> None:
+    """
+    Fail fast when the DB is reachable but not migrated to the current head.
+
+    The active ``src`` runtime must not bootstrap schema state via
+    ``Base.metadata.create_all``.
+    """
+    status = schema_status()
+    if not status["connected"]:
+        raise RuntimeError("Database connection check failed.")
+
+    current_revision = status["current_revision"]
+    head_revision = status["head_revision"]
+
+    if current_revision is None:
+        raise RuntimeError(
+            "Database schema is not initialized for the canonical src stack. "
+            "Run `alembic upgrade head` before starting the API."
+        )
+
+    if head_revision is None:
+        raise RuntimeError("Could not determine Alembic head revision.")
+
+    if current_revision != head_revision:
+        raise RuntimeError(
+            "Database schema is behind the canonical src stack. "
+            f"Current revision: {current_revision}. Head revision: {head_revision}. "
+            "Run `alembic upgrade head` before starting the API."
+        )

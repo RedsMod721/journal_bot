@@ -163,7 +163,7 @@ pip install -r requirements.txt
 python scripts/init_db.py
 
 # Run development server
-uvicorn src.api.main:app --reload
+uvicorn src.api.main:app --app-dir . --host 127.0.0.1 --port 8002 --reload
 ```
 
 ### Documentation

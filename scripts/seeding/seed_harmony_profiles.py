@@ -78,6 +78,10 @@ def _upsert_user(db, profile_spec: dict[str, Any]) -> User:
             id=profile_spec["id"],
             email=profile_spec["email"],
             password_hash="seeded_password_hash",
+            username=profile_spec["username"],
+            display_name=profile_spec["display_name"],
+            timezone=profile_spec["timezone"],
+            home_country=str(profile_spec.get("home_country", "FR")).upper(),
         )
         db.add(user)
         db.flush()

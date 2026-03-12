@@ -18,7 +18,7 @@ async function fetchThemesFromLocalFallback(userId: string): Promise<Theme[] | n
     return null;
   }
 
-  const fallbackBaseURL = baseURL.replace(":8000", ":8001");
+  const fallbackBaseURL = baseURL.replace(":8000", ":8002");
   if (fallbackBaseURL === baseURL) {
     return null;
   }

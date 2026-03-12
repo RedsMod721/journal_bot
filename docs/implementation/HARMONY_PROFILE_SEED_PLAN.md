@@ -134,7 +134,7 @@ For future harmony-profile generation, keep this sequence:
 
 ## Current Local DB Caveat
 
-The checked-in dev database at `data/db/rpg_life_tracker.db` is still on a legacy harmony/strategy schema, so this seed cannot be applied there without a schema rebuild or clean Week 5 database. The seed flow was validated successfully against a fresh Week 5 SQLite database at:
+The checked-in dev database at `data/db/rpg_life_tracker.db` may predate Alembic tracking. Repair/stamp that DB first with `scripts/db/repair_legacy_alembic_state.py`, then run `alembic upgrade head`, and only then run this seed. The seed flow was validated successfully against a fresh Week 5 SQLite database at:
 
 - `data/db/harmony_profiles_validation.db`
 
@@ -142,6 +142,6 @@ The checked-in dev database at `data/db/rpg_life_tracker.db` is still on a legac
 
 ```powershell
 $env:DATABASE_URL='sqlite:///c:/Users/vazqse01/journal_bot/data/db/harmony_profiles_validation.db'
-.\.venv\Scripts\python.exe -c "import src.db.models; from src.db.session import init_db; init_db()"
+.\.venv\Scripts\python.exe -m alembic upgrade head
 .\.venv\Scripts\python.exe scripts/seeding/seed_harmony_profiles.py
 ```

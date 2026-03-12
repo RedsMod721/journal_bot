@@ -15,16 +15,24 @@ from src.jobs.daily_decay_job import run_daily_decay_job
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
+SCHEDULE_CADENCE_MINUTES = 15
+LOCAL_CUTOFF_HOUR = 0
+LOCAL_CUTOFF_MINUTE = 15
 
 
 def init_scheduler() -> None:
     """Initialize and start the scheduler with all registered jobs."""
-    # Daily decay — runs at 2 AM UTC every day
+    if scheduler.running:
+        logger.info("Scheduler already running; skipping re-initialization")
+        return
+
+    # Run every 15 minutes; the job itself selects users whose local clock is
+    # past 00:15 and who have not already completed maintenance for that day.
     scheduler.add_job(
         run_daily_decay_job,
-        CronTrigger(hour=2, minute=0),
+        CronTrigger(minute=f"*/{SCHEDULE_CADENCE_MINUTES}"),
         id="daily_decay",
-        name="Daily Forgiveness Decay",
+        name="Daily Week 5 Maintenance",
         replace_existing=True,
     )
 

@@ -23,7 +23,7 @@ describe("forgivenessService", () => {
     postMock.mockReset();
   });
 
-  it("falls back to localhost:8001 when localhost:8000 returns 404 for config", async () => {
+  it("falls back to localhost:8002 when localhost:8000 returns 404 for config", async () => {
     getMock
       .mockResolvedValueOnce({
         status: 404,
@@ -54,7 +54,7 @@ describe("forgivenessService", () => {
     );
     expect(getMock).toHaveBeenNthCalledWith(
       2,
-      "http://localhost:8001/api/forgiveness/config",
+      "http://localhost:8002/api/forgiveness/config",
       expect.objectContaining({
         params: { user_id: "user-1" },
         validateStatus: expect.any(Function),
@@ -63,7 +63,7 @@ describe("forgivenessService", () => {
     expect(result.preset).toBe("balanced");
   });
 
-  it("falls back to localhost:8001 when localhost:8000 returns 404 for preset updates", async () => {
+  it("falls back to localhost:8002 when localhost:8000 returns 404 for preset updates", async () => {
     postMock
       .mockResolvedValueOnce({
         status: 404,
@@ -95,7 +95,7 @@ describe("forgivenessService", () => {
     );
     expect(postMock).toHaveBeenNthCalledWith(
       2,
-      "http://localhost:8001/api/forgiveness/config/preset",
+      "http://localhost:8002/api/forgiveness/config/preset",
       { preset: "custom" },
       expect.objectContaining({
         params: { user_id: "user-1" },
