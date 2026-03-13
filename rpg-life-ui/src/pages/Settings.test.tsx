@@ -15,6 +15,10 @@ vi.mock("@/components/settings/ForgivenessSettings", () => ({
   ForgivenessSettings: () => <div>Forgiveness Settings</div>,
 }));
 
+vi.mock("@/components/settings/PersonalityLikabilitySettings", () => ({
+  PersonalityLikabilitySettings: () => <div>Personality Likability Settings</div>,
+}));
+
 describe("Settings page preferences", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -89,6 +93,8 @@ describe("Settings page preferences", () => {
     );
 
     expect(await screen.findByText("Realm Rank Wording")).toBeInTheDocument();
+    expect(screen.getByText("Forgiveness Settings")).toBeInTheDocument();
+    expect(screen.getByText("Personality Likability Settings")).toBeInTheDocument();
     expect(presetsSpy).toHaveBeenCalledTimes(1);
     expect(preferencesSpy).toHaveBeenCalledTimes(1);
 

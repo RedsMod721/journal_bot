@@ -25,6 +25,14 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _coerce_non_negative_int(value: Any, default: int = 0) -> int:
+    """Return a safe non-negative integer for legacy/null quest counters."""
+    try:
+        return max(default, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
 # ---------------------------------------------------------------------------
 # Step 09
 # ---------------------------------------------------------------------------
@@ -124,7 +132,9 @@ def update_progress(
         if quest.completion_type == "cumulative":
             increment = max(1, len((entry.content or "").split()) // 50)
 
-        quest.current_progress = int(quest.current_progress or 0) + increment
+        quest.current_progress = (
+            _coerce_non_negative_int(quest.current_progress) + increment
+        )
         quest.updated_at_utc_ms = int(_now_utc().timestamp() * 1000)
 
         qp: QuestProgress | None = (
@@ -136,16 +146,30 @@ def update_progress(
             .one_or_none()
         )
         if qp is None:
-            qp = QuestProgress(user_id=user_id, quest_id=quest.id)
+            qp = QuestProgress(
+                user_id=user_id,
+                quest_id=quest.id,
+                progress_value=0,
+                streak_current=0,
+                streak_best=0,
+            )
             db.add(qp)
 
-        qp.progress_value = int(quest.current_progress)
+        qp.progress_value = _coerce_non_negative_int(quest.current_progress)
         if quest.completion_type == "streak":
-            qp.streak_current = max(1, qp.streak_current + 1)
-            qp.streak_best = max(qp.streak_best, qp.streak_current)
+            qp.streak_current = max(
+                _coerce_non_negative_int(qp.streak_current) + 1,
+                qp.progress_value,
+            )
+            qp.streak_best = max(
+                _coerce_non_negative_int(qp.streak_best),
+                qp.streak_current,
+            )
         qp.last_progress_date = _now_utc().strftime("%Y-%m-%d")
 
-        if quest.current_progress >= int(quest.required_progress or 1):
+        if quest.current_progress >= _coerce_non_negative_int(
+            quest.required_progress, default=1
+        ):
             quest.status = "completed"
             quest.completed_at = _now_utc()
             quest.completed_at_utc_ms = int(quest.completed_at.timestamp() * 1000)

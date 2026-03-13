@@ -25,6 +25,29 @@ class LikabilityService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def set_likability_scores(
+        self,
+        user_id: str,
+        likability_scores: dict[str, int],
+    ) -> PersonalityState:
+        """Persist absolute likability scores for all canonical personalities."""
+        state = (
+            self.db.query(PersonalityState)
+            .filter(PersonalityState.user_id == user_id)
+            .first()
+        )
+        if not state:
+            state = PersonalityState(user_id=user_id)
+            self.db.add(state)
+            self.db.flush()
+
+        for personality, column in PERSONALITY_LIKABILITY_COLUMN.items():
+            setattr(state, column, likability_scores[personality])
+
+        self.db.commit()
+        self.db.refresh(state)
+        return state
+
     def apply_feedback(
         self,
         user_id: str,

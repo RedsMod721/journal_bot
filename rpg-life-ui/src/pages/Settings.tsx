@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useRealmPreferences } from "@/hooks/useRealmPreferences";
 import { ForgivenessSettings } from "@/components/settings/ForgivenessSettings";
+import { PersonalityLikabilitySettings } from "@/components/settings/PersonalityLikabilitySettings";
 
 export function Settings() {
   const {
@@ -123,6 +124,7 @@ export function Settings() {
       </Card>
 
       <ForgivenessSettings />
+      <PersonalityLikabilitySettings />
     </div>
   );
 }

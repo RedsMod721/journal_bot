@@ -4,6 +4,7 @@ Read/update operations for personality state and message retrieval.
 
 Architecture references:
     §3.4.1  GET /personality/state
+    §3.4.1  PATCH /personality/state
     §3.4.3  POST /personality/feedback
     §3.4.2  GET /personality/messages
 """
@@ -11,10 +12,10 @@ Architecture references:
 from __future__ import annotations
 
 import json
-from typing import Dict, List, Optional
+from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.core.personality_likability import LikabilityService
@@ -34,6 +35,23 @@ class PersonalityStateResponse(BaseModel):
     likability_scores: Dict[str, int]
     switch_cooldown_seconds: int
     multi_personality_annotations: int
+
+
+class LikabilityScoresPayload(BaseModel):
+    observer: Annotated[int, Field(ge=0, le=100)]
+    therapist: Annotated[int, Field(ge=0, le=100)]
+    coach: Annotated[int, Field(ge=0, le=100)]
+    sassy: Annotated[int, Field(ge=0, le=100)]
+    wargod: Annotated[int, Field(ge=0, le=100)]
+    raphael: Annotated[int, Field(ge=0, le=100)]
+
+    model_config = {"extra": "forbid"}
+
+
+class ManualLikabilityUpdateRequest(BaseModel):
+    likability_scores: LikabilityScoresPayload
+
+    model_config = {"extra": "forbid"}
 
 
 class LikabilityUpdateRequest(BaseModel):
@@ -105,6 +123,21 @@ def get_personality_state(
     Creates a default state row if none exists yet.
     """
     state = _get_or_create_state(user_id, db)
+    return _state_to_response(state)
+
+
+@router.patch("/state", response_model=PersonalityStateResponse)
+def update_personality_state(
+    request: ManualLikabilityUpdateRequest,
+    user_id: str = Query(..., description="User UUID"),
+    db: Session = Depends(get_db),
+) -> PersonalityStateResponse:
+    """Persist manually configured likability scores for a user."""
+    service = LikabilityService(db)
+    state = service.set_likability_scores(
+        user_id=user_id,
+        likability_scores=request.likability_scores.model_dump(),
+    )
     return _state_to_response(state)
 
 

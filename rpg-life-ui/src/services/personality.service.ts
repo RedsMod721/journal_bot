@@ -1,8 +1,20 @@
 import apiClient, { apiPath } from "@/lib/api";
 
+export const PERSONALITY_IDS = [
+  "observer",
+  "therapist",
+  "coach",
+  "sassy",
+  "wargod",
+  "raphael",
+] as const;
+
+export type PersonalityId = (typeof PERSONALITY_IDS)[number];
+export type LikabilityScores = Record<PersonalityId, number>;
+
 export interface PersonalityStateResponse {
-  active_personality: string;
-  likability_scores: Record<string, number>;
+  active_personality: PersonalityId;
+  likability_scores: LikabilityScores;
   switch_cooldown_seconds: number;
   multi_personality_annotations: number;
 }
@@ -10,7 +22,7 @@ export interface PersonalityStateResponse {
 export interface PersonalityMessageResponse {
   id: string;
   entry_id: string;
-  personality: string;
+  personality: PersonalityId;
   message_type: string;
   message_text: string;
   context_data: Record<string, unknown>;
@@ -23,11 +35,15 @@ export interface PersonalityFeedbackPayload {
 }
 
 export interface PersonalityFeedbackResponse {
-  personality: string;
+  personality: PersonalityId;
   old_likability: number;
   new_likability: number;
   delta: number;
   impact_multiplier: number;
+}
+
+export interface UpdateLikabilityScoresPayload {
+  likability_scores: LikabilityScores;
 }
 
 export const personalityService = {
@@ -56,6 +72,20 @@ export const personalityService = {
     const { data } = await apiClient.post(apiPath("/personality/feedback"), payload, {
       params: { user_id: userId },
     });
+    return data;
+  },
+
+  updateLikabilityScores: async (
+    userId: string,
+    likabilityScores: LikabilityScores
+  ): Promise<PersonalityStateResponse> => {
+    const { data } = await apiClient.patch(
+      apiPath("/personality/state"),
+      { likability_scores: likabilityScores },
+      {
+        params: { user_id: userId },
+      }
+    );
     return data;
   },
 };

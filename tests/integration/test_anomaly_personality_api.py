@@ -322,6 +322,99 @@ def test_personality_state_endpoint_bootstraps_and_reuses_state(
     assert second.json()["active_personality"] == "coach"
 
 
+def test_personality_state_patch_updates_bootstrapped_state(
+    client: TestClient,
+    db_session: Session,
+    seeded_user: User,
+) -> None:
+    response = client.patch(
+        "/api/v1/personality/state",
+        params={"user_id": seeded_user.id},
+        json={
+            "likability_scores": {
+                "observer": 10,
+                "therapist": 20,
+                "coach": 30,
+                "sassy": 40,
+                "wargod": 50,
+                "raphael": 60,
+            }
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["likability_scores"] == {
+        "observer": 10,
+        "therapist": 20,
+        "coach": 30,
+        "sassy": 40,
+        "wargod": 50,
+        "raphael": 60,
+    }
+    assert payload["active_personality"] == "observer"
+
+    state = db_session.query(PersonalityState).filter_by(user_id=seeded_user.id).one()
+    assert state.likability_observer == 10
+    assert state.likability_therapist == 20
+    assert state.likability_coach == 30
+    assert state.likability_sassy == 40
+    assert state.likability_wargod == 50
+    assert state.likability_raphael == 60
+
+
+def test_personality_state_patch_validates_likability_payload(
+    client: TestClient,
+    seeded_user: User,
+) -> None:
+    out_of_range = client.patch(
+        "/api/v1/personality/state",
+        params={"user_id": seeded_user.id},
+        json={
+            "likability_scores": {
+                "observer": 101,
+                "therapist": 20,
+                "coach": 30,
+                "sassy": 40,
+                "wargod": 50,
+                "raphael": 60,
+            }
+        },
+    )
+    assert out_of_range.status_code == 422
+
+    missing_key = client.patch(
+        "/api/v1/personality/state",
+        params={"user_id": seeded_user.id},
+        json={
+            "likability_scores": {
+                "observer": 10,
+                "therapist": 20,
+                "coach": 30,
+                "sassy": 40,
+                "wargod": 50,
+            }
+        },
+    )
+    assert missing_key.status_code == 422
+
+    unknown_key = client.patch(
+        "/api/v1/personality/state",
+        params={"user_id": seeded_user.id},
+        json={
+            "likability_scores": {
+                "observer": 10,
+                "therapist": 20,
+                "coach": 30,
+                "sassy": 40,
+                "wargod": 50,
+                "raphael": 60,
+                "mystic": 70,
+            }
+        },
+    )
+    assert unknown_key.status_code == 422
+
+
 def test_personality_feedback_applies_multiplier_and_validates_input(
     client: TestClient,
     db_session: Session,
@@ -372,6 +465,54 @@ def test_personality_feedback_applies_multiplier_and_validates_input(
 
     db_session.refresh(state)
     assert state.likability_coach == 67
+
+
+def test_personality_feedback_applies_on_top_of_manual_likability_save(
+    client: TestClient,
+    db_session: Session,
+    seeded_user: User,
+    completed_entry: JournalEntry,
+) -> None:
+    patched = client.patch(
+        "/api/v1/personality/state",
+        params={"user_id": seeded_user.id},
+        json={
+            "likability_scores": {
+                "observer": 80,
+                "therapist": 70,
+                "coach": 42,
+                "sassy": 50,
+                "wargod": 40,
+                "raphael": 60,
+            }
+        },
+    )
+    assert patched.status_code == 200
+
+    message = PersonalityMessage(
+        id="cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd",
+        user_id=seeded_user.id,
+        entry_id=completed_entry.id,
+        personality="coach",
+        message_type="entry_feedback",
+        message_text="Stay with the reps.",
+        logical_slot_key="manual-save-regression",
+        context_data="{}",
+    )
+    db_session.add(message)
+    db_session.commit()
+
+    feedback = client.post(
+        "/api/v1/personality/feedback",
+        params={"user_id": seeded_user.id},
+        json={"message_id": message.id, "feedback_type": "thumbs_up"},
+    )
+    assert feedback.status_code == 200
+    assert feedback.json()["old_likability"] == 42
+    assert feedback.json()["new_likability"] == 47
+
+    state = db_session.query(PersonalityState).filter_by(user_id=seeded_user.id).one()
+    assert state.likability_coach == 47
 
 
 def test_personality_feedback_returns_404_for_missing_rows(
