@@ -32,13 +32,20 @@ export function useJournalEntryStatus(jobId: string, userId: string, enabled: bo
     }
 
     invalidatedJobId.current = jobId;
+    const entryId = query.data?.entry_id;
     void queryClient.invalidateQueries({ queryKey: ["skills", userId] });
     void queryClient.invalidateQueries({ queryKey: ["quests", userId] });
     void queryClient.invalidateQueries({ queryKey: ["userStats", userId] });
     void queryClient.invalidateQueries({ queryKey: ["recentAnomalies", userId] });
     void queryClient.invalidateQueries({ queryKey: ["personalityState", userId] });
     void queryClient.invalidateQueries({ queryKey: ["personalityMessages", userId] });
-  }, [jobId, query.data?.status, queryClient, userId]);
+    void queryClient.invalidateQueries({ queryKey: ["journalEntries", userId] });
+    if (entryId) {
+      void queryClient.invalidateQueries({
+        queryKey: ["journalEntryDetail", userId, entryId],
+      });
+    }
+  }, [jobId, query.data?.entry_id, query.data?.status, queryClient, userId]);
 
   return query;
 }

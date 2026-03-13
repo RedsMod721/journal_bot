@@ -12,6 +12,7 @@ export function useJournalSubmit() {
       queryClient.invalidateQueries({ queryKey: ["skills"] });
       queryClient.invalidateQueries({ queryKey: ["quests"] });
       queryClient.invalidateQueries({ queryKey: ["userStats"] });
+      queryClient.invalidateQueries({ queryKey: ["journalEntries"] });
 
       toast({
         title: "Entry Submitted!",

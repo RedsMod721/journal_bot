@@ -302,9 +302,10 @@ def test_openapi_exposes_canonical_entry_processing_paths_only(client: TestClien
     paths = response.json()["paths"]
     assert "/api/v1/entries" in paths
     assert "/api/v1/entry-jobs/{job_id}" in paths
+    assert "/api/v1/journal/entries" in paths
+    assert "/api/v1/journal/entries/{entry_id}/detail" in paths
     assert "/api/journal/entries" not in paths
     assert "/api/journal/entries/{entry_id}" not in paths
-    assert "/api/v1/journal/entries" not in paths
     assert "/api/entries" not in paths
 
 

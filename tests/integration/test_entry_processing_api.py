@@ -142,12 +142,48 @@ def test_sync_mode_returns_terminal_success_and_replays(
             .one()
         )
         result = {
+            "result_type": "success",
             "status": "completed",
             "entry_id": entry_id,
             "user_id": user_id,
             "job_id": job.id,
             "processing_run_id": job.processing_run_id,
             "poll_path": f"/api/v1/entry-jobs/{job.id}",
+            "message": "Primary reply",
+            "message_id": "msg-primary",
+            "personality": "coach",
+            "personality_messages": [
+                {
+                    "id": "msg-primary",
+                    "entry_id": entry_id,
+                    "personality": "coach",
+                    "message_type": "entry_feedback",
+                    "message_text": "Primary reply",
+                    "logical_slot_key": "primary",
+                    "context_data": {},
+                    "multi_personality": {
+                        "is_primary": True,
+                        "primary_personality": "coach",
+                        "impact_multiplier": 1.0,
+                    },
+                    "created_at": "2026-03-13T12:00:00.000Z",
+                },
+                {
+                    "id": "msg-secondary",
+                    "entry_id": entry_id,
+                    "personality": "observer",
+                    "message_type": "entry_feedback",
+                    "message_text": "Secondary reply",
+                    "logical_slot_key": "secondary",
+                    "context_data": {},
+                    "multi_personality": {
+                        "is_primary": False,
+                        "primary_personality": "coach",
+                        "impact_multiplier": 0.5,
+                    },
+                    "created_at": "2026-03-13T12:00:01.000Z",
+                },
+            ],
         }
         entry.status = "completed"
         job.status = "succeeded"
@@ -186,6 +222,28 @@ def test_sync_mode_returns_terminal_success_and_replays(
     assert response.status_code == 200
     result = response.json()
     assert result["status"] == "completed"
+    assert [row["id"] for row in result["personality_messages"]] == [
+        "msg-primary",
+        "msg-secondary",
+    ]
+    assert result["message"] == "Primary reply"
+    assert result["message_id"] == "msg-primary"
+    assert result["personality"] == "coach"
+
+    poll = client.get(
+        f"/api/v1/entry-jobs/{result['job_id']}",
+        params={"user_id": seeded_user.id},
+    )
+    assert poll.status_code == 200
+    poll_payload = poll.json()
+    assert poll_payload["status"] == "completed"
+    assert [row["id"] for row in poll_payload["terminal_result"]["personality_messages"]] == [
+        "msg-primary",
+        "msg-secondary",
+    ]
+    assert poll_payload["terminal_result"]["message"] == "Primary reply"
+    assert poll_payload["terminal_result"]["message_id"] == "msg-primary"
+    assert poll_payload["terminal_result"]["personality"] == "coach"
 
     replay = client.post("/api/v1/entries", json=payload)
     assert replay.status_code == 200

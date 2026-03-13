@@ -11,13 +11,13 @@ Architecture references:
 
 from __future__ import annotations
 
-import json
 from typing import Annotated, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from src.core.personality_message_serialization import serialize_personality_messages
 from src.core.personality_likability import LikabilityService
 from src.db.models.personality import PersonalityMessage, PersonalityState
 from src.db.session import get_db
@@ -73,7 +73,9 @@ class PersonalityMessageResponse(BaseModel):
     personality: str
     message_type: str
     message_text: str
+    logical_slot_key: str
     context_data: Dict[str, object]
+    multi_personality: Dict[str, object]
     created_at: str
 
 
@@ -198,14 +200,6 @@ def get_personality_messages(
     messages = q.order_by(PersonalityMessage.created_at.desc()).limit(limit).all()
 
     return [
-        PersonalityMessageResponse(
-            id=m.id,
-            entry_id=m.entry_id,
-            personality=m.personality,
-            message_type=m.message_type,
-            message_text=m.message_text,
-            context_data=json.loads(m.context_data or "{}"),
-            created_at=m.created_at.isoformat() + "Z",
-        )
-        for m in messages
+        PersonalityMessageResponse(**payload)
+        for payload in serialize_personality_messages(messages)
     ]

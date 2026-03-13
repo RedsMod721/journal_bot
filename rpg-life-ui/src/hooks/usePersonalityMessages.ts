@@ -4,12 +4,23 @@ import {
   PersonalityFeedbackPayload,
 } from "@/services/personality.service";
 
-export function usePersonalityMessages(userId: string, entryId?: string, enabled = true) {
+interface UsePersonalityMessagesOptions {
+  enabled?: boolean;
+  limit?: number;
+  refetchInterval?: number | false;
+}
+
+export function usePersonalityMessages(
+  userId: string,
+  entryId?: string,
+  options?: UsePersonalityMessagesOptions
+) {
   return useQuery({
     queryKey: ["personalityMessages", userId, entryId ?? "all"],
-    queryFn: () => personalityService.getMessages(userId, entryId),
-    enabled: enabled && !!userId,
+    queryFn: () => personalityService.getMessages(userId, entryId, options?.limit),
+    enabled: (options?.enabled ?? true) && !!userId,
     staleTime: 30_000,
+    refetchInterval: options?.refetchInterval ?? false,
   });
 }
 

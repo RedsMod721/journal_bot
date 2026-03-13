@@ -32,6 +32,7 @@ from src.db.session import SessionLocal, get_db
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/journal", tags=["journal"])
+browse_router = APIRouter(prefix="/journal", tags=["journal"])
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +98,31 @@ class JournalEntryListItem(BaseModel):
     word_count: int
     created_at: datetime
     processed_at: Optional[datetime]
+
+
+class JournalEntryBrowseItem(BaseModel):
+    """Compact entry metadata used by the journal thread navigator."""
+
+    entry_id: str
+    status: str
+    word_count: int
+    preview_text: str
+    question_state: str
+    created_at: datetime
+    processed_at: Optional[datetime]
+
+
+class JournalEntryDetailResponse(BaseModel):
+    """Full entry payload used by the journal transcript view."""
+
+    entry_id: str
+    content: str
+    status: str
+    question_state: str
+    created_at: datetime
+    processed_at: Optional[datetime]
+    processing_duration_ms: Optional[int]
+    error_message: Optional[str]
 
 
 class JournalProcessingResult(BaseModel):
@@ -172,6 +198,13 @@ def _word_count(text: str) -> int:
     return len(text.split())
 
 
+def _preview_text(text: str, limit: int = 160) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 1].rstrip() + "…"
+
+
 def _entry_to_status(entry: JournalEntry) -> JournalEntryStatus:
     return JournalEntryStatus(
         entry_id=entry.id,
@@ -192,6 +225,31 @@ def _entry_to_list_item(entry: JournalEntry) -> dict[str, Any]:
         "created_at": entry.created_at,
         "processed_at": entry.processed_at,
     }
+
+
+def _entry_to_browse_item(entry: JournalEntry) -> JournalEntryBrowseItem:
+    return JournalEntryBrowseItem(
+        entry_id=entry.id,
+        status=entry.status,
+        word_count=_word_count(entry.content),
+        preview_text=_preview_text(entry.content),
+        question_state=entry.question_state,
+        created_at=entry.created_at,
+        processed_at=entry.processed_at,
+    )
+
+
+def _entry_to_detail(entry: JournalEntry) -> JournalEntryDetailResponse:
+    return JournalEntryDetailResponse(
+        entry_id=entry.id,
+        content=entry.content,
+        status=entry.status,
+        question_state=entry.question_state,
+        created_at=entry.created_at,
+        processed_at=entry.processed_at,
+        processing_duration_ms=entry.processing_duration_ms,
+        error_message=entry.error_message,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -415,3 +473,63 @@ def process_entry_with_hierarchy(
         entry_id=entry_id,
         **results,
     )
+
+
+@browse_router.get(
+    "/entries",
+    response_model=list[JournalEntryBrowseItem],
+    summary="List journal entries for journal-thread navigation",
+)
+def list_journal_entries_for_thread_view(
+    user_id: Annotated[str, Query(description="User UUID")],
+    skip: Annotated[int, Query(ge=0, description="Pagination offset")] = 0,
+    limit: Annotated[int, Query(ge=1, le=100, description="Max results")] = 20,
+    status: Annotated[
+        Optional[str],
+        Query(
+            description="Filter by status: pending | processing | completed | failed"
+        ),
+    ] = None,
+    db: Session = Depends(get_db),
+) -> list[JournalEntryBrowseItem]:
+    valid_statuses = {"pending", "processing", "completed", "failed", "pending_other_type"}
+    if status and status not in valid_statuses:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid status {status!r}. Must be one of: {sorted(valid_statuses)}.",
+        )
+
+    query = db.query(JournalEntry).filter(JournalEntry.user_id == user_id)
+    if status:
+        query = query.filter(JournalEntry.status == status)
+
+    entries = (
+        query.order_by(JournalEntry.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return [_entry_to_browse_item(entry) for entry in entries]
+
+
+@browse_router.get(
+    "/entries/{entry_id}/detail",
+    response_model=JournalEntryDetailResponse,
+    summary="Get full journal entry detail for transcript rendering",
+)
+def get_journal_entry_detail(
+    entry_id: str,
+    user_id: Annotated[str, Query(description="Owner user UUID for tenant isolation")],
+    db: Session = Depends(get_db),
+) -> JournalEntryDetailResponse:
+    entry = (
+        db.query(JournalEntry)
+        .filter(JournalEntry.id == entry_id, JournalEntry.user_id == user_id)
+        .first()
+    )
+    if entry is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Entry {entry_id!r} not found.",
+        )
+    return _entry_to_detail(entry)

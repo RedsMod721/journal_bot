@@ -72,8 +72,10 @@ from src.ai.steps import variety as _s_variety
 from src.core.forgiveness_decay_service import ForgivenessDecayService
 from src.core.harmony_classifier import HarmonyClassifier
 from src.core.harmony_refresh_service import HarmonyRefreshService
+from src.core.personality_message_serialization import serialize_personality_messages
 from src.core.personality_orchestrator import PersonalityOrchestrator
 from src.db.models.journal_entry import JournalEntry, JournalEntryStructured
+from src.db.models.personality import PersonalityMessage
 from src.db.models.server_config import ServerConfig
 from src.db.models.user import User
 from src.db.models.processing import (
@@ -159,6 +161,16 @@ def _safe_local_event_date(tz_name: str, created_at_utc: datetime) -> str:
 
 def _config_version() -> str:
     return "config-v1"
+
+
+def _pick_primary_personality_message(
+    serialized_messages: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    for message in serialized_messages:
+        multi = message.get("multi_personality")
+        if isinstance(multi, dict) and bool(multi.get("is_primary", False)):
+            return message
+    return serialized_messages[0] if serialized_messages else None
 
 
 @dataclass
@@ -1547,6 +1559,19 @@ class PipelineProcessor:
                     db=db,
                 ),
             )
+            persisted_personality_messages = serialize_personality_messages(
+                db.query(PersonalityMessage)
+                .filter(
+                    PersonalityMessage.user_id == ctx.user_id,
+                    PersonalityMessage.entry_id == ctx.entry_id,
+                )
+                .order_by(
+                    PersonalityMessage.created_at.asc(),
+                    PersonalityMessage.logical_slot_key.asc(),
+                    PersonalityMessage.id.asc(),
+                )
+                .all()
+            )
 
             processing_completed_at = _iso8601z(entry.processed_at or _now_utc())
             ctx.time.processing_completed_at_utc = processing_completed_at
@@ -1564,6 +1589,7 @@ class PipelineProcessor:
                 insight_out=insight_out,
                 anomaly_out=anomaly_persisted,
                 personality_out=personality_out,
+                persisted_personality_messages=persisted_personality_messages,
                 summary=summary,
                 finalize=finalize,
             )
@@ -1618,6 +1644,7 @@ class PipelineProcessor:
         insight_out: dict[str, Any],
         anomaly_out: dict[str, Any],
         personality_out: dict[str, Any],
+        persisted_personality_messages: list[dict[str, Any]],
         summary: dict[str, Any],
         finalize: dict[str, Any],
     ) -> dict[str, Any]:
@@ -1626,6 +1653,9 @@ class PipelineProcessor:
         succeeded = [m for m in ctx.step_metrics if m.status == "succeeded"]
         structured_data = dict(plan["structured_data"])
         structured_data["structured_id"] = structured["structured_id"]
+        primary_message = _pick_primary_personality_message(
+            persisted_personality_messages
+        )
 
         payload = asdict(
             EntryProcessingSuccessResult(
@@ -1664,21 +1694,12 @@ class PipelineProcessor:
                 arc_updates=[],
                 anomaly_score=float(anomaly_out.get("score", 0.0)),
                 troll_multiplier=float(anomaly_out.get("troll_multiplier", 1.0)),
-                personality_messages=[
-                    {
-                        "message_id": personality_out.get("message_id"),
-                        "personality": personality_out.get("personality"),
-                        "message": personality_out.get("message"),
-                        "message_type": plan["personality_plan"].get(
-                            "message_type", "entry_feedback"
-                        ),
-                        "context_data": personality_out.get(
-                            "context_data",
-                            plan["personality_plan"].get("context_data", {}),
-                        ),
-                    }
-                ],
-                active_personality=personality_out.get("personality"),
+                personality_messages=persisted_personality_messages,
+                active_personality=(
+                    primary_message.get("personality")
+                    if primary_message is not None
+                    else personality_out.get("personality")
+                ),
                 processing_duration_ms=int(finalize.get("processing_duration_ms", 0)),
                 steps_attempted=len(ctx.step_metrics),
                 steps_succeeded=len(succeeded),
@@ -1691,9 +1712,21 @@ class PipelineProcessor:
                 job_id=ctx.job_id,
                 poll_path=f"/api/v1/entry-jobs/{ctx.job_id}",
                 summary=summary,
-                message=personality_out.get("message", ""),
-                message_id=personality_out.get("message_id"),
-                personality=personality_out.get("personality"),
+                message=(
+                    str(primary_message.get("message_text", ""))
+                    if primary_message is not None
+                    else personality_out.get("message", "")
+                ),
+                message_id=(
+                    str(primary_message.get("id"))
+                    if primary_message is not None and primary_message.get("id") is not None
+                    else personality_out.get("message_id")
+                ),
+                personality=(
+                    str(primary_message.get("personality"))
+                    if primary_message is not None and primary_message.get("personality") is not None
+                    else personality_out.get("personality")
+                ),
                 meta={
                     "degraded": bool(fallbacks),
                     "degraded_codes": sorted(

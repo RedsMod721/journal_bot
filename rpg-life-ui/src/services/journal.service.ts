@@ -43,6 +43,27 @@ export interface JournalEntryStatusResponse {
   };
 }
 
+export interface JournalEntryListItem {
+  entry_id: string;
+  status: string;
+  word_count: number;
+  preview_text: string;
+  question_state: string;
+  created_at: string;
+  processed_at?: string | null;
+}
+
+export interface JournalEntryDetailResponse {
+  entry_id: string;
+  content: string;
+  status: string;
+  question_state: string;
+  created_at: string;
+  processed_at?: string | null;
+  processing_duration_ms?: number | null;
+  error_message?: string | null;
+}
+
 export const journalService = {
   submitEntry: async (params: JournalSubmitParams): Promise<JournalSubmitResponse> => {
     const content = params.content ?? params.raw_text ?? "";
@@ -61,6 +82,31 @@ export const journalService = {
     userId: string
   ): Promise<JournalEntryStatusResponse> => {
     const { data } = await apiClient.get(apiPath(`/v1/entry-jobs/${jobId}`), {
+      params: { user_id: userId },
+    });
+    return data;
+  },
+
+  getEntries: async (
+    userId: string,
+    params?: { limit?: number; skip?: number; status?: string }
+  ): Promise<JournalEntryListItem[]> => {
+    const { data } = await apiClient.get(apiPath("/v1/journal/entries"), {
+      params: {
+        user_id: userId,
+        limit: params?.limit ?? 20,
+        skip: params?.skip ?? 0,
+        status: params?.status,
+      },
+    });
+    return data;
+  },
+
+  getEntryDetail: async (
+    entryId: string,
+    userId: string
+  ): Promise<JournalEntryDetailResponse> => {
+    const { data } = await apiClient.get(apiPath(`/v1/journal/entries/${entryId}/detail`), {
       params: { user_id: userId },
     });
     return data;

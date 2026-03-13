@@ -25,7 +25,13 @@ export interface PersonalityMessageResponse {
   personality: PersonalityId;
   message_type: string;
   message_text: string;
+  logical_slot_key: string;
   context_data: Record<string, unknown>;
+  multi_personality: {
+    is_primary: boolean;
+    primary_personality: PersonalityId | string;
+    impact_multiplier: number;
+  };
   created_at: string;
 }
 
@@ -57,7 +63,7 @@ export const personalityService = {
   getMessages: async (
     userId: string,
     entryId?: string,
-    limit = 5
+    limit = 50
   ): Promise<PersonalityMessageResponse[]> => {
     const { data } = await apiClient.get(apiPath("/personality/messages"), {
       params: { user_id: userId, entry_id: entryId, limit },

@@ -586,8 +586,36 @@ def test_personality_messages_endpoint_filters_and_parses_context(
                 message_type="entry_feedback",
                 message_text="Structured and steady.",
                 logical_slot_key="primary",
-                context_data=json.dumps({"selection_reason": "baseline"}),
+                context_data=json.dumps(
+                    {
+                        "selection_reason": "baseline",
+                        "multi_personality": {
+                            "is_primary": True,
+                            "primary_personality": "observer",
+                            "impact_multiplier": 1.0,
+                        },
+                    }
+                ),
                 created_at=datetime(2026, 3, 13, 9, 0, tzinfo=timezone.utc),
+            ),
+            PersonalityMessage(
+                id="56565656-5656-5656-5656-565656565656",
+                user_id=seeded_user.id,
+                entry_id=completed_entry.id,
+                personality="coach",
+                message_type="entry_feedback",
+                message_text="Keep the pace.",
+                logical_slot_key="secondary",
+                context_data=json.dumps(
+                    {
+                        "multi_personality": {
+                            "is_primary": False,
+                            "primary_personality": "observer",
+                            "impact_multiplier": 0.5,
+                        }
+                    }
+                ),
+                created_at=datetime(2026, 3, 13, 9, 5, tzinfo=timezone.utc),
             ),
             PersonalityMessage(
                 id="34343434-3434-3434-3434-343434343434",
@@ -612,9 +640,16 @@ def test_personality_messages_endpoint_filters_and_parses_context(
     payload = all_messages.json()
     assert [row["id"] for row in payload] == [
         "34343434-3434-3434-3434-343434343434",
+        "56565656-5656-5656-5656-565656565656",
         "12121212-1212-1212-1212-121212121212",
     ]
     assert payload[0]["context_data"] == {"severity": "medium"}
+    assert payload[0]["logical_slot_key"] == "safety"
+    assert payload[0]["multi_personality"] == {
+        "is_primary": False,
+        "primary_personality": "therapist",
+        "impact_multiplier": 0.5,
+    }
     assert payload[0]["created_at"].endswith("Z")
 
     filtered = client.get(
@@ -623,5 +658,17 @@ def test_personality_messages_endpoint_filters_and_parses_context(
     )
     assert filtered.status_code == 200
     filtered_payload = filtered.json()
-    assert len(filtered_payload) == 1
+    assert len(filtered_payload) == 2
     assert filtered_payload[0]["entry_id"] == completed_entry.id
+    assert filtered_payload[0]["logical_slot_key"] == "secondary"
+    assert filtered_payload[0]["multi_personality"] == {
+        "is_primary": False,
+        "primary_personality": "observer",
+        "impact_multiplier": 0.5,
+    }
+    assert filtered_payload[1]["logical_slot_key"] == "primary"
+    assert filtered_payload[1]["multi_personality"] == {
+        "is_primary": True,
+        "primary_personality": "observer",
+        "impact_multiplier": 1.0,
+    }

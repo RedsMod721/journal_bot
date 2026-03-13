@@ -21,7 +21,9 @@ export function Profile() {
   const { user } = useUser();
   const { data: stats, isLoading, error } = useUserStats(user?.id ?? "");
   const personalityStateQuery = usePersonalityState(user?.id ?? "", !!user?.id);
-  const personalityMessagesQuery = usePersonalityMessages(user?.id ?? "", undefined, !!user?.id);
+  const personalityMessagesQuery = usePersonalityMessages(user?.id ?? "", undefined, {
+    enabled: !!user?.id,
+  });
   const recentAnomaliesQuery = useRecentAnomalies(user?.id ?? "", !!user?.id);
   const feedbackMutation = usePersonalityFeedback(user?.id ?? "");
 

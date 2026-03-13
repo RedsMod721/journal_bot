@@ -188,6 +188,17 @@ def test_pipeline_happy_path_persists_structured_and_awards():
         assert result["meta"]["degraded"] is False
         assert result["summary"]["matched_quest_count"] >= 1
         assert result["summary"]["skill_award_count"] >= 1
+        assert len(result["personality_messages"]) == 1
+        message = result["personality_messages"][0]
+        assert message["id"] == result["message_id"]
+        assert message["personality"] == result["personality"]
+        assert message["message_text"] == result["message"]
+        assert message["logical_slot_key"] == "primary"
+        assert message["multi_personality"] == {
+            "is_primary": True,
+            "primary_personality": message["personality"],
+            "impact_multiplier": 1.0,
+        }
 
         structured = (
             db.query(JournalEntryStructured)

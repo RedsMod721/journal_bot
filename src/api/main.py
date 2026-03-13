@@ -19,7 +19,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import anomaly, balance, entries, forgiveness, harmony, jobs, personality, quests, skills, themes, users
+from src.api.routes import anomaly, balance, entries, forgiveness, harmony, jobs, journal, personality, quests, skills, themes, users
 from src.db.session import assert_schema_ready, check_connection, get_db, schema_status
 
 try:
@@ -144,6 +144,8 @@ for prefix in ("/api", "/api/v1"):
     app.include_router(harmony.router, prefix=prefix)
     app.include_router(anomaly.router, prefix=prefix)
     app.include_router(personality.router, prefix=prefix)
+
+app.include_router(journal.browse_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["system"], summary="API health check")
