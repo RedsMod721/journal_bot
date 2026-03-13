@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      live_smoke:
+        description: Run optional live AI/RAG smoke checks
+        required: false
+        default: "false"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      INCLUDE_LEGACY_APP_TESTS: "0"
+      QDRANT_MODE: remote
+      QDRANT_HOST: localhost
+      QDRANT_PORT: "6333"
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.13.4
+        ports:
+          - 6333:6333
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Run canonical backend tests
+        run: |
+          pytest tests/unit tests/integration --ignore=tests/test_api
+      - name: Enforce canonical backend coverage
+        run: |
+          bash scripts/validation/run_canonical_backend_coverage.sh
+      - name: Validate canonical schema
+        run: |
+          python scripts/validation/validate_canonical_schema.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rpg-life-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: rpg-life-ui/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Run frontend tests
+        run: npm run test:run
+      - name: Build frontend
+        run: npm run build
+
+  live-smoke:
+    if: github.event_name == 'workflow_dispatch' && inputs.live_smoke == 'true'
+    runs-on: ubuntu-latest
+    needs:
+      - backend
+      - frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Optional live readiness checks
+        run: |
+          python -c "from src.ai.readiness import system_readiness_report; import json; print(json.dumps(system_readiness_report(require_ai_endpoints=False), indent=2))"

@@ -309,6 +309,48 @@ def _create_sqlite_tenant_integrity_triggers() -> None:
             END;
         END;
         """,
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_personality_messages_entry_user
+        BEFORE INSERT ON personality_messages
+        BEGIN
+            SELECT CASE
+                WHEN (SELECT user_id FROM journal_entries WHERE id = NEW.entry_id) != NEW.user_id
+                THEN RAISE(ABORT, 'personality_messages.entry_id must belong to same user')
+            END;
+        END;
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_personality_messages_entry_user_upd
+        BEFORE UPDATE OF entry_id, user_id ON personality_messages
+        BEGIN
+            SELECT CASE
+                WHEN (SELECT user_id FROM journal_entries WHERE id = NEW.entry_id) != NEW.user_id
+                THEN RAISE(ABORT, 'personality_messages.entry_id must belong to same user')
+            END;
+        END;
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_quests_entry_user
+        BEFORE INSERT ON quests
+        WHEN NEW.entry_id IS NOT NULL
+        BEGIN
+            SELECT CASE
+                WHEN (SELECT user_id FROM journal_entries WHERE id = NEW.entry_id) != NEW.user_id
+                THEN RAISE(ABORT, 'quests.entry_id must belong to same user')
+            END;
+        END;
+        """,
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_quests_entry_user_upd
+        BEFORE UPDATE OF entry_id, user_id ON quests
+        WHEN NEW.entry_id IS NOT NULL
+        BEGIN
+            SELECT CASE
+                WHEN (SELECT user_id FROM journal_entries WHERE id = NEW.entry_id) != NEW.user_id
+                THEN RAISE(ABORT, 'quests.entry_id must belong to same user')
+            END;
+        END;
+        """,
     ]
 
     with engine.begin() as conn:
@@ -383,17 +425,47 @@ def schema_status() -> dict[str, Any]:
     connected = check_connection()
     current_revision = get_current_schema_revision() if connected else None
     head_revision = get_head_schema_revision()
+    trigger_integrity = check_sqlite_trigger_integrity() if connected else {
+        "ok": False,
+        "missing": ["database_unreachable"],
+    }
     return {
         "connected": connected,
         "current_revision": current_revision,
         "head_revision": head_revision,
+        "trigger_integrity": trigger_integrity,
         "ready": bool(
             connected
             and current_revision is not None
             and head_revision is not None
             and current_revision == head_revision
+            and trigger_integrity["ok"]
         ),
     }
+
+
+def check_sqlite_trigger_integrity() -> dict[str, Any]:
+    """Validate required SQLite tenant-integrity triggers for canonical runtime."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return {"ok": True, "missing": []}
+
+    required = {
+        "trg_personality_messages_quest_user",
+        "trg_personality_messages_quest_user_upd",
+        "trg_personality_messages_entry_user",
+        "trg_personality_messages_entry_user_upd",
+        "trg_quests_entry_user",
+        "trg_quests_entry_user_upd",
+    }
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='trigger'")
+        ).fetchall()
+
+    present = {row[0] for row in rows}
+    missing = sorted(required - present)
+    return {"ok": not missing, "missing": missing}
 
 
 def assert_schema_ready() -> None:
@@ -424,4 +496,12 @@ def assert_schema_ready() -> None:
             "Database schema is behind the canonical src stack. "
             f"Current revision: {current_revision}. Head revision: {head_revision}. "
             "Run `alembic upgrade head` before starting the API."
+        )
+
+    trigger_integrity = status.get("trigger_integrity", {"ok": True, "missing": []})
+    if not trigger_integrity["ok"]:
+        raise RuntimeError(
+            "Database schema revision is current but required SQLite tenant-integrity "
+            f"triggers are missing: {', '.join(trigger_integrity['missing'])}. "
+            "Run `alembic upgrade head` or reinitialize the canonical schema."
         )

@@ -14,7 +14,12 @@ if (-not (Test-Path $uiRoot)) {
     throw "Frontend directory not found at $uiRoot"
 }
 
-$env:Path += ";" + (Join-Path $env:USERPROFILE ".cargo\bin")
+$pathSeparator = [System.IO.Path]::PathSeparator
+$homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+$cargoBin = Join-Path $homeDir ".cargo/bin"
+if (Test-Path $cargoBin) {
+    $env:Path += "$pathSeparator$cargoBin"
+}
 $env:CARGO_HTTP_CHECK_REVOKE = "false"
 
 Set-Location $uiRoot

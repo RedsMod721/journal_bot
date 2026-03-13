@@ -15,7 +15,12 @@ from src.ai.qdrant import QdrantClientAdapter
 from src.db.session import engine
 from scripts.validation.validate_canonical_schema import (
     CANONICAL_TABLES,
+    REQUIRED_COLUMNS,
+    REQUIRED_FK_TABLES,
+    REQUIRED_INDEX_COLUMNS,
+    REQUIRED_SQL_SNIPPETS,
     REQUIRED_TRIGGERS,
+    _normalize_sql,
 )
 from pathlib import Path
 import hashlib
@@ -123,12 +128,78 @@ def check_database_readiness() -> dict[str, Any]:
 
     triggers = {row[0] for row in trigger_rows}
     missing_triggers = sorted(REQUIRED_TRIGGERS - triggers)
+    missing_columns: list[str] = []
+    missing_indexes: list[str] = []
+    missing_sql_invariants: list[str] = []
+    missing_fks: list[str] = []
+    for table_name, required_columns in REQUIRED_COLUMNS.items():
+        if table_name not in tables:
+            continue
+        present_columns = {col["name"] for col in inspector.get_columns(table_name)}
+        missing = sorted(required_columns - present_columns)
+        if missing:
+            missing_columns.append(f"{table_name}: {', '.join(missing)}")
+
+    for table_name, required_indexes in REQUIRED_INDEX_COLUMNS.items():
+        if table_name not in tables:
+            continue
+        indexes = {
+            index["name"]: tuple(index.get("column_names") or [])
+            for index in inspector.get_indexes(table_name)
+        }
+        uniques = {
+            index["name"]: tuple(index.get("column_names") or [])
+            for index in inspector.get_unique_constraints(table_name)
+        }
+        available = {**indexes, **uniques}
+        for index_name, expected_columns in required_indexes.items():
+            if available.get(index_name) != expected_columns:
+                missing_indexes.append(
+                    f"{table_name}.{index_name} -> expected {expected_columns}, found {available.get(index_name)}"
+                )
+
+    with engine.connect() as conn:
+        sql_rows = conn.execute(
+            text(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type IN ('table','index') AND sql IS NOT NULL"
+            )
+        ).fetchall()
+    object_sql = {row[0]: _normalize_sql(row[1]) for row in sql_rows}
+    for object_name, snippets in REQUIRED_SQL_SNIPPETS.items():
+        normalized = object_sql.get(object_name, "")
+        for snippet in snippets:
+            if _normalize_sql(snippet) not in normalized:
+                missing_sql_invariants.append(f"{object_name}: missing `{snippet}`")
+
+    for table_name, required_fks in REQUIRED_FK_TABLES.items():
+        if table_name not in tables:
+            continue
+        fk_rows = inspector.get_foreign_keys(table_name)
+        available = {
+            tuple(fk.get("constrained_columns") or []): fk.get("referred_table")
+            for fk in fk_rows
+        }
+        for columns, referred_table in required_fks.items():
+            if available.get(columns) != referred_table:
+                missing_fks.append(
+                    f"{table_name}: FK {columns} -> {referred_table} missing (found {available.get(columns)})"
+                )
 
     return {
-        "ok": not missing_tables and not missing_triggers,
+        "ok": not missing_tables
+        and not missing_triggers
+        and not missing_columns
+        and not missing_indexes
+        and not missing_sql_invariants
+        and not missing_fks,
         "table_count": len(tables),
         "missing_tables": missing_tables,
         "missing_triggers": missing_triggers,
+        "missing_columns": missing_columns,
+        "missing_indexes": missing_indexes,
+        "missing_sql_invariants": missing_sql_invariants,
+        "missing_fks": missing_fks,
     }
 
 

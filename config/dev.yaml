@@ -35,7 +35,7 @@ ai:
     model: "llama3.2:latest"
     timeout: 30
   qdrant:
-    mode: "local"
+    mode: "remote"
     host: "localhost"
     port: 6333
     local_path: "data/qdrant_local"

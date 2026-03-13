@@ -12,23 +12,23 @@
 
 Troll multiplier schedule
 --------------------------
-Raw anomaly score (0.0–1.0) maps to basis-point multipliers:
+Raw anomaly score (0.0–10.0, Section 9.0.1) maps to multipliers via:
 
-    score 0.0  → troll_bp 10 000  (1.0× — normal session)
-    score 0.5  → troll_bp 20 000  (2.0× — notable performance)
-    score 1.0  → troll_bp 30 000  (3.0× — exceptional performance)
+    m = 1.0 + ((score/10) ** 1.5) * 4.0   range [1.0, 5.0]
 
-The cap of 30 000 bp (3.0×) is intentionally conservative for a precheck
-that operates without confirmed current-session XP.  Future arc-bonus
-multipliers can amplify beyond this via arc_reward_multiplier_bp.
+    score  0.0 → m 1.000  (10 000 bp — normal session)
+    score  5.0 → m 2.414  (24 142 bp — notable performance)
+    score 10.0 → m 5.000  (50 000 bp — exceptional performance)
+
+score is stored on the 0–10 canonical scale in the DB (ck_anomaly_score_range).
 
 Scoring heuristics (precheck)
 -------------------------------
-+0.30  High consistency: ≥3 skills active in the last 7 days.
-+0.20  Multi-skill session: ≥2 distinct skills detected in current entry.
-+0.20  Daily streak active: a skill with last_activity_at = yesterday/today.
-+0.20  XP momentum: any skill's last session was within 48 hours.
-       (capped at 1.0 total)
++3.0  High consistency: ≥3 skills active in the last 7 days.
++2.0  Multi-skill session: ≥2 distinct skills detected in current entry.
++2.0  Daily streak active: a skill with last_activity_at = yesterday/today.
++2.0  XP momentum: any skill's last session was within 48 hours.
+      (capped at 10.0 total)
 """
 
 from __future__ import annotations
@@ -105,18 +105,18 @@ def precheck(
     reasons: list[str] = []
 
     if recent_week_count >= 3:
-        score += 0.30
+        score += 3.0
         reasons.append(f"high_consistency:{recent_week_count}_skills_7d")
 
     if len(detected_skills) >= 2:
-        score += 0.20
+        score += 2.0
         reasons.append(f"multi_skill_session:{len(detected_skills)}_skills")
 
     if has_momentum:
-        score += 0.20
+        score += 2.0
         reasons.append("xp_momentum:active_within_48h")
 
-    score = min(1.0, round(score, 4))
+    score = min(10.0, round(score, 4))
 
     troll_multiplier, troll_bp = _troll_multiplier_from_score(score)
 
@@ -128,14 +128,10 @@ def precheck(
     }
 
 
-def _troll_multiplier_from_score(score_01: float) -> tuple[float, int]:
-    """Compute troll multiplier from a normalised 0-1 anomaly score.
+def _troll_multiplier_from_score(score_010: float) -> tuple[float, int]:
+    """Compute troll multiplier from a 0-10 anomaly score (Section 9.6 / A.6.1).
 
-    Maps to the architecture formula (section 9.6 / A.6.1) which operates on a
-    0-10 scale.  Because our stored score is normalised to 0-1 (DB constraint),
-    the scale factor cancels and the formula simplifies to:
-
-        m = 1.0 + (score_01 ** 1.5) * 4.0   range [1.0, 5.0]
+        m = 1.0 + ((score / 10) ** 1.5) * 4.0   range [1.0, 5.0]
 
     Precision rule (section A.6.2): computed with Decimal, quantised to 6 dp
     using ROUND_HALF_UP before conversion to float/int.
@@ -143,7 +139,7 @@ def _troll_multiplier_from_score(score_01: float) -> tuple[float, int]:
     Returns:
         (troll_multiplier, troll_bp) -- float rounded to 6 dp, int basis points.
     """
-    d = Decimal(str(score_01))
+    d = Decimal(str(score_010)) / Decimal("10")
     # x^1.5 = x * sqrt(x)  (avoids fractional-exponent drift per arch spec)
     sqrt_d = d.sqrt()
     x_power = d * sqrt_d
@@ -163,42 +159,36 @@ def record(
     user_id: str,
     entry_id: str,
     anomaly_score: float,
+    troll_multiplier: float,
     reasons: list[str],
     skill_xp_total: int,
     db: Session,
 ) -> dict[str, Any]:
-    """Persist the final ``AnomalyScore`` row for the current entry.
+    """Project the authoritative anomaly row already persisted in step 08b.
 
-    Runs after progression counters are updated so ``skill_xp_total`` reflects
-    the actual XP awarded.  The stored score is the pre-session estimate from
-    the precheck step (used to drive the troll multiplier) enriched with the
-    actual XP outcome for future baseline comparisons.
-
-    Args:
-        user_id:        Owning user UUID.
-        entry_id:       Journal entry UUID.
-        anomaly_score:  Float 0.0–1.0 from the precheck step.
-        reasons:        List of triggered heuristic strings.
-        skill_xp_total: Total skill XP awarded in this session (from awards).
-        db:             SQLAlchemy session (write — issues a flush).
-
-    Returns:
-        Dict with keys:
-            ``anomaly_id``    — PK of the persisted row.
-            ``anomaly_score`` — echo of the input score.
-            ``skill_xp_total``— echo of the input XP total.
+    The canonical write happens in ``AnomalyOrchestrator.ensure_anomaly_score``.
+    This helper remains as a compatibility shim for downstream summary code,
+    but it must not create or overwrite anomaly rows.
     """
-    enriched_reasons = list(reasons) + [f"skill_xp_total:{skill_xp_total}"]
-    row = AnomalyScore(
-        user_id=user_id,
-        entry_id=entry_id,
-        score=anomaly_score,
-        reasons_json=json.dumps(enriched_reasons),
+    del anomaly_score, troll_multiplier, reasons
+
+    existing = (
+        db.query(AnomalyScore)
+        .filter(
+            AnomalyScore.user_id == user_id,
+            AnomalyScore.entry_id == entry_id,
+        )
+        .first()
     )
-    db.add(row)
-    db.flush()
+    if existing:
+        return {
+            "anomaly_id": entry_id,
+            "anomaly_score": existing.score,
+            "skill_xp_total": skill_xp_total,
+        }
+
     return {
-        "anomaly_id": row.id,
-        "anomaly_score": anomaly_score,
+        "anomaly_id": None,
+        "anomaly_score": 0.0,
         "skill_xp_total": skill_xp_total,
     }

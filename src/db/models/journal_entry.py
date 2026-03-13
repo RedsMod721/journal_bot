@@ -29,6 +29,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.db.base import Base
 
 if TYPE_CHECKING:
+    from src.db.models.personality import PersonalityMessage
     from src.db.models.user import User
 
 
@@ -127,6 +128,11 @@ class JournalEntry(Base):
     )
     attachments: Mapped[list["EntryAttachment"]] = relationship(
         "EntryAttachment",
+        back_populates="entry",
+        cascade="all, delete-orphan",
+    )
+    personality_messages: Mapped[list["PersonalityMessage"]] = relationship(
+        "PersonalityMessage",
         back_populates="entry",
         cascade="all, delete-orphan",
     )

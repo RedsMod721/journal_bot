@@ -7,10 +7,16 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$python = Join-Path $repoRoot ".venv\Scripts\python.exe"
+$pythonCandidates = @(
+    (Join-Path $repoRoot ".venv/Scripts/python.exe"),
+    (Join-Path $repoRoot ".venv/bin/python"),
+    (Join-Path $repoRoot ".venv/bin/python3")
+)
 
-if (-not (Test-Path $python)) {
-    throw "Backend Python interpreter not found at $python"
+$python = $pythonCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+if (-not $python) {
+    throw "Backend Python interpreter not found. Checked: $($pythonCandidates -join ', ')"
 }
 
 Set-Location $repoRoot

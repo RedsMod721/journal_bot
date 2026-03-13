@@ -1,5 +1,5 @@
 """API route modules."""
 
-from . import balance, forgiveness, harmony, jobs, journal, quests, skills, themes, users
+from . import anomaly, balance, entries, forgiveness, harmony, jobs, journal, personality, quests, skills, themes, users
 
-__all__ = ["balance", "forgiveness", "harmony", "jobs", "journal", "quests", "skills", "themes", "users"]
+__all__ = ["anomaly", "balance", "entries", "forgiveness", "harmony", "jobs", "journal", "personality", "quests", "skills", "themes", "users"]

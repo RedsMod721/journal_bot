@@ -103,7 +103,7 @@ def _insight_cache_key(entry_summary: str, rag_context: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def run(
+def plan(
     *,
     user_id: str,
     entry_id: str,
@@ -115,7 +115,7 @@ def run(
     db: Session,
     cache: Any = None,
 ) -> dict[str, Any]:
-    """Generate and persist a personalised insight for the current entry.
+    """Generate a personalised insight plan for the current entry.
 
     Args:
         user_id:        Owning user UUID.
@@ -125,21 +125,14 @@ def run(
         detection:      Signal-detection output from step 07.
         ollama_health:  Result dict from the Ollama health step (step 04).
         ollama:         OllamaClient with a sync ``generate_json(prompt)`` method.
-        db:             SQLAlchemy session (write — issues flushes).
+        db:             SQLAlchemy session (read-only for plan generation).
         cache:          Optional ``StepCache`` instance.  When provided, the
                         LLM-generated insight data is read from / written to
                         cache to avoid redundant Ollama calls.  DB writes are
                         always performed regardless of cache state.
 
     Returns:
-        Dict with keys:
-
-        ``insight_id``         — PK of the persisted Insight row.
-        ``insight_text``       — The generated (or fallback) insight text.
-        ``insight_category``   — Category string.
-        ``insight_confidence`` — Float 0.0–1.0.
-        ``from_ollama``        — True if the text came from the LLM (or cache).
-        ``from_cache``         — True if the insight text was served from cache.
+        Dict with keys required to persist the insight later.
     """
     # Build entry summary from first 200 words + detected signals.
     words = canonical_text.split()[:200]
@@ -205,13 +198,30 @@ def run(
                 "insights cache_set entry_id=%s cache_key=%s", entry_id, cache_key
             )
 
-    # ── DB write — always, so every entry has its own Insight row ──────
+    return {
+        "user_id": user_id,
+        "entry_id": entry_id,
+        "insight_text": insight_data["insight_text"],
+        "insight_category": insight_data["category"],
+        "insight_confidence": insight_data["confidence"],
+        "title": _build_title(detection),
+        "from_ollama": from_ollama,
+        "from_cache": from_cache,
+    }
+
+
+def persist_planned(
+    *,
+    plan: dict[str, Any],
+    db: Session,
+) -> dict[str, Any]:
+    """Persist a previously planned insight."""
     insight_row = Insight(
-        user_id=user_id,
-        insight_type=insight_data["category"],
-        title=_build_title(detection),
-        description=insight_data["insight_text"],
-        strength=insight_data["confidence"],
+        user_id=plan["user_id"],
+        insight_type=plan["insight_category"],
+        title=plan["title"],
+        description=plan["insight_text"],
+        strength=plan["insight_confidence"],
         status="active",
     )
     db.add(insight_row)
@@ -219,9 +229,9 @@ def run(
 
     db.add(
         InsightEvidence(
-            user_id=user_id,
+            user_id=plan["user_id"],
             insight_id=insight_row.id,
-            entry_id=entry_id,
+            entry_id=plan["entry_id"],
             evidence_weight=1.0,
         )
     )
@@ -229,12 +239,39 @@ def run(
 
     return {
         "insight_id": insight_row.id,
-        "insight_text": insight_data["insight_text"],
-        "insight_category": insight_data["category"],
-        "insight_confidence": insight_data["confidence"],
-        "from_ollama": from_ollama,
-        "from_cache": from_cache,
+        "insight_text": plan["insight_text"],
+        "insight_category": plan["insight_category"],
+        "insight_confidence": plan["insight_confidence"],
+        "from_ollama": bool(plan.get("from_ollama")),
+        "from_cache": bool(plan.get("from_cache")),
     }
+
+
+def run(
+    *,
+    user_id: str,
+    entry_id: str,
+    canonical_text: str,
+    rag_hits: list[dict[str, Any]],
+    detection: dict[str, Any],
+    ollama_health: dict[str, Any],
+    ollama: Any,
+    db: Session,
+    cache: Any = None,
+) -> dict[str, Any]:
+    """Backward-compatible plan + persist helper."""
+    plan_payload = plan(
+        user_id=user_id,
+        entry_id=entry_id,
+        canonical_text=canonical_text,
+        rag_hits=rag_hits,
+        detection=detection,
+        ollama_health=ollama_health,
+        ollama=ollama,
+        db=db,
+        cache=cache,
+    )
+    return persist_planned(plan=plan_payload, db=db)
 
 
 def _build_title(detection: dict[str, Any]) -> str:

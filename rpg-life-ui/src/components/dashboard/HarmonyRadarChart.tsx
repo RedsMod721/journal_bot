@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import apiClient from "@/lib/api";
+import apiClient, { apiPath } from "@/lib/api";
 import { useUser } from "@/contexts/UserContext";
 
 interface DimensionScores {
@@ -84,7 +84,7 @@ export function HarmonyRadarChart() {
     queryKey: ["harmonyDimensions", user?.id],
     queryFn: async () => {
       const { data } = await apiClient.get<HarmonyResponse>(
-        "/harmony/dimensions",
+        apiPath("/harmony/dimensions"),
         { params: { user_id: user?.id } }
       );
       return data;

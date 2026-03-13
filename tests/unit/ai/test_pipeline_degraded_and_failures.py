@@ -222,7 +222,7 @@ def test_process_entry_failure_path_records_failed_job_and_claim(
         )
 
         assert job.status == "failed"
-        assert claim.status == "failed"
+        assert claim.status == "failed_terminal"
         assert entry.status == "failed"
         assert failed_events
 
@@ -249,7 +249,7 @@ def test_record_failure_creates_claim_if_missing_and_no_job():
             .filter(EntryIdempotencyClaim.idempotency_key == "idemp-missing-claim")
             .one()
         )
-        assert claim.status == "failed"
+        assert claim.status == "failed_terminal"
 
 
 def test_step_embedding_raises_when_ollama_disconnected():
@@ -308,7 +308,7 @@ def test_claim_replay_collision_returns_existing_claim_payload_without_duplicati
                 idempotency_key="idemp-collision",
                 entry_id=ids.entry_id,
                 processing_run_id="run-existing-collision",
-                status="claimed",
+                status="in_progress",
             )
         )
         db.commit()
@@ -364,7 +364,7 @@ def test_malformed_structured_payload_triggers_failure_recording(
             )
             .one()
         )
-        assert claim.status == "failed"
+        assert claim.status == "failed_terminal"
 
 
 def test_outbox_emission_failure_handling_records_processing_failure(
@@ -378,7 +378,7 @@ def test_outbox_emission_failure_handling_records_processing_failure(
 
         call_count = {"n": 0}
 
-        def _flaky_emit(*, user_id: str, event_type: str, payload: dict):
+        def _flaky_emit(*, user_id: str, entry_id, processing_job_id, processing_run_id, event_type: str, payload: dict):
             call_count["n"] += 1
             if call_count["n"] == 1 and event_type == "entry.processed":
                 raise RuntimeError("outbox write failed")
@@ -402,5 +402,5 @@ def test_outbox_emission_failure_handling_records_processing_failure(
         entry = db.query(JournalEntry).filter(JournalEntry.id == ids.entry_id).one()
 
         assert job.status == "failed"
-        assert claim.status == "failed"
+        assert claim.status == "failed_terminal"
         assert entry.status == "failed"

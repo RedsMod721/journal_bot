@@ -11,6 +11,7 @@ import httpx
 from loguru import logger
 
 from src.ai.runtime_config import get_ollama_defaults
+from src.ai.tx_guard import assert_network_allowed
 
 _MAX_RETRIES = 3
 _BACKOFF_BASE = 1.0  # seconds
@@ -190,6 +191,7 @@ class OllamaClient:
         Returns:
             Dict with keys: connected, model_available, models (and error on failure).
         """
+        assert_network_allowed("ollama.health")
         try:
             with httpx.Client(timeout=self.timeout) as client:
                 resp = client.get(f"{self.base_url}/api/tags")
@@ -221,6 +223,7 @@ class OllamaClient:
         Returns:
             Dict with keys: raw (full Ollama payload), response (text).
         """
+        assert_network_allowed("ollama.generate_json")
         body: dict[str, Any] = {
             "model": self.model,
             "prompt": prompt,
@@ -247,6 +250,7 @@ class OllamaClient:
         Returns:
             List of floats representing the embedding vector.
         """
+        assert_network_allowed("ollama.embed")
         body = {"model": self.model, "prompt": text}
         with httpx.Client(timeout=self.timeout) as client:
             resp = client.post(f"{self.base_url}/api/embeddings", json=body)
@@ -265,6 +269,7 @@ class OllamaClient:
         Returns:
             True if the service responds to a health probe, False otherwise.
         """
+        assert_network_allowed("ollama.is_available")
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.get(f"{self.base_url}/api/tags")
@@ -392,6 +397,7 @@ class OllamaClient:
         Raises:
             httpx.RequestError: When all retry attempts are exhausted.
         """
+        assert_network_allowed("ollama._call_ollama")
         body: dict[str, Any] = {
             "model": self.model,
             "prompt": prompt,

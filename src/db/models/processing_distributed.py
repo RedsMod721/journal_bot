@@ -1,11 +1,12 @@
 """Distributed claim leasing for processing jobs."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Index,
     String,
@@ -22,36 +23,46 @@ class ProcessingJobClaim(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    user_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     entry_id: Mapped[str] = mapped_column(String(36), nullable=False)
     step_name: Mapped[str] = mapped_column(String(64), nullable=False)
-    processing_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    lease_owner: Mapped[str] = mapped_column(String(100), nullable=False)
-    lease_until: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    owner_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    lease_token: Mapped[str] = mapped_column(String(64), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
 
     __table_args__ = (
         ForeignKeyConstraint(
-            ["user_id", "entry_id", "step_name", "processing_run_id"],
-            [
-                "processing_jobs.user_id",
-                "processing_jobs.entry_id",
-                "processing_jobs.step_name",
-                "processing_jobs.processing_run_id",
-            ],
+            ["user_id", "entry_id"],
+            ["journal_entries.user_id", "journal_entries.id"],
             ondelete="CASCADE",
-            name="fk_processing_job_claims_logical",
+            name="fk_processing_job_claims_user_entry",
         ),
         UniqueConstraint(
             "user_id",
             "entry_id",
             "step_name",
-            "processing_run_id",
             name="uq_processing_job_claims_logical",
         ),
-        Index("idx_processing_job_claims_lease_until", "lease_until"),
+        Index("idx_processing_job_claims_lease_expiry", "lease_expires_at"),
+        Index("idx_processing_job_claims_owner", "owner_kind", "owner_id"),
+        UniqueConstraint("lease_token", name="uq_processing_job_claims_lease_token"),
         CheckConstraint(
-            "status IN ('active','released','expired')",
-            name="ck_processing_job_claims_status",
+            "owner_kind IN ('server_worker','scheduler','admin_recovery')",
+            name="ck_processing_job_claims_owner_kind",
         ),
     )

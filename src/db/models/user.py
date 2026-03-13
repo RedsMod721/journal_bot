@@ -35,6 +35,7 @@ from src.db.base import Base
 if TYPE_CHECKING:
     from src.db.models.forgiveness import DecaySnapshot, ForgivenessConfig
     from src.db.models.journal_entry import JournalEntry
+    from src.db.models.personality import PersonalityMemory, PersonalityMessage, PersonalityState
     from src.db.models.quest import Quest, QuestFailureTracker
     from src.db.models.skill import Skill, Theme
     from src.db.models.user_skill_state import UserSkillState
@@ -239,6 +240,22 @@ class User(Base):
     )
     skill_states: Mapped[list["UserSkillState"]] = relationship(
         "UserSkillState",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    personality_state: Mapped[Optional["PersonalityState"]] = relationship(
+        "PersonalityState",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    personality_messages: Mapped[list["PersonalityMessage"]] = relationship(
+        "PersonalityMessage",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    personality_memories: Mapped[list["PersonalityMemory"]] = relationship(
+        "PersonalityMemory",
         back_populates="user",
         cascade="all, delete-orphan",
     )

@@ -291,12 +291,11 @@ def test_schema_status_reports_ready_when_current_revision_matches_head(
 
     status = session.schema_status()
 
-    assert status == {
-        "connected": True,
-        "current_revision": "mb76",
-        "head_revision": "mb76",
-        "ready": True,
-    }
+    assert status["connected"] is True
+    assert status["current_revision"] == "mb76"
+    assert status["head_revision"] == "mb76"
+    assert status["ready"] is True
+    assert status["trigger_integrity"] == {"ok": True, "missing": []}
 
 
 def test_schema_status_reports_not_ready_when_revision_missing(
@@ -325,6 +324,7 @@ def test_assert_schema_ready_passes_when_db_is_at_head(
             "current_revision": "mb76",
             "head_revision": "mb76",
             "ready": True,
+            "trigger_integrity": {"ok": True, "missing": []},
         },
     )
 

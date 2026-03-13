@@ -29,6 +29,7 @@ from src.db.base import Base
 
 if TYPE_CHECKING:
     from src.db.models.journal_entry import JournalEntry
+    from src.db.models.personality import PersonalityMessage
     from src.db.models.skill import Skill
     from src.db.models.user import User
     from src.db.models.xp import XpAward
@@ -246,6 +247,10 @@ class Quest(Base):
         viewonly=True,
         primaryjoin="and_(Quest.user_id == XpAward.user_id, Quest.id == XpAward.quest_id)",
         foreign_keys="[XpAward.user_id, XpAward.quest_id]",
+    )
+    personality_messages: Mapped[list["PersonalityMessage"]] = relationship(
+        "PersonalityMessage",
+        back_populates="quest",
     )
 
     __table_args__ = (

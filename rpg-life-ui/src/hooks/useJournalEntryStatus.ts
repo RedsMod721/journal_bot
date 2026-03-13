@@ -2,17 +2,17 @@ import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { journalService } from "@/services/journal.service";
 
-export function useJournalEntryStatus(entryId: string, userId: string, enabled: boolean) {
+export function useJournalEntryStatus(jobId: string, userId: string, enabled: boolean) {
   const queryClient = useQueryClient();
-  const invalidatedEntryId = useRef<string | null>(null);
+  const invalidatedJobId = useRef<string | null>(null);
 
   const query = useQuery({
-    queryKey: ["journalEntryStatus", entryId, userId],
-    queryFn: () => journalService.getEntryStatus(entryId, userId),
-    enabled: enabled && !!entryId && !!userId,
+    queryKey: ["journalEntryStatus", jobId, userId],
+    queryFn: () => journalService.getEntryStatus(jobId, userId),
+    enabled: enabled && !!jobId && !!userId,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      if (!status || status === "pending" || status === "processing") {
+      if (!status || status === "in_progress") {
         return 2000;
       }
       return false;
@@ -20,22 +20,25 @@ export function useJournalEntryStatus(entryId: string, userId: string, enabled: 
   });
 
   useEffect(() => {
-    if (!entryId) {
-      invalidatedEntryId.current = null;
+    if (!jobId) {
+      invalidatedJobId.current = null;
       return;
     }
 
     const status = query.data?.status;
-    const isTerminal = status === "completed" || status === "failed";
-    if (!isTerminal || invalidatedEntryId.current === entryId) {
+    const isTerminal = status === "completed" || status === "failed_terminal";
+    if (!isTerminal || invalidatedJobId.current === jobId) {
       return;
     }
 
-    invalidatedEntryId.current = entryId;
+    invalidatedJobId.current = jobId;
     void queryClient.invalidateQueries({ queryKey: ["skills", userId] });
     void queryClient.invalidateQueries({ queryKey: ["quests", userId] });
     void queryClient.invalidateQueries({ queryKey: ["userStats", userId] });
-  }, [entryId, query.data?.status, queryClient, userId]);
+    void queryClient.invalidateQueries({ queryKey: ["recentAnomalies", userId] });
+    void queryClient.invalidateQueries({ queryKey: ["personalityState", userId] });
+    void queryClient.invalidateQueries({ queryKey: ["personalityMessages", userId] });
+  }, [jobId, query.data?.status, queryClient, userId]);
 
   return query;
 }

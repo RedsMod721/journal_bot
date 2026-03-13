@@ -1,9 +1,17 @@
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUser } from "@/contexts/UserContext";
 import { useUserStats } from "@/hooks/useUserStats";
+import {
+  usePersonalityFeedback,
+  usePersonalityMessages,
+} from "@/hooks/usePersonalityMessages";
+import { usePersonalityState } from "@/hooks/usePersonalityState";
+import { useRecentAnomalies } from "@/hooks/useRecentAnomalies";
 import { UserIdSelector } from "@/components/user/UserIdSelector";
 import { HarmonyRadarChart } from "@/components/dashboard/HarmonyRadarChart";
 import { VarietyScoreCard } from "@/components/dashboard/VarietyScoreCard";
@@ -12,6 +20,10 @@ import { ForgivenessProfileCard } from "@/components/profile/ForgivenessProfileC
 export function Profile() {
   const { user } = useUser();
   const { data: stats, isLoading, error } = useUserStats(user?.id ?? "");
+  const personalityStateQuery = usePersonalityState(user?.id ?? "", !!user?.id);
+  const personalityMessagesQuery = usePersonalityMessages(user?.id ?? "", undefined, !!user?.id);
+  const recentAnomaliesQuery = useRecentAnomalies(user?.id ?? "", !!user?.id);
+  const feedbackMutation = usePersonalityFeedback(user?.id ?? "");
 
   if (!user) {
     return (
@@ -40,6 +52,11 @@ export function Profile() {
       </div>
     );
   }
+
+  const topMessage = personalityMessagesQuery.data?.[0];
+  const likabilityScores = personalityStateQuery.data?.likability_scores
+    ? Object.entries(personalityStateQuery.data.likability_scores).sort((a, b) => b[1] - a[1])
+    : [];
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
@@ -121,11 +138,112 @@ export function Profile() {
 
       <ForgivenessProfileCard />
 
-      {/* Future Features */}
-      <Card className="border-dashed">
-        <CardHeader>
-          <CardTitle>Personality Selection</CardTitle>
-          <CardDescription>AI personality archetypes (Coming in Week 6)</CardDescription>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="space-y-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                Personality System
+                {personalityStateQuery.data ? (
+                  <Badge className="capitalize">{personalityStateQuery.data.active_personality}</Badge>
+                ) : null}
+              </CardTitle>
+              <CardDescription>
+                Active voice, likability learning, and feedback controls
+              </CardDescription>
+            </div>
+            {personalityStateQuery.isLoading ? (
+              <Skeleton className="h-24 w-full" />
+            ) : (
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {likabilityScores.map(([personality, score]) => (
+                  <div key={personality} className="rounded-lg border p-3">
+                    <div className="capitalize text-muted-foreground">{personality}</div>
+                    <div className="text-lg font-semibold">{score}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardHeader>
+        </Card>
+
+        <Card>
+          <CardHeader className="space-y-4">
+            <div>
+              <CardTitle>Recent Anomalies</CardTitle>
+              <CardDescription>High-variance entries and their reward multipliers</CardDescription>
+            </div>
+            {recentAnomaliesQuery.isLoading ? (
+              <Skeleton className="h-24 w-full" />
+            ) : recentAnomaliesQuery.data?.anomalies.length ? (
+              <div className="space-y-3 text-sm">
+                {recentAnomaliesQuery.data.anomalies.map((anomaly) => (
+                  <div key={anomaly.entry_id} className="rounded-lg border p-3">
+                    <div className="font-medium">Entry {anomaly.entry_id.slice(0, 8)}</div>
+                    <div className="text-muted-foreground">
+                      Score {anomaly.score.toFixed(2)} / Multiplier x{anomaly.troll_multiplier.toFixed(3)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No recent high-anomaly entries.</p>
+            )}
+          </CardHeader>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="space-y-4">
+          <div>
+            <CardTitle>Latest Personality Message</CardTitle>
+            <CardDescription>Persisted AI feedback with live likability updates</CardDescription>
+          </div>
+          {personalityMessagesQuery.isLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : topMessage ? (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge className="capitalize">{topMessage.personality}</Badge>
+                  <span className="text-sm text-muted-foreground">{topMessage.message_type}</span>
+                </div>
+                <p className="text-sm leading-6">{topMessage.message_text}</p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={feedbackMutation.isPending}
+                  onClick={() =>
+                    feedbackMutation.mutate({
+                      message_id: topMessage.id,
+                      feedback_type: "thumbs_up",
+                    })
+                  }
+                >
+                  Helpful
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={feedbackMutation.isPending}
+                  onClick={() =>
+                    feedbackMutation.mutate({
+                      message_id: topMessage.id,
+                      feedback_type: "thumbs_down",
+                    })
+                  }
+                >
+                  Off target
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">No personality messages recorded yet.</p>
+          )}
         </CardHeader>
       </Card>
     </div>

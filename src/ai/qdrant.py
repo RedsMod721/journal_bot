@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,7 @@ from typing import Any
 from loguru import logger
 
 from src.ai.runtime_config import get_qdrant_defaults
+from src.ai.tx_guard import assert_network_allowed
 
 _QdrantClientLib: Any = None
 Distance: Any = None
@@ -31,6 +34,7 @@ except Exception:  # pragma: no cover - optional dependency fallback
     pass
 
 _SentenceTransformerLib: Any = None
+_LOCAL_EMBEDDED_CLIENTS: dict[str, Any] = {}
 
 
 def _load_sentence_transformer_lib() -> Any:
@@ -42,6 +46,12 @@ def _load_sentence_transformer_lib() -> Any:
     global _SentenceTransformerLib
     if _SentenceTransformerLib is not None:
         return _SentenceTransformerLib
+    if (
+        os.getenv("ENABLE_SENTENCE_TRANSFORMERS", "0") != "1"
+        and "sentence_transformers" not in sys.modules
+    ):
+        _SentenceTransformerLib = None
+        return None
     try:
         from sentence_transformers import SentenceTransformer as _SentenceTransformer  # type: ignore[import-untyped]
 
@@ -84,7 +94,12 @@ class QdrantClientAdapter:
 
         if self.mode == "local":
             self.local_path.mkdir(parents=True, exist_ok=True)
-            self.client = _QdrantClientLib(path=str(self.local_path))
+            client_key = str(self.local_path.resolve())
+            cached = _LOCAL_EMBEDDED_CLIENTS.get(client_key)
+            if cached is None:
+                cached = _QdrantClientLib(path=str(self.local_path))
+                _LOCAL_EMBEDDED_CLIENTS[client_key] = cached
+            self.client = cached
             return
 
         if self.mode != "remote":
@@ -93,6 +108,7 @@ class QdrantClientAdapter:
         self.client = _QdrantClientLib(host=self.host, port=self.port)
 
     def ensure_collection(self) -> None:
+        assert_network_allowed("qdrant.ensure_collection")
         collections = self.client.get_collections().collections
         if any(c.name == self.collection for c in collections):
             return
@@ -119,6 +135,7 @@ class QdrantClientAdapter:
             return str(uuid.uuid5(uuid.NAMESPACE_URL, text))
 
     def upsert_documents(self, docs: list[dict[str, Any]]) -> None:
+        assert_network_allowed("qdrant.upsert_documents")
         points = [
             PointStruct(
                 id=self._normalize_point_id(doc["point_id"]),
@@ -135,6 +152,7 @@ class QdrantClientAdapter:
         self.client.upsert(collection_name=self.collection, points=points)
 
     def search(self, vector: list[float], limit: int = 5) -> list[dict[str, Any]]:
+        assert_network_allowed("qdrant.search")
         results = self.client.search(
             collection_name=self.collection, query_vector=vector, limit=limit
         )

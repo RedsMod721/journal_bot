@@ -19,9 +19,17 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import balance, forgiveness, harmony, jobs, journal, quests, skills, themes, users
+from src.api.routes import anomaly, balance, entries, forgiveness, harmony, jobs, personality, quests, skills, themes, users
 from src.db.session import assert_schema_ready, check_connection, get_db, schema_status
-from src.jobs.scheduler import init_scheduler, shutdown_scheduler
+
+try:
+    from src.jobs.scheduler import init_scheduler, shutdown_scheduler
+except Exception:  # pragma: no cover - optional runtime dependency
+    def init_scheduler() -> None:
+        logger.warning("Scheduler unavailable; APScheduler dependency not installed.")
+
+    def shutdown_scheduler() -> None:
+        return None
 
 logger = logging.getLogger(__name__)
 _DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "config" / "dev.yaml"
@@ -123,9 +131,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(entries.router, prefix="/api/v1")
 
 for prefix in ("/api", "/api/v1"):
-    app.include_router(journal.router, prefix=prefix)
     app.include_router(users.router, prefix=prefix)
     app.include_router(skills.router, prefix=prefix)
     app.include_router(themes.router, prefix=prefix)
@@ -134,6 +142,8 @@ for prefix in ("/api", "/api/v1"):
     app.include_router(forgiveness.router, prefix=prefix)
     app.include_router(balance.router, prefix=prefix)
     app.include_router(harmony.router, prefix=prefix)
+    app.include_router(anomaly.router, prefix=prefix)
+    app.include_router(personality.router, prefix=prefix)
 
 
 @app.get("/health", tags=["system"], summary="API health check")

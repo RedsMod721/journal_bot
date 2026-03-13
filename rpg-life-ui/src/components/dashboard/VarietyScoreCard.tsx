@@ -8,7 +8,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import apiClient from "@/lib/api";
+import apiClient, { apiPath } from "@/lib/api";
 import { useUser } from "@/contexts/UserContext";
 
 interface StrategyCountsResponse {
@@ -53,7 +53,7 @@ export function VarietyScoreCard() {
     queryKey: ["varietyMetrics", user?.id],
     queryFn: async () => {
       const { data } = await apiClient.get<VarietyMetricsResponse>(
-        "/balance/variety",
+        apiPath("/balance/variety"),
         { params: { user_id: user?.id } }
       );
       return data;

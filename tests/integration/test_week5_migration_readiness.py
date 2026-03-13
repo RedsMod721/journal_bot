@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, inspect, text
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TMP_DIR = REPO_ROOT / ".pytest_tmp"
 LEGACY_SOURCE_DB = REPO_ROOT / "data" / "db" / "rpg_life_tracker.db"
+CURRENT_HEAD = "b10000000020"
 
 
 def _sqlite_url(path: Path) -> str:
@@ -66,7 +67,7 @@ def test_fresh_db_upgrade_and_demo_seed_flow() -> None:
             )
         ).scalar_one()
 
-    assert revision == "b10000000015"
+    assert revision == CURRENT_HEAD
     assert seeded_users == 3
 
 
@@ -89,10 +90,10 @@ def test_legacy_db_repair_upgrade_and_demo_seed_flow() -> None:
         database_url=database_url,
     )
 
-    assert "4ce8e78ab15d" in repair.stdout
+    assert "4ce8e78ab15d" in repair.stdout or CURRENT_HEAD in repair.stdout
     assert "Leo Connector" in seed.stdout
 
     engine = create_engine(database_url)
     with engine.connect() as conn:
         revision = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-    assert revision == "b10000000015"
+    assert revision == CURRENT_HEAD
