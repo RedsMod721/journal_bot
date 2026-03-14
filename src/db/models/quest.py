@@ -30,6 +30,11 @@ from src.db.base import Base
 if TYPE_CHECKING:
     from src.db.models.journal_entry import JournalEntry
     from src.db.models.personality import PersonalityMessage
+    from src.db.models.quest_progress import (
+        QuestContributionDay,
+        QuestContributionEntry,
+        QuestProgress,
+    )
     from src.db.models.skill import Skill
     from src.db.models.user import User
     from src.db.models.xp import XpAward
@@ -251,6 +256,22 @@ class Quest(Base):
     personality_messages: Mapped[list["PersonalityMessage"]] = relationship(
         "PersonalityMessage",
         back_populates="quest",
+    )
+    progress: Mapped[Optional["QuestProgress"]] = relationship(
+        "QuestProgress",
+        back_populates="quest",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    contribution_days: Mapped[list["QuestContributionDay"]] = relationship(
+        "QuestContributionDay",
+        back_populates="quest",
+        cascade="all, delete-orphan",
+    )
+    contribution_entries: Mapped[list["QuestContributionEntry"]] = relationship(
+        "QuestContributionEntry",
+        back_populates="quest",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (

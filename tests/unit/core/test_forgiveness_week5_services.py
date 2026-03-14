@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 import src.db.models  # noqa: F401
 from src.core.forgiveness_decay_service import ForgivenessDecayService
+from src.core.arc_timestamps import now_utc_fixed_ms
 from src.db.base import Base
 from src.db.models.forgiveness import ForgivenessConfig
 from src.db.models.skill import Skill
@@ -89,13 +90,20 @@ def test_decay_consumes_active_arc_multiplier(db_session: Session) -> None:
     assert no_arc["skills_decayed"] == 1
 
     skill.staleness = 0.0
+    arc_now = now_utc_fixed_ms()
     db_session.add(
         StoryArc(
             user_id=user.id,
             status="active",
             arc_type="event",
-            title="Vacation",
-            decay_rate_multiplier=0.25,
+            event_name="vacation_mode",
+            xp_requirement_multiplier_bp=10000,
+            xp_reward_multiplier_bp=10000,
+            decay_rate_multiplier_bp=2500,
+            started_at=arc_now,
+            duration_days=7,
+            created_at=arc_now,
+            updated_at=arc_now,
         )
     )
     db_session.flush()
@@ -111,7 +119,7 @@ def test_decay_consumes_active_arc_multiplier(db_session: Session) -> None:
 
     skill.staleness = 0.0
     arc = db_session.query(StoryArc).filter(StoryArc.user_id == user.id).first()
-    arc.decay_rate_multiplier = 0.0
+    arc.decay_rate_multiplier_bp = 0
     db_session.commit()
     service.decay_skills(user.id, now)
     db_session.refresh(skill)

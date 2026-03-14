@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "mappings": {
+    "python_programming": [
+      {"theme_name": "Professional", "theme_weight_bp": 7000},
+      {"theme_name": "Intellectual", "theme_weight_bp": 3000}
+    ],
+    "javascript_programming": [
+      {"theme_name": "Professional", "theme_weight_bp": 7000},
+      {"theme_name": "Intellectual", "theme_weight_bp": 3000}
+    ],
+    "software_development": [
+      {"theme_name": "Professional", "theme_weight_bp": 7000},
+      {"theme_name": "Intellectual", "theme_weight_bp": 2000},
+      {"theme_name": "Discipline", "theme_weight_bp": 1000}
+    ],
+    "physical_fitness": [
+      {"theme_name": "Physical", "theme_weight_bp": 8000},
+      {"theme_name": "Discipline", "theme_weight_bp": 2000}
+    ],
+    "running": [
+      {"theme_name": "Physical", "theme_weight_bp": 8000},
+      {"theme_name": "Discipline", "theme_weight_bp": 2000}
+    ],
+    "weightlifting": [
+      {"theme_name": "Physical", "theme_weight_bp": 8000},
+      {"theme_name": "Discipline", "theme_weight_bp": 2000}
+    ],
+    "meditation": [
+      {"theme_name": "Mental", "theme_weight_bp": 5000},
+      {"theme_name": "Spiritual", "theme_weight_bp": 3000},
+      {"theme_name": "Discipline", "theme_weight_bp": 2000}
+    ],
+    "mindfulness": [
+      {"theme_name": "Mental", "theme_weight_bp": 6000},
+      {"theme_name": "Spiritual", "theme_weight_bp": 4000}
+    ],
+    "reading": [
+      {"theme_name": "Intellectual", "theme_weight_bp": 6000},
+      {"theme_name": "Mental", "theme_weight_bp": 4000}
+    ],
+    "writing": [
+      {"theme_name": "Creative", "theme_weight_bp": 6000},
+      {"theme_name": "Intellectual", "theme_weight_bp": 4000}
+    ],
+    "cooking": [
+      {"theme_name": "Practical", "theme_weight_bp": 7000},
+      {"theme_name": "Physical", "theme_weight_bp": 3000}
+    ],
+    "drawing": [
+      {"theme_name": "Creative", "theme_weight_bp": 10000}
+    ],
+    "music": [
+      {"theme_name": "Creative", "theme_weight_bp": 8000},
+      {"theme_name": "Emotional", "theme_weight_bp": 2000}
+    ],
+    "language_learning": [
+      {"theme_name": "Intellectual", "theme_weight_bp": 6000},
+      {"theme_name": "Social", "theme_weight_bp": 4000}
+    ],
+    "networking": [
+      {"theme_name": "Social", "theme_weight_bp": 8000},
+      {"theme_name": "Professional", "theme_weight_bp": 2000}
+    ],
+    "journaling": [
+      {"theme_name": "Emotional", "theme_weight_bp": 6000},
+      {"theme_name": "Mental", "theme_weight_bp": 4000}
+    ],
+    "sleep_hygiene": [
+      {"theme_name": "Rest", "theme_weight_bp": 8000},
+      {"theme_name": "Physical", "theme_weight_bp": 2000}
+    ],
+    "project_management": [
+      {"theme_name": "Professional", "theme_weight_bp": 7000},
+      {"theme_name": "Discipline", "theme_weight_bp": 3000}
+    ]
+  }
+}

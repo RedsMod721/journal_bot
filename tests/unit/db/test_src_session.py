@@ -288,6 +288,9 @@ def test_schema_status_reports_ready_when_current_revision_matches_head(
     monkeypatch.setattr(session, "check_connection", lambda: True)
     monkeypatch.setattr(session, "get_current_schema_revision", lambda: "mb76")
     monkeypatch.setattr(session, "get_head_schema_revision", lambda: "mb76")
+    monkeypatch.setattr(
+        session, "check_runtime_schema_integrity", lambda: {"ok": True, "missing": []}
+    )
 
     status = session.schema_status()
 
@@ -296,6 +299,7 @@ def test_schema_status_reports_ready_when_current_revision_matches_head(
     assert status["head_revision"] == "mb76"
     assert status["ready"] is True
     assert status["trigger_integrity"] == {"ok": True, "missing": []}
+    assert status["runtime_schema_integrity"] == {"ok": True, "missing": []}
 
 
 def test_schema_status_reports_not_ready_when_revision_missing(
@@ -304,6 +308,9 @@ def test_schema_status_reports_not_ready_when_revision_missing(
     monkeypatch.setattr(session, "check_connection", lambda: True)
     monkeypatch.setattr(session, "get_current_schema_revision", lambda: None)
     monkeypatch.setattr(session, "get_head_schema_revision", lambda: "mb76")
+    monkeypatch.setattr(
+        session, "check_runtime_schema_integrity", lambda: {"ok": True, "missing": []}
+    )
 
     status = session.schema_status()
 
@@ -311,6 +318,28 @@ def test_schema_status_reports_not_ready_when_revision_missing(
     assert status["current_revision"] is None
     assert status["head_revision"] == "mb76"
     assert status["ready"] is False
+
+
+def test_schema_status_reports_not_ready_when_runtime_integrity_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(session, "check_connection", lambda: True)
+    monkeypatch.setattr(session, "get_current_schema_revision", lambda: "mb76")
+    monkeypatch.setattr(session, "get_head_schema_revision", lambda: "mb76")
+    monkeypatch.setattr(
+        session,
+        "check_runtime_schema_integrity",
+        lambda: {"ok": False, "missing": ["story_arcs.event_name"]},
+    )
+
+    status = session.schema_status()
+
+    assert status["connected"] is True
+    assert status["ready"] is False
+    assert status["runtime_schema_integrity"] == {
+        "ok": False,
+        "missing": ["story_arcs.event_name"],
+    }
 
 
 def test_assert_schema_ready_passes_when_db_is_at_head(
@@ -325,6 +354,7 @@ def test_assert_schema_ready_passes_when_db_is_at_head(
             "head_revision": "mb76",
             "ready": True,
             "trigger_integrity": {"ok": True, "missing": []},
+            "runtime_schema_integrity": {"ok": True, "missing": []},
         },
     )
 
@@ -342,6 +372,7 @@ def test_assert_schema_ready_raises_when_schema_uninitialized(
             "current_revision": None,
             "head_revision": "mb76",
             "ready": False,
+            "runtime_schema_integrity": {"ok": True, "missing": []},
         },
     )
 
@@ -360,8 +391,32 @@ def test_assert_schema_ready_raises_when_schema_is_behind(
             "current_revision": "mb75",
             "head_revision": "mb76",
             "ready": False,
+            "runtime_schema_integrity": {"ok": True, "missing": []},
         },
     )
 
     with pytest.raises(RuntimeError, match="Current revision: mb75. Head revision: mb76"):
+        session.assert_schema_ready()
+
+
+def test_assert_schema_ready_raises_when_runtime_schema_is_drifted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        session,
+        "schema_status",
+        lambda: {
+            "connected": True,
+            "current_revision": "mb76",
+            "head_revision": "mb76",
+            "ready": False,
+            "trigger_integrity": {"ok": True, "missing": []},
+            "runtime_schema_integrity": {
+                "ok": False,
+                "missing": ["story_arcs.event_name", "arc_triggers.confidence_score"],
+            },
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="runtime-critical columns or indexes are missing"):
         session.assert_schema_ready()

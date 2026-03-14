@@ -420,6 +420,157 @@ def get_current_schema_revision() -> str | None:
         return None
 
 
+def check_runtime_schema_integrity() -> dict[str, Any]:
+    """Validate critical Week 7 runtime columns and indexes."""
+    required_columns = {
+        "users": {"confidence_threshold_streak"},
+        "story_arcs": {
+            "event_name",
+            "theme_ids",
+            "xp_requirement_multiplier_bp",
+            "xp_reward_multiplier_bp",
+            "decay_rate_multiplier_bp",
+            "duration_days",
+            "created_at",
+            "updated_at",
+            "completed_at",
+        },
+        "arc_triggers": {
+            "confidence_score",
+            "trigger_data",
+            "triggered_at",
+        },
+        "quest_progress": {
+            "required_progress",
+            "last_progress_local_date",
+            "updated_at_utc_ms",
+        },
+        "quest_progress_contribution_days": {
+            "quest_id",
+            "contribution_local_date",
+        },
+        "quest_progress_contribution_entries": {
+            "quest_id",
+            "entry_id",
+            "contribution_local_date",
+        },
+        "xp_awards": {
+            "skill_weight_bp",
+            "quest_matcher_version",
+            "awarded_at_utc_ms",
+        },
+    }
+    required_indexes = {
+        "story_arcs": {
+            "idx_story_arcs_user": ("user_id",),
+            "idx_story_arcs_status": ("status",),
+            "idx_story_arcs_active_unique": ("user_id",),
+        },
+        "arc_triggers": {
+            "idx_arc_triggers_arc": ("arc_id",),
+            "idx_arc_triggers_type": ("trigger_type",),
+            "idx_arc_triggers_user": ("user_id",),
+        },
+        "quest_progress_contribution_days": {
+            "uq_contribution_days_user_quest_date": (
+                "user_id",
+                "quest_id",
+                "contribution_local_date",
+            ),
+            "idx_contribution_days_quest": ("quest_id",),
+            "idx_contribution_days_date": ("contribution_local_date",),
+        },
+        "quest_progress_contribution_entries": {
+            "uq_contribution_entries_user_quest_entry": (
+                "user_id",
+                "quest_id",
+                "entry_id",
+            ),
+            "idx_contribution_entries_quest": ("quest_id",),
+            "idx_contribution_entries_entry": ("entry_id",),
+        },
+        "quests": {
+            "idx_quests_instant_unique": ("user_id", "entry_id"),
+            "idx_quests_streak_active_unique": ("user_id", "semantic_key"),
+            "idx_quests_template_instance_unique": (
+                "user_id",
+                "template_quest_type",
+                "instance_key",
+            ),
+            "idx_quests_recursive_successor_unique": ("user_id", "successor_key"),
+        },
+    }
+    required_sql_snippets = {
+        "idx_story_arcs_active_unique": ("where status = 'active'",),
+        "idx_quests_instant_unique": ("where quest_type = 'instant'",),
+        "idx_quests_streak_active_unique": (
+            "quest_type = 'longterm'",
+            "completion_type = 'streak'",
+            "status = 'active'",
+        ),
+        "idx_quests_template_instance_unique": (
+            "quest_type = 'longterm'",
+            "completion_type in ('cumulative', 'recursive')",
+        ),
+        "idx_quests_recursive_successor_unique": (
+            "quest_type = 'longterm'",
+            "completion_type = 'recursive'",
+        ),
+    }
+
+    def _normalize_sql(value: str | None) -> str:
+        return " ".join((value or "").lower().split())
+
+    with engine.connect() as conn:
+        inspector = inspect(conn)
+        tables = set(inspector.get_table_names())
+        missing: list[str] = []
+
+        for table_name, expected_columns in required_columns.items():
+            if table_name not in tables:
+                missing.append(f"{table_name}:missing_table")
+                continue
+            present_columns = {
+                column["name"] for column in inspector.get_columns(table_name)
+            }
+            for column_name in sorted(expected_columns - present_columns):
+                missing.append(f"{table_name}.{column_name}")
+
+        for table_name, expected_indexes in required_indexes.items():
+            if table_name not in tables:
+                continue
+            present_indexes = {
+                index["name"]: tuple(index.get("column_names") or [])
+                for index in inspector.get_indexes(table_name)
+            }
+            present_indexes.update(
+                {
+                    constraint["name"]: tuple(constraint.get("column_names") or [])
+                    for constraint in inspector.get_unique_constraints(table_name)
+                    if constraint.get("name")
+                }
+            )
+            for index_name, expected_columns in expected_indexes.items():
+                if present_indexes.get(index_name) != expected_columns:
+                    missing.append(f"{table_name}.{index_name}")
+
+        sql_rows = conn.execute(
+            text(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE type IN ('table','index') AND sql IS NOT NULL"
+            )
+        ).fetchall()
+        object_sql = {row[0]: _normalize_sql(row[1]) for row in sql_rows}
+        for object_name, snippets in required_sql_snippets.items():
+            normalized = object_sql.get(object_name, "")
+            for snippet in snippets:
+                if _normalize_sql(snippet) not in normalized:
+                    missing.append(f"{object_name}:sql")
+                    break
+
+    return {"ok": not missing, "missing": missing}
+
+
 def schema_status() -> dict[str, Any]:
     """Return connectivity and revision status for the canonical schema."""
     connected = check_connection()
@@ -429,17 +580,23 @@ def schema_status() -> dict[str, Any]:
         "ok": False,
         "missing": ["database_unreachable"],
     }
+    runtime_schema_integrity = check_runtime_schema_integrity() if connected else {
+        "ok": False,
+        "missing": ["database_unreachable"],
+    }
     return {
         "connected": connected,
         "current_revision": current_revision,
         "head_revision": head_revision,
         "trigger_integrity": trigger_integrity,
+        "runtime_schema_integrity": runtime_schema_integrity,
         "ready": bool(
             connected
             and current_revision is not None
             and head_revision is not None
             and current_revision == head_revision
             and trigger_integrity["ok"]
+            and runtime_schema_integrity["ok"]
         ),
     }
 
@@ -504,4 +661,15 @@ def assert_schema_ready() -> None:
             "Database schema revision is current but required SQLite tenant-integrity "
             f"triggers are missing: {', '.join(trigger_integrity['missing'])}. "
             "Run `alembic upgrade head` or reinitialize the canonical schema."
+        )
+
+    runtime_schema_integrity = status.get(
+        "runtime_schema_integrity", {"ok": True, "missing": []}
+    )
+    if not runtime_schema_integrity["ok"]:
+        raise RuntimeError(
+            "Database schema revision is current but runtime-critical columns or "
+            "indexes are missing: "
+            f"{', '.join(runtime_schema_integrity['missing'])}. "
+            "Run `alembic upgrade head` or repair the canonical schema."
         )

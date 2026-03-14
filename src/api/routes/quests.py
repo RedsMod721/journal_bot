@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload
 
+from src.core.quest_learning import QuestLearningService
 from src.db.models.global_kb import GlobalSkill
 from src.db.models.quest import Quest
 from src.db.models.skill import Skill, SkillThemeMapping
@@ -332,3 +333,69 @@ def complete_quest(
         status="completed",
         message="Quest marked as completed.",
     )
+
+
+# ---------------------------------------------------------------------------
+# Q27: Learning system endpoints (Section 10.3)
+# ---------------------------------------------------------------------------
+
+
+class LearningStatusResponse(BaseModel):
+    """Current learning-phase state and per-kind confidence thresholds."""
+
+    learning_complete: bool
+    quest_decisions_count: int
+    # Thresholds are stored as floats in [0.0, 1.0]
+    confidence_threshold_instant: float
+    confidence_threshold_streak: float
+    confidence_threshold_longterm: float
+    can_create_cumulative: bool
+    can_create_recursive: bool
+
+
+@router.get(
+    "/learning/status",
+    response_model=LearningStatusResponse,
+    summary="Get quest learning phase status",
+    tags=["quests", "learning"],
+)
+def get_learning_status(
+    user_id: Annotated[str, Query(description="User UUID")],
+    db: Session = Depends(get_db),
+) -> LearningStatusResponse:
+    """
+    Return the current learning-phase state and confidence thresholds.
+
+    Implements Section 10.3 (Q27): new users are in the learning phase until
+    they reach the quest-decisions threshold, during which cumulative and
+    recursive quests are unavailable.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User {user_id!r} not found.")
+
+    status = QuestLearningService(db).get_learning_status(user)
+    return LearningStatusResponse(**status)
+
+
+@router.post(
+    "/learning/complete",
+    summary="Manually complete the learning phase",
+    tags=["quests", "learning"],
+)
+def complete_learning_phase(
+    user_id: Annotated[str, Query(description="User UUID")],
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """
+    Allow a user to unlock cumulative/recursive quests early by manually
+    marking the learning phase complete.
+
+    Idempotent — safe to call if learning is already complete.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail=f"User {user_id!r} not found.")
+
+    QuestLearningService(db).mark_learning_complete(user)
+    return {"learning_complete": True}

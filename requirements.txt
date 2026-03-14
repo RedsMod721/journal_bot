@@ -27,6 +27,7 @@ httpx==0.26.0
 
 # Utilities
 pyyaml==6.0.1
+pytz==2024.2
 python-dotenv==1.0.0
 click==8.1.7
 rich==13.7.0

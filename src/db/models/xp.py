@@ -108,6 +108,16 @@ class XpAward(Base):
     # How much XP the source skill gained (to derive the 1% theme share)
     source_skill_xp: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
+    # ------------------------------------------------------------------
+    # Section 10.6 audit fields (added MB86)
+    # ------------------------------------------------------------------
+    # Basis-point weight at award time (mirrors skill_weight as integer bp)
+    skill_weight_bp: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Quest matcher schema version used when this award was calculated
+    quest_matcher_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Award timestamp as epoch-ms (parallel to awarded_at for Section 10 compatibility)
+    awarded_at_utc_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     awarded_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
     )

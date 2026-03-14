@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.core.arc_lifecycle import ArcLifecycleService
 from src.core.realm import (
     RealmRankWordingPreset,
     list_rank_wording_presets,
@@ -227,6 +228,22 @@ def create_user(
             user.id,
             exc_info=True,
         )
+
+    tutorial_lifecycle = ArcLifecycleService(db)
+    tutorial_arc = tutorial_lifecycle.create_arc(
+        user_id=user.id,
+        arc_type="tutorial",
+        xp_requirement_multiplier_bp=9000,
+        xp_reward_multiplier_bp=10000,
+        decay_rate_multiplier_bp=10000,
+        make_active=True,
+    )
+    tutorial_lifecycle._write_trigger(
+        arc_id=tutorial_arc.id,
+        user_id=user.id,
+        trigger_type="signup",
+        trigger_data={"source": "users.create_user"},
+    )
 
     db.commit()
 

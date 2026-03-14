@@ -213,6 +213,30 @@ def test_pipeline_happy_path_persists_structured_and_awards():
         assert db.query(XpAward).count() >= 1
         assert db.query(ProcessingJob).count() == 1
         assert db.query(OutboxEvent).count() == 1
+        assert result["quest_result"]["instant_quest_id"] is not None
+        assert result["quest_result"]["streak_quest_ids"]
+
+        instant_quest = (
+            db.query(Quest)
+            .filter(
+                Quest.user_id == ids.user_id,
+                Quest.id == result["quest_result"]["instant_quest_id"],
+            )
+            .one_or_none()
+        )
+        assert instant_quest is not None
+        assert instant_quest.entry_id == ids.entry_id
+
+        streak_quests = (
+            db.query(Quest)
+            .filter(
+                Quest.user_id == ids.user_id,
+                Quest.id.in_(result["quest_result"]["streak_quest_ids"]),
+            )
+            .all()
+        )
+        assert len(streak_quests) == len(result["quest_result"]["streak_quest_ids"])
+        assert all(quest.completion_type == "streak" for quest in streak_quests)
 
 
 def test_pipeline_degrades_when_ollama_is_unavailable():

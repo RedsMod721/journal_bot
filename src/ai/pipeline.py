@@ -69,6 +69,11 @@ from src.ai.steps import structured as _s_structured
 from src.ai.steps import summary as _s_summary
 from src.ai.steps import variety as _s_variety
 
+from src.ai.pipeline_steps.quest_matcher_step import QuestMatcherStep
+from src.core.arc_lifecycle import ArcLifecycleService
+from src.core.arc_recovery_detection import RecoveryDetectionService
+from src.core.arc_regression_trigger import RegressionTriggerService
+from src.core.arc_vacation import VacationModeService
 from src.core.forgiveness_decay_service import ForgivenessDecayService
 from src.core.harmony_classifier import HarmonyClassifier
 from src.core.harmony_refresh_service import HarmonyRefreshService
@@ -161,6 +166,79 @@ def _safe_local_event_date(tz_name: str, created_at_utc: datetime) -> str:
 
 def _config_version() -> str:
     return "config-v1"
+
+
+def _allocate_basis_points(recipient_ids: list[str]) -> dict[str, int]:
+    if not recipient_ids:
+        return {}
+
+    ordered = sorted(recipient_ids)
+    base = 10000 // len(ordered)
+    remainder = 10000 - (base * len(ordered))
+    return {
+        recipient_id: base + (1 if index < remainder else 0)
+        for index, recipient_id in enumerate(ordered)
+    }
+
+
+def _normalize_pattern_key(raw: str) -> str:
+    key = raw.strip().lower().replace(" ", "_").replace("-", "_")
+    return "".join(char for char in key if char.isalnum() or char == "_")
+
+
+def _derive_week7_structured_signals(
+    *,
+    user_id: str,
+    detection: dict[str, Any],
+    db: Session,
+) -> dict[str, Any]:
+    from src.db.models.skill import Skill
+
+    detected_skill_names = {
+        str(name).strip().lower()
+        for name in detection.get("detected_skills", [])
+        if str(name).strip()
+    }
+
+    matched_skill_ids: list[str] = []
+    if detected_skill_names:
+        skills = db.query(Skill).filter(Skill.user_id == user_id).all()
+        for skill in skills:
+            candidates = {
+                str(skill.name or "").strip().lower(),
+                str(skill.canonical_name or "").strip().lower(),
+                str(skill.canonical_name or "").strip().lower().replace("_", " "),
+            }
+            if detected_skill_names.intersection(candidates):
+                matched_skill_ids.append(skill.id)
+
+    pattern_hits: list[dict[str, Any]] = []
+    seen_pattern_keys: set[str] = set()
+    for activity in sorted(
+        {
+            str(activity).strip().lower()
+            for activity in detection.get("detected_activities", [])
+            if str(activity).strip()
+        }
+    ):
+        semantic_key = _normalize_pattern_key(activity)
+        if semantic_key and semantic_key not in seen_pattern_keys:
+            pattern_hits.append(
+                {"semantic_key": semantic_key, "confidence_score": 0.70}
+            )
+            seen_pattern_keys.add(semantic_key)
+
+    extraction_confidence = (
+        0.80
+        if matched_skill_ids
+        else (0.65 if pattern_hits else 0.0)
+    )
+
+    return {
+        "skills_weights_bp": _allocate_basis_points(matched_skill_ids),
+        "extraction_confidence_score": extraction_confidence,
+        "pattern_hits_json": pattern_hits,
+    }
 
 
 def _pick_primary_personality_message(
@@ -445,6 +523,9 @@ def build_extraction_fallback(
         "self_compassion_score": None,
         "skills_themes_involved": [],
         "safety_flags": [],
+        "skills_weights_bp": {},
+        "extraction_confidence_score": 0.0,
+        "pattern_hits_json": [],
         "extraction_status": "failed",
         "extraction_error_code": error_code,
         "parser_version": versions.parser_version,
@@ -899,9 +980,15 @@ class PipelineProcessor:
         *,
         canonical_text: str,
         detection: dict[str, Any],
+        db: Session,
         ctx: PipelineContext,
     ) -> dict[str, Any]:
         try:
+            week7_signals = _derive_week7_structured_signals(
+                user_id=ctx.user_id,
+                detection=detection,
+                db=db,
+            )
             return {
                 "canonical_text": canonical_text,
                 "primary_action_type": (
@@ -915,6 +1002,11 @@ class PipelineProcessor:
                 "task_type": detection["task_type"],
                 "skills_themes_involved": list(detection["detected_skills"]),
                 "safety_flags": list(detection.get("safety_flags", [])),
+                "skills_weights_bp": week7_signals["skills_weights_bp"],
+                "extraction_confidence_score": week7_signals[
+                    "extraction_confidence_score"
+                ],
+                "pattern_hits_json": week7_signals["pattern_hits_json"],
                 "extraction_status": "succeeded",
                 "parser_version": ctx.versions.parser_version,
                 "extracted_at": ctx.time.processing_started_at_utc,
@@ -1156,12 +1248,17 @@ class PipelineProcessor:
                 },
             )
             safety_result = _build_safety_result(detection)
+            active_arc = ArcLifecycleService(db).get_active_arc(ctx.user_id)
             user_state = {
                 "harmony_score": int(harmony_preview.get("overall_balance", 0.5) * 100),
                 "anomaly_score": anomaly_result.get("anomaly_score", 0.0),
                 "anomaly_contribution": anomaly_result.get("anomaly_score", 0.0),
-                "tutorial_active": False,
-                "regression_arc_active": False,
+                "tutorial_active": bool(
+                    active_arc is not None and active_arc.arc_type == "tutorial"
+                ),
+                "regression_arc_active": bool(
+                    active_arc is not None and active_arc.arc_type == "regression"
+                ),
                 "major_achievement": bool(progress_preview.get("completed_quest_ids")),
                 "skills": detection.get("detected_skills", []),
                 "overwork_stage": harmony_preview.get("overwork_stage", 0),
@@ -1237,6 +1334,7 @@ class PipelineProcessor:
                 "structured_data": self._planned_structured_data(
                     canonical_text=normalized["canonical_text"],
                     detection=detection,
+                    db=db,
                     ctx=ctx,
                 ),
                 "safety_result": safety_result,
@@ -1278,6 +1376,207 @@ class PipelineProcessor:
             "reasons": [c.get("key", "") for c in components if c.get("key")],
             "calculated_at": result["calculated_at"],
         }
+
+    def _serialize_quest_summary(self, quest: Any) -> dict[str, Any]:
+        return {
+            "quest_id": quest.id,
+            "quest_type": quest.quest_type,
+            "completion_type": quest.completion_type,
+            "status": quest.status,
+        }
+
+    def _serialize_arc_summary(self, arc: Any) -> dict[str, Any]:
+        return {
+            "arc_id": arc.id,
+            "arc_type": arc.arc_type,
+            "status": arc.status,
+            "event_name": arc.event_name,
+        }
+
+    def _execute_story_arc_stage(
+        self,
+        db: Session,
+        ctx: PipelineContext,
+        entry: JournalEntry,
+    ) -> dict[str, Any]:
+        user = db.query(User).filter(User.id == ctx.user_id).one_or_none()
+        if user is None:
+            return {
+                "active_arc": None,
+                "arc_updates": [],
+                "notes": ["USER_NOT_FOUND"],
+                "error": "USER_NOT_FOUND",
+            }
+
+        lifecycle = ArcLifecycleService(db)
+        vacation_service = VacationModeService(db)
+        regression_service = RegressionTriggerService(db)
+        recovery_service = RecoveryDetectionService(db)
+
+        updates: list[dict[str, Any]] = []
+        notes: list[str] = []
+
+        cached_active_arc_id = user.active_arc_id
+        active_arc = lifecycle.reconcile_active_arc_cache(user.id)
+        if cached_active_arc_id != (active_arc.id if active_arc else None):
+            updates.append(
+                {
+                    "action": "cache_repaired",
+                    "cached_arc_id": cached_active_arc_id,
+                    "active_arc_id": active_arc.id if active_arc else None,
+                }
+            )
+
+        if (
+            active_arc is not None
+            and active_arc.arc_type == "event"
+            and active_arc.duration_days is not None
+            and lifecycle.calculate_days_active(active_arc) >= float(active_arc.duration_days)
+        ):
+            if active_arc.event_name == "vacation_mode":
+                ended_vacation, resumed_arc = vacation_service.end_vacation(user.id)
+                updates.append(
+                    {
+                        "action": "auto_expired",
+                        "arc": self._serialize_arc_summary(ended_vacation),
+                    }
+                )
+                if resumed_arc is not None:
+                    updates.append(
+                        {
+                            "action": "resumed",
+                            "arc": self._serialize_arc_summary(resumed_arc),
+                        }
+                    )
+                active_arc = lifecycle.reconcile_active_arc_cache(user.id)
+            else:
+                expired_arc = lifecycle.complete_arc(
+                    arc=active_arc,
+                    trigger_type="auto_expiry",
+                    trigger_data={"entry_id": entry.id},
+                )
+                updates.append(
+                    {
+                        "action": "auto_expired",
+                        "arc": self._serialize_arc_summary(expired_arc),
+                    }
+                )
+                active_arc = lifecycle.reconcile_active_arc_cache(user.id)
+
+        if active_arc is not None and active_arc.arc_type == "regression":
+            prior_arc_id = active_arc.id
+            redemption_arc = recovery_service.check_and_transition_to_redemption(user.id)
+            active_arc = lifecycle.reconcile_active_arc_cache(user.id)
+            if redemption_arc is not None:
+                updates.append(
+                    {
+                        "action": "transitioned_to_redemption",
+                        "from_arc_id": prior_arc_id,
+                        "arc": self._serialize_arc_summary(redemption_arc),
+                    }
+                )
+            elif active_arc is None or active_arc.id != prior_arc_id:
+                updates.append(
+                    {
+                        "action": "regression_closed",
+                        "from_arc_id": prior_arc_id,
+                        "active_arc_id": active_arc.id if active_arc else None,
+                    }
+                )
+        else:
+            regression_arc = regression_service.check_and_trigger_regression(user.id)
+            active_arc = lifecycle.reconcile_active_arc_cache(user.id)
+            if regression_arc is not None:
+                updates.append(
+                    {
+                        "action": "regression_triggered",
+                        "arc": self._serialize_arc_summary(regression_arc),
+                    }
+                )
+            elif active_arc is not None and active_arc.arc_type == "event":
+                notes.append("REGRESSION_CHECK_DEFERRED_OR_SUPPRESSED")
+
+        db.flush()
+        return {
+            "active_arc": (
+                self._serialize_arc_summary(active_arc) if active_arc is not None else None
+            ),
+            "arc_updates": updates,
+            "notes": notes,
+        }
+
+    def _execute_quest_matcher(
+        self,
+        db: Session,
+        ctx: PipelineContext,
+        entry: JournalEntry,
+        plan: dict[str, Any],
+        variety_out: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Run QuestMatcherStep and return a JSON-serializable summary dict.
+
+        Called from ``_apply_tx_b`` after ``step_16p_finalize_entry`` so that
+        ``entry.status == 'completed'`` when the matcher runs.
+        """
+        user = db.query(User).filter(User.id == ctx.user_id).one_or_none()
+        if user is None:
+            return {
+                "instant_quest_id": None,
+                "streak_quest_ids": [],
+                "xp_award_count": 0,
+                "total_xp_awarded": 0,
+                "notes": ["USER_NOT_FOUND"],
+                "error": "USER_NOT_FOUND",
+            }
+
+        step = QuestMatcherStep(db)
+        result = step.execute(
+            user=user,
+            entry=entry,
+            structured_data=plan["structured_data"],
+            troll_multiplier_bp=plan["anomaly_result"].get("troll_bp", 10000),
+            variety_multiplier_bp=variety_out.get("variety_multiplier_bp", 10000),
+            processing_run_id=ctx.processing_run_id,
+        )
+
+        # Serialize ORM objects → JSON-safe primitives for the pipeline result.
+        instant = result.get("instant_quest")
+        streak_quests = result.get("streak_quests", [])
+        xp_awards = result.get("xp_awards", [])
+        created_quests = result.get("created_quests", [])
+        progressed_quests = result.get("progressed_quests", [])
+        completed_quests = result.get("completed_quests", [])
+        out: dict[str, Any] = {
+            "instant_quest_id": instant.id if instant is not None else None,
+            "streak_quest_ids": [q.id for q in streak_quests],
+            "created_quests": [
+                self._serialize_quest_summary(quest) for quest in created_quests
+            ],
+            "progressed_quests": [
+                self._serialize_quest_summary(quest) for quest in progressed_quests
+            ],
+            "completed_quests": [
+                self._serialize_quest_summary(quest) for quest in completed_quests
+            ],
+            "xp_awards": [
+                {
+                    "id": award.id,
+                    "quest_id": award.quest_id,
+                    "skill_id": award.skill_id,
+                    "theme_id": award.theme_id,
+                    "distribution_type": award.distribution_type,
+                    "amount": award.amount,
+                    "xp_reason": award.xp_reason,
+                }
+                for award in xp_awards
+            ],
+            "xp_award_count": len(xp_awards),
+            "total_xp_awarded": result.get("total_xp_awarded", 0),
+            "notes": result.get("notes", []),
+        }
+        if "error" in result:
+            out["error"] = result["error"]
+        return out
 
     def _apply_tx_b(
         self,
@@ -1559,6 +1858,51 @@ class PipelineProcessor:
                     db=db,
                 ),
             )
+            story_arc_out = self._run_step(
+                ctx=ctx,
+                step_name="step_16q_story_arc_stage",
+                error_code="STEP_16Q_STORY_ARCS",
+                category="db",
+                critical=False,
+                retryable=False,
+                fn=lambda: self._execute_story_arc_stage(
+                    db=db,
+                    ctx=ctx,
+                    entry=entry,
+                ),
+                fallback_fn=lambda exc: {
+                    "active_arc": None,
+                    "arc_updates": [],
+                    "notes": [str(exc)],
+                    "error": str(exc),
+                },
+            )
+            # Step 16r — Quest Matcher v2 (Section 10).
+            # Runs AFTER step_16p so entry.status == "completed", which is
+            # required by QuestMatcherService.match_quests_for_entry.
+            quest_matcher_out = self._run_step(
+                ctx=ctx,
+                step_name="step_16r_quest_matcher",
+                error_code="STEP_16R_QUEST_MATCHER",
+                category="db",
+                critical=False,
+                retryable=False,
+                fn=lambda: self._execute_quest_matcher(
+                    db=db,
+                    ctx=ctx,
+                    entry=entry,
+                    plan=plan,
+                    variety_out=variety_out,
+                ),
+                fallback_fn=lambda exc: {
+                    "instant_quest_id": None,
+                    "streak_quest_ids": [],
+                    "xp_award_count": 0,
+                    "total_xp_awarded": 0,
+                    "notes": [],
+                    "error": str(exc),
+                },
+            )
             persisted_personality_messages = serialize_personality_messages(
                 db.query(PersonalityMessage)
                 .filter(
@@ -1592,6 +1936,8 @@ class PipelineProcessor:
                 persisted_personality_messages=persisted_personality_messages,
                 summary=summary,
                 finalize=finalize,
+                story_arc_out=story_arc_out,
+                quest_matcher_out=quest_matcher_out,
             )
 
             self._emit_outbox_event(
@@ -1647,6 +1993,8 @@ class PipelineProcessor:
         persisted_personality_messages: list[dict[str, Any]],
         summary: dict[str, Any],
         finalize: dict[str, Any],
+        story_arc_out: dict[str, Any] | None = None,
+        quest_matcher_out: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         cache_stats = self.cache.get_stats()
         fallbacks = [m for m in ctx.step_metrics if m.status == "fallback"]
@@ -1666,13 +2014,14 @@ class PipelineProcessor:
                 processing_completed_at_utc=ctx.time.processing_completed_at_utc or "",
                 local_event_date=ctx.time.local_event_date,
                 structured_data=structured_data,
-                quests_created=[],
-                quests_completed=list(progress["completed_quest_payloads"]),
-                quests_progressed=[
-                    {"quest_id": quest_id}
-                    for quest_id in progress.get("completed_quest_ids", [])
-                ],
-                xp_awards=list(skill_awards["skill_awards"]) + list(theme_awards["theme_awards"]),
+                quests_created=list((quest_matcher_out or {}).get("created_quests", [])),
+                quests_completed=list((quest_matcher_out or {}).get("completed_quests", [])),
+                quests_progressed=list((quest_matcher_out or {}).get("progressed_quests", [])),
+                xp_awards=(
+                    list(skill_awards["skill_awards"])
+                    + list(theme_awards["theme_awards"])
+                    + list((quest_matcher_out or {}).get("xp_awards", []))
+                ),
                 level_ups=[],
                 skill_updates=[
                     {
@@ -1691,7 +2040,7 @@ class PipelineProcessor:
                 insights_discovered=(
                     [insight_out] if insight_out.get("insight_id") else []
                 ),
-                arc_updates=[],
+                arc_updates=list((story_arc_out or {}).get("arc_updates", [])),
                 anomaly_score=float(anomaly_out.get("score", 0.0)),
                 troll_multiplier=float(anomaly_out.get("troll_multiplier", 1.0)),
                 personality_messages=persisted_personality_messages,
@@ -1737,6 +2086,7 @@ class PipelineProcessor:
             )
         )
         payload["status"] = "completed"
+        payload["quest_result"] = quest_matcher_out or {}
         return payload
 
     def _build_failure_result(

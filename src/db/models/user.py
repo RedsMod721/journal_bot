@@ -37,7 +37,9 @@ if TYPE_CHECKING:
     from src.db.models.journal_entry import JournalEntry
     from src.db.models.personality import PersonalityMemory, PersonalityMessage, PersonalityState
     from src.db.models.quest import Quest, QuestFailureTracker
+    from src.db.models.quest_progress import QuestContributionDay, QuestContributionEntry, QuestProgress
     from src.db.models.skill import Skill, Theme
+    from src.db.models.story import ArcTrigger, StoryArc
     from src.db.models.user_skill_state import UserSkillState
     from src.db.models.xp import XpAward  # noqa: F401
 
@@ -132,9 +134,13 @@ class User(Base):
     quest_decisions_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0
     )
-    # User-adjustable thresholds for instant vs. long-term quest classification
+    # User-adjustable thresholds for quest classification (Section 10.0.2 / Q27)
     confidence_threshold_instant: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.65
+    )
+    # Streak quests sit between instant and longterm confidence requirements
+    confidence_threshold_streak: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.55
     )
     confidence_threshold_longterm: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.45
@@ -259,6 +265,17 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    story_arcs: Mapped[list["StoryArc"]] = relationship(
+        "StoryArc",
+        foreign_keys="StoryArc.user_id",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    arc_triggers: Mapped[list["ArcTrigger"]] = relationship(
+        "ArcTrigger",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     # ------------------------------------------------------------------
     # Indexes & constraints
@@ -274,6 +291,10 @@ class User(Base):
         CheckConstraint(
             "confidence_threshold_instant >= 0 AND confidence_threshold_instant <= 1.0",
             name="ck_users_confidence_instant",
+        ),
+        CheckConstraint(
+            "confidence_threshold_streak >= 0 AND confidence_threshold_streak <= 1.0",
+            name="ck_users_confidence_streak",
         ),
         CheckConstraint(
             "confidence_threshold_longterm >= 0 AND confidence_threshold_longterm <= 1.0",

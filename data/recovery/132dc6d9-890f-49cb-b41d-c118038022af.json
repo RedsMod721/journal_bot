@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "recovery_id": "132dc6d9-890f-49cb-b41d-c118038022af",
+  "entry_id": "1dc2dc1f-ddf9-475e-833d-9ac028049104",
+  "user_id": "3f0f158d-d814-43f9-b035-5f6b43edeb41",
+  "idempotency_key": "e6605bac-eb41-4836-9147-2c3ad35eb12f",
+  "error": "(sqlite3.OperationalError) no such column: story_arcs.event_name\n[SQL: SELECT story_arcs.id AS story_arcs_id, story_arcs.user_id AS story_arcs_user_id, story_arcs.arc_type AS story_arcs_arc_type, story_arcs.status AS story_arcs_status, story_arcs.event_name AS story_arcs_event_name, story_arcs.theme_ids AS story_arcs_theme_ids, story_arcs.xp_requirement_multiplier_bp AS story_arcs_xp_requirement_multiplier_bp, story_arcs.xp_reward_multiplier_bp AS story_arcs_xp_reward_multiplier_bp, story_arcs.decay_rate_multiplier_bp AS story_arcs_decay_rate_multiplier_bp, story_arcs.started_at AS story_arcs_started_at, story_arcs.duration_days AS story_arcs_duration_days, story_arcs.created_at AS story_arcs_created_at, story_arcs.updated_at AS story_arcs_updated_at, story_arcs.completed_at AS story_arcs_completed_at \nFROM story_arcs \nWHERE story_arcs.user_id = ? AND story_arcs.status = ?\n LIMIT ? OFFSET ?]\n[parameters: ('3f0f158d-d814-43f9-b035-5f6b43edeb41', 'active', 1, 0)]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)",
+  "error_code": "SETUP_EXCEPTION",
+  "pipeline_version": "week3-v2",
+  "failed_at": "2026-03-14T17:29:38.527831+00:00",
+  "status": "pending",
+  "retry_count": 0,
+  "last_retry_at": null,
+  "recovered_at": null
+}

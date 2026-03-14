@@ -46,7 +46,11 @@ from src.db.models.user_skill_state import UserSkillState
 
 # 6. Quests
 from src.db.models.quest import Quest, QuestFailureTracker, QuestTemplate
-from src.db.models.quest_progress import QuestProgress
+from src.db.models.quest_progress import (
+    QuestContributionDay,
+    QuestContributionEntry,
+    QuestProgress,
+)
 from src.db.models.learning import UserQuestBias, UserQuestPreference
 
 # 7. Story, personality, AI memory
@@ -115,6 +119,8 @@ __all__ = [
     "Quest",
     "QuestFailureTracker",
     "QuestProgress",
+    "QuestContributionDay",
+    "QuestContributionEntry",
     "UserQuestPreference",
     "UserQuestBias",
     # Story / personality / rag
