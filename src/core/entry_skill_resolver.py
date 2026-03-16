@@ -24,7 +24,7 @@ class EntrySkillResolution:
     source_skills_weights_bp: dict[str, int]
     skills_weights_bp: dict[str, int]
     resolved_skill_names: list[str]
-    pattern_hits_json: list[dict[str, float]]
+    pattern_hits_json: list[dict[str, str | float]]
     extraction_confidence_score: float
 
 
@@ -132,8 +132,8 @@ def _normalize_pattern_key(raw: str) -> str:
     return "".join(ch for ch in key if ch.isalnum() or ch == "_")
 
 
-def _build_pattern_hits(detected_activities: Iterable[str]) -> list[dict[str, float]]:
-    pattern_hits: list[dict[str, float]] = []
+def _build_pattern_hits(detected_activities: Iterable[str]) -> list[dict[str, str | float]]:
+    pattern_hits: list[dict[str, str | float]] = []
     seen: set[str] = set()
     for activity in sorted(
         {
@@ -345,13 +345,17 @@ def _ordered_skill_names(source_weights_bp: dict[str, int], *, db: Session) -> l
         source_skill_ids=source_weights_bp.keys(),
         db=db,
     )
-    ordered = sorted(
-        source_weights_bp,
-        key=lambda source_skill_id: (
-            -int(source_weights_bp[source_skill_id]),
-            str(globals_by_source.get(source_skill_id).canonical_name if globals_by_source.get(source_skill_id) else source_skill_id),
-        ),
-    )
+    def _sort_key(source_skill_id: str) -> tuple[int, str]:
+        global_row = globals_by_source.get(source_skill_id)
+        fallback_name = source_skill_id
+        canonical_name = (
+            str(global_row.canonical_name)
+            if global_row is not None and global_row.canonical_name
+            else fallback_name
+        )
+        return (-int(source_weights_bp[source_skill_id]), canonical_name)
+
+    ordered = sorted(source_weights_bp, key=_sort_key)
     names: list[str] = []
     for source_skill_id in ordered:
         global_row = globals_by_source.get(source_skill_id)
