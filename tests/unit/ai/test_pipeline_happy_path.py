@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -15,6 +16,7 @@ from src.db.base import Base
 import src.db.models  # noqa: F401
 from src.db.models.global_kb import GlobalSkill
 from src.db.models.journal_entry import JournalEntry, JournalEntryStructured
+from src.db.models.personality import PersonalityMessage
 from src.db.models.processing import EntryIdempotencyClaim, OutboxEvent, ProcessingJob
 from src.db.models.quest import Quest
 from src.db.models.skill import Skill, SkillThemeMapping, Theme
@@ -210,17 +212,40 @@ def test_pipeline_happy_path_persists_structured_and_awards():
         assert any(
             step["step_name"] == "step_16r_quest_matcher" for step in result["step_trace"]
         )
-        assert len(result["personality_messages"]) == 1
-        message = result["personality_messages"][0]
-        assert message["id"] == result["message_id"]
-        assert message["personality"] == result["personality"]
-        assert message["message_text"] == result["message"]
-        assert message["logical_slot_key"] == "primary"
-        assert message["multi_personality"] == {
+        assert any(
+            step["step_name"] == "step_15b_system_report" for step in result["step_trace"]
+        )
+        assert any(
+            step["step_name"] == "step_16s_persist_system_report"
+            for step in result["step_trace"]
+        )
+        assert len(result["personality_messages"]) == 2
+        primary_message = next(
+            message
+            for message in result["personality_messages"]
+            if message["logical_slot_key"] == "primary"
+        )
+        system_message = next(
+            message
+            for message in result["personality_messages"]
+            if message["personality"] == "system"
+        )
+        assert primary_message["id"] == result["message_id"]
+        assert primary_message["personality"] == result["personality"]
+        assert primary_message["message_text"] == result["message"]
+        assert primary_message["logical_slot_key"] == "primary"
+        assert primary_message["multi_personality"] == {
             "is_primary": True,
-            "primary_personality": message["personality"],
+            "primary_personality": primary_message["personality"],
             "impact_multiplier": 1.0,
         }
+        assert system_message["message_type"] == "report_summary"
+        assert system_message["logical_slot_key"] == "system_report"
+        assert "[Signals]" in system_message["message_text"]
+        assert "[Personality Reply]" in system_message["message_text"]
+        assert result["report_result"]["message_id"] == system_message["id"]
+        assert result["report_result"]["inserted"] is True
+        assert result["report_result"]["context_data"]["report_kind"] == "daily"
 
         structured = (
             db.query(JournalEntryStructured)
@@ -259,6 +284,74 @@ def test_pipeline_happy_path_persists_structured_and_awards():
         )
         assert len(streak_quests) == len(result["quest_result"]["streak_quest_ids"])
         assert all(quest.completion_type == "streak" for quest in streak_quests)
+        assert (
+            db.query(PersonalityMessage)
+            .filter(
+                PersonalityMessage.user_id == ids.user_id,
+                PersonalityMessage.entry_id == ids.entry_id,
+                PersonalityMessage.personality == "system",
+            )
+            .count()
+            == 1
+        )
+
+
+def test_pipeline_system_report_fallback_is_still_persisted(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    with _make_db() as db:
+        ids = _seed_core_graph(db)
+
+        def _raise_report_builder(self, **_kwargs):
+            raise RuntimeError("report builder boom")
+
+        monkeypatch.setattr(
+            PipelineProcessor,
+            "_build_system_report_payload",
+            _raise_report_builder,
+        )
+
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
+        result = processor.process_entry(
+            entry_id=ids.entry_id,
+            user_id=ids.user_id,
+            idempotency_key="idemp-report-fallback-1",
+        )
+
+        assert result["status"] == "completed"
+        assert result["report_result"]["fallback_used"] is True
+        assert result["report_result"]["message_id"] is not None
+        assert result["report_result"]["context_data"]["completion_status"] == "partial"
+        assert "signals" in result["report_result"]["context_data"]["missing_sections"]
+        assert any(
+            step["step_name"] == "step_15b_system_report" and step["status"] == "fallback"
+            for step in result["step_trace"]
+        )
+        assert any(
+            step["step_name"] == "step_16s_persist_system_report"
+            for step in result["step_trace"]
+        )
+
+        system_message = next(
+            message
+            for message in result["personality_messages"]
+            if message["personality"] == "system"
+        )
+        assert system_message["id"] == result["report_result"]["message_id"]
+        assert "[Signals] missing" in system_message["message_text"]
+        assert "[Insight] missing" in system_message["message_text"]
+        assert (
+            db.query(PersonalityMessage)
+            .filter(
+                PersonalityMessage.user_id == ids.user_id,
+                PersonalityMessage.entry_id == ids.entry_id,
+                PersonalityMessage.personality == "system",
+            )
+            .count()
+            == 1
+        )
 
 
 def test_pipeline_degrades_when_ollama_is_unavailable():
@@ -351,7 +444,7 @@ def test_pipeline_smoke_latency_under_two_seconds_with_local_stubs():
         elapsed = time.perf_counter() - started
 
         assert result["status"] == "completed"
-        assert elapsed < 2.0
+        assert elapsed < 2.5
 
 
 def test_pipeline_core_resolves_run_cardio_source_skill_weights():

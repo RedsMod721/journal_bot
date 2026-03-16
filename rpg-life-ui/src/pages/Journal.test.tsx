@@ -346,6 +346,66 @@ describe("Journal thread page", () => {
     expect(replyBodies).toEqual(["Primary reply", "Secondary reply"]);
   });
 
+  it("renders the system report bubble without feedback actions", async () => {
+    entriesData = [
+      {
+        entry_id: "entry-system",
+        status: "completed",
+        word_count: 9,
+        preview_text: "Completed entry with system report",
+        question_state: "none",
+        created_at: "2026-03-13T11:00:00.000Z",
+        processed_at: "2026-03-13T11:02:00.000Z",
+      },
+    ];
+    detailByEntryId["entry-system"] = {
+      entry_id: "entry-system",
+      content: "Completed entry with system report",
+      status: "completed",
+      question_state: "none",
+      created_at: "2026-03-13T11:00:00.000Z",
+      processed_at: "2026-03-13T11:02:00.000Z",
+      processing_duration_ms: 120000,
+      error_message: null,
+    };
+    messagesByEntryId["entry-system"] = [
+      {
+        id: "msg-system",
+        entry_id: "entry-system",
+        personality: "system",
+        message_type: "report_summary",
+        message_text:
+          "SYSTEM REPORT CHECKLIST\nMissing sections: Insight\n\n[Signals] present\n- skills: Python\n\n[Insight] missing\n- no insight generated",
+        logical_slot_key: "system_report",
+        context_data: {
+          report_kind: "daily",
+          completion_status: "partial",
+          missing_sections: ["insight"],
+        },
+        multi_personality: {
+          is_primary: false,
+          primary_personality: "system",
+          impact_multiplier: 0.5,
+        },
+        created_at: "2026-03-13T11:02:01.000Z",
+      },
+    ];
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("System")).toBeInTheDocument();
+    });
+    expect(screen.getByText(/Pipeline report/)).toBeInTheDocument();
+    expect(screen.getByText(/\[Signals\] present/)).toBeInTheDocument();
+    expect(screen.getByText(/\[Insight\] missing/)).toBeInTheDocument();
+    expect(screen.getByText("pipeline report")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Helpful" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Off target" })
+    ).not.toBeInTheDocument();
+  });
+
   it("switches between recent entry threads on the same page", async () => {
     entriesData = [
       {

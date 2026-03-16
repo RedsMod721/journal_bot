@@ -37,6 +37,7 @@ const PERSONALITY_LABELS: Record<string, string> = {
   sassy: "Sassy",
   wargod: "Wargod",
   raphael: "Raphael",
+  system: "System",
 };
 
 const PERSONALITY_SURFACES: Record<string, string> = {
@@ -46,6 +47,7 @@ const PERSONALITY_SURFACES: Record<string, string> = {
   sassy: "bg-pink-500/10 text-pink-700 border-pink-500/20",
   wargod: "bg-amber-500/10 text-amber-700 border-amber-500/20",
   raphael: "bg-violet-500/10 text-violet-700 border-violet-500/20",
+  system: "bg-slate-500/10 text-slate-600 border-slate-400/20",
 };
 
 function buildPreviewText(text: string, limit = 160): string {
@@ -430,6 +432,32 @@ export function Journal() {
                   />
 
                   {transcriptMessages.map((message) => {
+                    // System report messages — distinct "terminal" styling, no feedback buttons
+                    if (message.personality === "system") {
+                      return (
+                        <MessageBubble
+                          key={message.id}
+                          title="System"
+                          subtitle={`Pipeline report • ${formatTimestamp(message.created_at)}`}
+                          text={message.message_text}
+                          avatarLabel="SYS"
+                          avatarClassName={cn(
+                            "border text-xs",
+                            PERSONALITY_SURFACES.system
+                          )}
+                          bubbleClassName={cn(
+                            "border font-mono text-xs",
+                            PERSONALITY_SURFACES.system
+                          )}
+                          footer={
+                            <Badge variant="outline" className="text-xs capitalize">
+                              pipeline report
+                            </Badge>
+                          }
+                        />
+                      );
+                    }
+
                     const personalityLabel =
                       PERSONALITY_LABELS[message.personality] || message.personality;
                     const scopeLabel = message.multi_personality.is_primary

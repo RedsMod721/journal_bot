@@ -430,6 +430,15 @@ class TransactionOrchestrator:
                 )
                 self._write_personality_message(pipeline_context, now)
 
+            if pipeline_context.report_result is not None:
+                logger.info(
+                    "[tx:b][tx:pipeline] Writing system report entry=%s run=%s",
+                    entry_id,
+                    pipeline_context.processing_run_id,
+                    extra=ctx,
+                )
+                self._write_system_report(pipeline_context, now)
+
             # -- Outbox events ---------------------------------------------
             if pipeline_context.outbox_events:
                 logger.info(
@@ -658,6 +667,48 @@ class TransactionOrchestrator:
             ctx.versions.personality_message_prompt_version,
         )
         # TODO(mb-next): call PersonalityService.apply_personality_message(db, ctx)
+
+    def _write_system_report(
+        self, ctx: "PipelineContext", now: datetime
+    ) -> None:
+        """
+        Insert system report as a PersonalityMessage(personality='system') row.
+
+        The report is deterministic (no LLM) and was assembled in step 15b.
+        The unique constraint uq_personality_messages_selector_slot on
+        (user_id, entry_id, message_type, logical_slot_key, selector_version)
+        makes pipeline retries idempotent.
+        """
+        from src.db.models.personality import PersonalityMessage
+
+        result = ctx.report_result
+        if not result:
+            logger.debug(
+                "[tx:b][tx:pipeline] _write_system_report skipped — no report_result entry=%s",
+                ctx.entry_id,
+            )
+            return
+
+        row = PersonalityMessage(
+            id=str(uuid.uuid4()),
+            user_id=ctx.user_id,
+            entry_id=ctx.entry_id,
+            personality="system",
+            message_type="report_summary",
+            message_text=result.get("message_text", "[SYSTEM] No report available."),
+            selector_version=result.get("selector_version", 1),
+            selector_seed_hash=None,
+            logical_slot_key=result.get("logical_slot_key", "system_report"),
+            context_data=json.dumps(result.get("context_data", {})),
+            quest_id=None,
+            created_at=now,
+        )
+        self.db.add(row)
+        logger.debug(
+            "[tx:b][tx:pipeline] _write_system_report entry=%s fallback=%s",
+            ctx.entry_id,
+            result.get("fallback_used", False),
+        )
 
     def _write_outbox_events(
         self, ctx: "PipelineContext", now: datetime

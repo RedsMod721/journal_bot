@@ -206,6 +206,9 @@ class PipelineContext:
     # Step 14 — Personality message generation (LLM + RAG)
     personality_result: Optional[Dict[str, Any]] = None
 
+    # Step 15b — System report (deterministic, no LLM)
+    report_result: Optional[Dict[str, Any]] = None
+
     # ------------------------------------------------------------------ #
     # Cross-cutting accumulators                                           #
     # ------------------------------------------------------------------ #

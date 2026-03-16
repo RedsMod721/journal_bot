@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     from src.db.models.user import User
 
 _PERSONALITY_CHECK = (
-    "personality IN ('observer','therapist','coach','sassy','wargod','raphael')"
+    "personality IN ('observer','therapist','coach','sassy','wargod','raphael','system')"
 )
 _ACTIVE_PERSONALITY_CHECK = (
     "active_personality IN ('observer','therapist','coach','sassy','wargod','raphael')"

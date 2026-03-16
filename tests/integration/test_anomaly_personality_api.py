@@ -618,6 +618,23 @@ def test_personality_messages_endpoint_filters_and_parses_context(
                 created_at=datetime(2026, 3, 13, 9, 5, tzinfo=timezone.utc),
             ),
             PersonalityMessage(
+                id="78787878-7878-7878-7878-787878787878",
+                user_id=seeded_user.id,
+                entry_id=completed_entry.id,
+                personality="system",
+                message_type="report_summary",
+                message_text="SYSTEM REPORT CHECKLIST\n\n[Signals] present\n- skills: Python\n\n[Insight] missing",
+                logical_slot_key="system_report",
+                context_data=json.dumps(
+                    {
+                        "report_kind": "daily",
+                        "completion_status": "partial",
+                        "missing_sections": ["insight"],
+                    }
+                ),
+                created_at=datetime(2026, 3, 13, 9, 6, tzinfo=timezone.utc),
+            ),
+            PersonalityMessage(
                 id="34343434-3434-3434-3434-343434343434",
                 user_id=seeded_user.id,
                 entry_id=other_entry.id,
@@ -640,6 +657,7 @@ def test_personality_messages_endpoint_filters_and_parses_context(
     payload = all_messages.json()
     assert [row["id"] for row in payload] == [
         "34343434-3434-3434-3434-343434343434",
+        "78787878-7878-7878-7878-787878787878",
         "56565656-5656-5656-5656-565656565656",
         "12121212-1212-1212-1212-121212121212",
     ]
@@ -658,16 +676,24 @@ def test_personality_messages_endpoint_filters_and_parses_context(
     )
     assert filtered.status_code == 200
     filtered_payload = filtered.json()
-    assert len(filtered_payload) == 2
+    assert len(filtered_payload) == 3
     assert filtered_payload[0]["entry_id"] == completed_entry.id
-    assert filtered_payload[0]["logical_slot_key"] == "secondary"
+    assert filtered_payload[0]["logical_slot_key"] == "system_report"
+    assert filtered_payload[0]["personality"] == "system"
+    assert filtered_payload[0]["context_data"]["report_kind"] == "daily"
     assert filtered_payload[0]["multi_personality"] == {
+        "is_primary": False,
+        "primary_personality": "system",
+        "impact_multiplier": 0.5,
+    }
+    assert filtered_payload[1]["logical_slot_key"] == "secondary"
+    assert filtered_payload[1]["multi_personality"] == {
         "is_primary": False,
         "primary_personality": "observer",
         "impact_multiplier": 0.5,
     }
-    assert filtered_payload[1]["logical_slot_key"] == "primary"
-    assert filtered_payload[1]["multi_personality"] == {
+    assert filtered_payload[2]["logical_slot_key"] == "primary"
+    assert filtered_payload[2]["multi_personality"] == {
         "is_primary": True,
         "primary_personality": "observer",
         "impact_multiplier": 1.0,

@@ -152,6 +152,24 @@ def test_sync_mode_returns_terminal_success_and_replays(
             "message": "Primary reply",
             "message_id": "msg-primary",
             "personality": "coach",
+            "report_result": {
+                "personality": "system",
+                "message_type": "report_summary",
+                "logical_slot_key": "system_report",
+                "message_id": "msg-system",
+                "inserted": True,
+                "context_data": {
+                    "report_kind": "daily",
+                    "completion_status": "partial",
+                    "missing_sections": ["insight"],
+                    "section_statuses": {
+                        "signals": {"status": "present", "details": ["skills: Python"]},
+                        "insight": {"status": "missing", "details": ["no insight generated"]},
+                        "personality_reply": {"status": "present", "details": ["personality: coach"]},
+                    },
+                    "approx_processing_ms": 1234,
+                },
+            },
             "step_trace": [
                 {
                     "step_name": "step_01_validate_input",
@@ -211,6 +229,25 @@ def test_sync_mode_returns_terminal_success_and_replays(
                     },
                     "created_at": "2026-03-13T12:00:01.000Z",
                 },
+                {
+                    "id": "msg-system",
+                    "entry_id": entry_id,
+                    "personality": "system",
+                    "message_type": "report_summary",
+                    "message_text": "SYSTEM REPORT CHECKLIST\n\n[Signals] present\n- skills: Python\n\n[Insight] missing",
+                    "logical_slot_key": "system_report",
+                    "context_data": {
+                        "report_kind": "daily",
+                        "completion_status": "partial",
+                        "missing_sections": ["insight"],
+                    },
+                    "multi_personality": {
+                        "is_primary": False,
+                        "primary_personality": "system",
+                        "impact_multiplier": 0.5,
+                    },
+                    "created_at": "2026-03-13T12:00:02.000Z",
+                },
             ],
         }
         entry.status = "completed"
@@ -253,10 +290,13 @@ def test_sync_mode_returns_terminal_success_and_replays(
     assert [row["id"] for row in result["personality_messages"]] == [
         "msg-primary",
         "msg-secondary",
+        "msg-system",
     ]
     assert result["message"] == "Primary reply"
     assert result["message_id"] == "msg-primary"
     assert result["personality"] == "coach"
+    assert result["report_result"]["message_id"] == "msg-system"
+    assert result["report_result"]["context_data"]["report_kind"] == "daily"
 
     poll = client.get(
         f"/api/v1/entry-jobs/{result['job_id']}",
@@ -269,10 +309,12 @@ def test_sync_mode_returns_terminal_success_and_replays(
     assert [row["id"] for row in poll_payload["terminal_result"]["personality_messages"]] == [
         "msg-primary",
         "msg-secondary",
+        "msg-system",
     ]
     assert poll_payload["terminal_result"]["message"] == "Primary reply"
     assert poll_payload["terminal_result"]["message_id"] == "msg-primary"
     assert poll_payload["terminal_result"]["personality"] == "coach"
+    assert poll_payload["terminal_result"]["report_result"]["message_id"] == "msg-system"
 
     replay = client.post("/api/v1/entries", json=payload)
     assert replay.status_code == 200

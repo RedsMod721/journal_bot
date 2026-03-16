@@ -80,6 +80,7 @@ from src.core.entry_skill_resolver import resolve_entry_skill_signals
 from src.core.forgiveness_decay_service import ForgivenessDecayService
 from src.core.harmony_classifier import HarmonyClassifier
 from src.core.harmony_refresh_service import HarmonyRefreshService
+from src.core.personality_message_persistence import MessagePersistenceService
 from src.core.personality_message_serialization import serialize_personality_messages
 from src.core.personality_orchestrator import PersonalityOrchestrator
 from src.db.models.journal_entry import JournalEntry, JournalEntryStructured
@@ -321,6 +322,7 @@ class EntryProcessingSuccessResult:
     provenance: dict[str, Any] = field(default_factory=dict)
     insight_result: dict[str, Any] = field(default_factory=dict)
     personality_result: dict[str, Any] = field(default_factory=dict)
+    report_result: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -1840,6 +1842,509 @@ class PipelineProcessor:
         )
         return out
 
+    @staticmethod
+    def _system_report_section_title(section_key: str) -> str:
+        titles = {
+            "signals": "Signals",
+            "xp": "XP",
+            "quests": "Quests",
+            "strategy": "Strategy",
+            "anomaly_variety": "Anomaly / Variety",
+            "insight": "Insight",
+            "personality_reply": "Personality Reply",
+        }
+        return titles.get(section_key, section_key.replace("_", " ").title())
+
+    def _compose_system_report_message(
+        self,
+        *,
+        ctx: "PipelineContext",
+        approx_ms: int,
+        completion_status: str,
+        missing_sections: list[str],
+        section_statuses: dict[str, dict[str, Any]],
+    ) -> str:
+        lines = [
+            "SYSTEM REPORT CHECKLIST",
+            f"Date: {ctx.time.local_event_date}",
+            f"Processing: ~{approx_ms} ms",
+            f"Completion: {completion_status}",
+        ]
+        if missing_sections:
+            lines.append(
+                "Missing sections: "
+                + ", ".join(self._system_report_section_title(key) for key in missing_sections)
+            )
+        else:
+            lines.append("Missing sections: none")
+
+        ordered_sections = [
+            "signals",
+            "xp",
+            "quests",
+            "strategy",
+            "anomaly_variety",
+            "insight",
+            "personality_reply",
+        ]
+        for section_key in ordered_sections:
+            section = dict(section_statuses.get(section_key, {}) or {})
+            status = str(section.get("status", "missing"))
+            details = [
+                str(detail)
+                for detail in list(section.get("details", []) or [])
+                if str(detail).strip()
+            ]
+            lines.append("")
+            lines.append(f"[{self._system_report_section_title(section_key)}] {status}")
+            if details:
+                lines.extend(f"- {detail}" for detail in details)
+            else:
+                lines.append("- no details available")
+        return "\n".join(lines)
+
+    def _fallback_system_report_payload(
+        self,
+        *,
+        ctx: "PipelineContext",
+        run_started: datetime,
+        personality_out: dict[str, Any],
+        error: Exception,
+    ) -> dict[str, Any]:
+        approx_ms = max(0, int((_now_utc() - run_started).total_seconds() * 1000))
+        personality_present = bool(
+            str(personality_out.get("message", "")).strip()
+            or str(personality_out.get("personality", "")).strip()
+        )
+        section_statuses: dict[str, dict[str, Any]] = {
+            "signals": {
+                "status": "missing",
+                "details": ["report builder fallback triggered before signal summary completed"],
+            },
+            "xp": {
+                "status": "missing",
+                "details": ["report builder fallback triggered before XP summary completed"],
+            },
+            "quests": {
+                "status": "missing",
+                "details": ["report builder fallback triggered before quest summary completed"],
+            },
+            "strategy": {
+                "status": "missing",
+                "details": ["report builder fallback triggered before strategy summary completed"],
+            },
+            "anomaly_variety": {
+                "status": "missing",
+                "details": ["report builder fallback triggered before anomaly summary completed"],
+            },
+            "insight": {
+                "status": "missing",
+                "details": ["report builder fallback triggered before insight summary completed"],
+            },
+            "personality_reply": {
+                "status": "present" if personality_present else "missing",
+                "details": (
+                    [
+                        f"personality: {personality_out.get('personality', 'unknown')}",
+                        f"generation_mode: {personality_out.get('generation_mode', 'unknown')}",
+                        "system report used fallback output",
+                    ]
+                    if personality_present
+                    else ["no personality reply details were available for the fallback report"]
+                ),
+            },
+        }
+        missing_sections = [
+            key
+            for key, value in section_statuses.items()
+            if str(value.get("status", "missing")) == "missing"
+        ]
+        completion_status = "partial"
+        context_data = {
+            "report_kind": "daily",
+            "completion_status": completion_status,
+            "missing_sections": missing_sections,
+            "section_statuses": section_statuses,
+            "approx_processing_ms": approx_ms,
+            "pipeline_version": ctx.versions.pipeline_version,
+            "error_code": f"STEP_15B_REPORT_FAILED:{type(error).__name__}",
+        }
+        message_text = self._compose_system_report_message(
+            ctx=ctx,
+            approx_ms=approx_ms,
+            completion_status=completion_status,
+            missing_sections=missing_sections,
+            section_statuses=section_statuses,
+        )
+        return {
+            "personality": "system",
+            "message_type": "report_summary",
+            "message_text": message_text,
+            "logical_slot_key": "system_report",
+            "selector_version": 1,
+            "context_data": context_data,
+            "approx_processing_ms": approx_ms,
+            "fallback_used": True,
+        }
+
+    def _build_system_report_payload(
+        self,
+        *,
+        ctx: "PipelineContext",
+        detection: dict[str, Any],
+        structured_data: dict[str, Any],
+        skill_awards: dict[str, Any],
+        theme_awards: dict[str, Any],
+        anomaly_result: dict[str, Any],
+        variety_out: dict[str, Any],
+        strategy_out: dict[str, Any],
+        quest_matcher_out: dict[str, Any] | None,
+        insight_out: dict[str, Any],
+        personality_out: dict[str, Any],
+        run_started: datetime,
+        db: Session | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Build a deterministic system pipeline report payload."""
+
+        from src.db.models.personality import PersonalityMessage
+
+        approx_ms = max(0, int((_now_utc() - run_started).total_seconds() * 1000))
+
+        skills = list(
+            structured_data.get("resolved_skill_names")
+            or detection.get("detected_skills", [])
+            or []
+        )
+        emotions = list(
+            structured_data.get("dominant_emotions")
+            or detection.get("dominant_emotions", [])
+            or []
+        )
+        energy = structured_data.get("energy_level", detection.get("energy_level"))
+
+        all_awards = list(
+            list(skill_awards.get("skill_awards", []))
+            + list(theme_awards.get("theme_awards", []))
+            + list((quest_matcher_out or {}).get("xp_awards", []))
+        )
+        total_xp = sum(
+            int(award.get("amount", award.get("xp_awarded", 0)) or 0)
+            for award in all_awards
+        )
+        award_summaries = []
+        for award in all_awards[:5]:
+            name = (
+                award.get("skill_name")
+                or award.get("theme_name")
+                or award.get("xp_reason")
+                or award.get("quest_id")
+                or award.get("skill_id")
+                or award.get("theme_id")
+                or "award"
+            )
+            amount = int(award.get("amount", award.get("xp_awarded", 0)) or 0)
+            award_summaries.append(f"{name}: +{amount} XP")
+
+        created_quests = list((quest_matcher_out or {}).get("created_quests", []) or [])
+        completed_quests = list(
+            (quest_matcher_out or {}).get("completed_quests", []) or []
+        )
+        progressed_quests = list(
+            (quest_matcher_out or {}).get("progressed_quests", []) or []
+        )
+        quest_details = []
+        if created_quests:
+            quest_details.append(
+                "created: "
+                + ", ".join(
+                    str(quest.get("title") or quest.get("name") or quest.get("quest_id", "?"))
+                    for quest in created_quests[:3]
+                )
+            )
+        if completed_quests:
+            quest_details.append(
+                "completed: "
+                + ", ".join(
+                    str(quest.get("title") or quest.get("name") or quest.get("quest_id", "?"))
+                    for quest in completed_quests[:3]
+                )
+            )
+        if progressed_quests:
+            progress_parts = []
+            for quest in progressed_quests[:3]:
+                label = str(
+                    quest.get("title") or quest.get("name") or quest.get("quest_id", "?")
+                )
+                progress_value = quest.get("progress_value")
+                required_progress = quest.get("required_progress")
+                if progress_value is not None and required_progress is not None:
+                    label = f"{label} ({progress_value}/{required_progress})"
+                progress_parts.append(label)
+            quest_details.append("progressed: " + ", ".join(progress_parts))
+
+        detected_strategies = list(strategy_out.get("detected_strategies", []) or [])
+        anomaly_score = anomaly_result.get("score")
+        troll_multiplier = anomaly_result.get("troll_multiplier")
+        if troll_multiplier is None:
+            troll_multiplier = float(anomaly_result.get("troll_bp", 10000)) / 10000
+        variety_bonus = variety_out.get("variety_bonus_pct", 0.0)
+        variety_multiplier_bp = variety_out.get("variety_multiplier_bp")
+        variety_multiplier = (
+            float(variety_multiplier_bp) / 10000
+            if variety_multiplier_bp is not None
+            else None
+        )
+
+        insight_text = str(insight_out.get("insight_text", "") or "").strip()
+        insight_title = str(insight_out.get("title", "") or "").strip()
+        personality_message = str(personality_out.get("message", "") or "").strip()
+        personality_name = str(personality_out.get("personality", "") or "").strip()
+
+        section_statuses: dict[str, dict[str, Any]] = {
+            "signals": {
+                "status": "present" if (skills or emotions or energy is not None) else "missing",
+                "details": [
+                    "skills: " + ", ".join(skills) if skills else "skills: missing",
+                    "emotions: " + ", ".join(emotions) if emotions else "emotions: missing",
+                    f"energy: {energy}" if energy is not None else "energy: missing",
+                ],
+            },
+            "xp": {
+                "status": "present" if (all_awards or total_xp > 0) else "missing",
+                "details": [f"total: +{total_xp} XP"]
+                + (award_summaries or ["no XP awards were produced"]),
+            },
+            "quests": {
+                "status": "present"
+                if (created_quests or completed_quests or progressed_quests)
+                else "missing",
+                "details": quest_details or ["no quest changes were recorded"],
+            },
+            "strategy": {
+                "status": "present" if detected_strategies else "missing",
+                "details": (
+                    ["detected: " + ", ".join(detected_strategies)]
+                    if detected_strategies
+                    else ["no strategy detected"]
+                ),
+            },
+            "anomaly_variety": {
+                "status": "present" if (anomaly_result or variety_out) else "missing",
+                "details": [
+                    (
+                        f"anomaly_score: {float(anomaly_score):.2f}"
+                        if anomaly_score is not None
+                        else "anomaly_score: missing"
+                    ),
+                    f"troll_multiplier: {float(troll_multiplier):.2f}x",
+                    f"variety_bonus: {float(variety_bonus):.2f}%",
+                    (
+                        f"variety_multiplier: {float(variety_multiplier):.2f}x"
+                        if variety_multiplier is not None
+                        else "variety_multiplier: missing"
+                    ),
+                ],
+            },
+            "insight": {
+                "status": "present" if (insight_text or insight_out.get("insight_id")) else "missing",
+                "details": (
+                    [
+                        "title: " + insight_title if insight_title else "title: missing",
+                        "summary: " + insight_text if insight_text else "summary: missing",
+                        f"generation_mode: {insight_out.get('generation_mode', 'unknown')}",
+                    ]
+                    if (insight_text or insight_out.get("insight_id"))
+                    else [
+                        f"generation_mode: {insight_out.get('generation_mode', 'suppressed')}",
+                        (
+                            "reason: " + str(insight_out.get("suppression_reason"))
+                            if insight_out.get("suppression_reason")
+                            else "no insight generated"
+                        ),
+                    ]
+                ),
+            },
+            "personality_reply": {
+                "status": "present" if (personality_message or personality_name) else "missing",
+                "details": (
+                    [
+                        (
+                            f"personality: {personality_name}"
+                            if personality_name
+                            else "personality: missing"
+                        ),
+                        f"generation_mode: {personality_out.get('generation_mode', 'unknown')}",
+                        f"inserted: {'yes' if personality_out.get('inserted') else 'no'}",
+                        (
+                            "preview: "
+                            + (
+                                personality_message[:117] + "..."
+                                if len(personality_message) > 120
+                                else personality_message
+                            )
+                            if personality_message
+                            else "preview: missing"
+                        ),
+                    ]
+                    if (personality_message or personality_name)
+                    else ["no personality reply was available when the report was built"]
+                ),
+            },
+        }
+
+        missing_sections = [
+            key
+            for key, value in section_statuses.items()
+            if str(value.get("status", "missing")) == "missing"
+        ]
+        completion_status = "complete" if not missing_sections else "partial"
+        context_data = {
+            "report_kind": "daily",
+            "completion_status": completion_status,
+            "missing_sections": missing_sections,
+            "section_statuses": section_statuses,
+            "approx_processing_ms": approx_ms,
+            "pipeline_version": ctx.versions.pipeline_version,
+        }
+        message_text = self._compose_system_report_message(
+            ctx=ctx,
+            approx_ms=approx_ms,
+            completion_status=completion_status,
+            missing_sections=missing_sections,
+            section_statuses=section_statuses,
+        )
+
+        return {
+            "personality": "system",
+            "message_type": "report_summary",
+            "message_text": message_text,
+            "logical_slot_key": "system_report",
+            "selector_version": 1,
+            "context_data": context_data,
+            "approx_processing_ms": approx_ms,
+            "fallback_used": False,
+        }
+
+        approx_ms = int((_now_utc() - run_started).total_seconds() * 1000)
+
+        lines: list[str] = [
+            f"SYSTEM REPORT — {ctx.time.local_event_date}",
+            f"Processing: ~{approx_ms} ms",
+        ]
+
+        skills = detection.get("detected_skills", [])
+        if skills:
+            lines.append(f"\n--- SKILLS ---\n  {', '.join(str(s) for s in skills)}")
+
+        emotions = detection.get("dominant_emotions", [])
+        energy = detection.get("energy_level")
+        if emotions or energy is not None:
+            parts: list[str] = []
+            if emotions:
+                parts.append(f"emotions: {', '.join(str(e) for e in emotions)}")
+            if energy is not None:
+                parts.append(f"energy: {energy}")
+            lines.append(f"\n--- SIGNALS ---\n  {' | '.join(parts)}")
+
+        all_awards = (
+            list(skill_awards.get("skill_awards", []))
+            + list(theme_awards.get("theme_awards", []))
+            + list((quest_matcher_out or {}).get("xp_awards", []))
+        )
+        if all_awards:
+            lines.append("\n--- XP GAINS ---")
+            for award in all_awards:
+                name = award.get("skill_name") or award.get("theme_name", "?")
+                amt = award.get("amount", award.get("xp_awarded", 0))
+                lines.append(f"  {name}: +{amt} XP")
+
+        troll_bp = anomaly_result.get("troll_bp", 10000)
+        variety_bp = variety_out.get("variety_multiplier_bp", 10000)
+        if any(x != 10000 for x in [troll_bp, variety_bp]):
+            lines.append("\n--- MULTIPLIERS ---")
+            if troll_bp != 10000:
+                lines.append(f"  Troll:   {troll_bp / 10000:.2f}x")
+            if variety_bp != 10000:
+                lines.append(f"  Variety: {variety_bp / 10000:.2f}x")
+
+        completed = list((quest_matcher_out or {}).get("completed_quests", []))
+        progressed = list((quest_matcher_out or {}).get("progressed_quests", []))
+        if completed or progressed:
+            lines.append("\n--- QUESTS ---")
+            for q in completed:
+                lines.append(f"  COMPLETED:  {q.get('title', q.get('quest_id', '?'))}")
+            for q in progressed:
+                lines.append(f"  Progressed: {q.get('title', q.get('quest_id', '?'))}")
+
+        detected_strategies = strategy_out.get("detected_strategies", [])
+        if detected_strategies:
+            lines.append(f"\n--- STRATEGY ---\n  {', '.join(str(s) for s in detected_strategies)}")
+
+        message_text = "\n".join(lines)
+        context_data = json.dumps({
+            "pipeline_version": ctx.versions.pipeline_version,
+            "approx_processing_ms": approx_ms,
+            "skills": list(skills),
+            "troll_bp": troll_bp,
+            "variety_bp": variety_bp,
+        })
+
+        row = PersonalityMessage(
+            id=str(uuid.uuid4()),
+            user_id=ctx.user_id,
+            entry_id=ctx.entry_id,
+            personality="system",
+            message_type="report_summary",
+            message_text=message_text,
+            selector_version=1,
+            selector_seed_hash=None,
+            logical_slot_key="system_report",
+            context_data=context_data,
+            quest_id=None,
+            created_at=now,
+        )
+        db.add(row)
+
+        return {
+            "personality": "system",
+            "message_type": "report_summary",
+            "message_text": message_text,
+            "logical_slot_key": "system_report",
+            "approx_processing_ms": approx_ms,
+        }
+
+    def _persist_system_report_message(
+        self,
+        *,
+        db: Session,
+        ctx: "PipelineContext",
+        report_result: dict[str, Any],
+        now: datetime,
+    ) -> dict[str, Any]:
+        stored = MessagePersistenceService(db).store_message(
+            user_id=ctx.user_id,
+            entry_id=ctx.entry_id,
+            personality="system",
+            message_type="report_summary",
+            message_text=str(
+                report_result.get("message_text") or "[SYSTEM] No report available."
+            ),
+            selector_version=int(report_result.get("selector_version", 1) or 1),
+            selector_seed_hash=None,
+            logical_slot_key=str(
+                report_result.get("logical_slot_key") or "system_report"
+            ),
+            context_data=dict(report_result.get("context_data", {}) or {}),
+            quest_id=None,
+            now_utc=now,
+        )
+        message = stored["message"]
+        return {
+            "message_id": str(message.id),
+            "inserted": bool(stored["inserted"]),
+        }
+
     def _build_xp_lineage(
         self,
         *,
@@ -2256,6 +2761,54 @@ class PipelineProcessor:
                 structured_data=plan["structured_data"],
                 quest_matcher_out=quest_matcher_out,
             )
+            report_result = self._run_step(
+                ctx=ctx,
+                step_name="step_15b_system_report",
+                error_code="STEP_15B_REPORT_FAILED",
+                category="db",
+                critical=False,
+                retryable=False,
+                fn=lambda: self._build_system_report_payload(
+                    ctx=ctx,
+                    detection=plan["detection"],
+                    structured_data=plan["structured_data"],
+                    skill_awards=skill_awards,
+                    theme_awards=theme_awards,
+                    anomaly_result=plan["anomaly_result"],
+                    variety_out=variety_out,
+                    strategy_out=strategy_out,
+                    quest_matcher_out=quest_matcher_out,
+                    insight_out=insight_out,
+                    personality_out=personality_out,
+                    run_started=run_started,
+                ),
+                fallback_fn=lambda exc: self._fallback_system_report_payload(
+                    ctx=ctx,
+                    run_started=run_started,
+                    personality_out=personality_out,
+                    error=exc,
+                ),
+            )
+            report_persist_result = self._run_step(
+                ctx=ctx,
+                step_name="step_16s_persist_system_report",
+                error_code="STEP_16S_SYSTEM_REPORT_PERSIST",
+                category="db",
+                critical=False,
+                retryable=True,
+                fn=lambda: self._persist_system_report_message(
+                    db=db,
+                    ctx=ctx,
+                    report_result=report_result or {},
+                    now=_now_utc(),
+                ),
+                fallback_fn=lambda exc: {
+                    "message_id": None,
+                    "inserted": False,
+                    "error": str(exc),
+                },
+            )
+            report_result = {**(report_result or {}), **(report_persist_result or {})}
             persisted_personality_messages = serialize_personality_messages(
                 db.query(PersonalityMessage)
                 .filter(
@@ -2291,6 +2844,7 @@ class PipelineProcessor:
                 finalize=finalize,
                 story_arc_out=story_arc_out,
                 quest_matcher_out=quest_matcher_out,
+                report_result=report_result or {},
             )
 
             self._emit_outbox_event(
@@ -2348,6 +2902,7 @@ class PipelineProcessor:
         finalize: dict[str, Any],
         story_arc_out: dict[str, Any] | None = None,
         quest_matcher_out: dict[str, Any] | None = None,
+        report_result: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         cache_stats = self.cache.get_stats()
         fallbacks = [m for m in ctx.step_metrics if m.status == "fallback"]
@@ -2509,6 +3064,7 @@ class PipelineProcessor:
                 provenance=provenance,
                 insight_result=dict(insight_out),
                 personality_result=personality_result,
+                report_result=report_result or {},
             )
         )
         payload["status"] = "completed"

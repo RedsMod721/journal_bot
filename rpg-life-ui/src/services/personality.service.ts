@@ -22,7 +22,7 @@ export interface PersonalityStateResponse {
 export interface PersonalityMessageResponse {
   id: string;
   entry_id: string;
-  personality: PersonalityId;
+  personality: PersonalityId | "system";
   message_type: string;
   message_text: string;
   logical_slot_key: string;

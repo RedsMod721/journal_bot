@@ -73,6 +73,7 @@ class PipelineSuccessResult:
     arc_result: Dict[str, Any] = field(default_factory=dict)
     xp_result: Dict[str, Any] = field(default_factory=dict)
     personality_result: Dict[str, Any] = field(default_factory=dict)
+    report_result: Dict[str, Any] = field(default_factory=dict)
     personality_messages: List[Dict[str, Any]] = field(default_factory=list)
     active_personality: Optional[str] = None
     message: str = ""
@@ -297,6 +298,20 @@ def _fallback_personality(error_code: str) -> Dict[str, Any]:
         "generation_mode": "safe_fallback",
         "fallback_reason": error_code,
         "template_key": "observer.safe_fallback",
+        "fallback_used": True,
+        "error_code": error_code,
+    }
+
+
+def _fallback_system_report(error_code: str) -> Dict[str, Any]:
+    """Fallback for step 15b — minimal system report on generation failure."""
+    return {
+        "personality": "system",
+        "message_type": "report_summary",
+        "message_text": "[SYSTEM] Report generation failed.",
+        "logical_slot_key": "system_report",
+        "selector_version": 1,
+        "context_data": {},
         "fallback_used": True,
         "error_code": error_code,
     }
@@ -1350,6 +1365,23 @@ class EntryPipeline:
             records=records,
         )
 
+        # ── Step 15b — System report (deterministic, no LLM) ─────────────
+        logger.info(
+            "[pipeline:step] STEP_15B system_report entry=%s",
+            ctx.entry_id,
+        )
+        ctx.report_result = _run_step(
+            ctx=ctx,
+            step_name="step_15b_system_report",
+            error_code="STEP_15B_REPORT_FAILED",
+            critical=False,
+            fn=lambda: self._step_15b_system_report(ctx=ctx),
+            fallback_fn=lambda exc: _fallback_system_report(
+                error_code=f"STEP_15B_REPORT_FAILED:{type(exc).__name__}"
+            ),
+            records=records,
+        )
+
     # ------------------------------------------------------------------
     # Individual step implementations
     # ------------------------------------------------------------------
@@ -2164,6 +2196,136 @@ class EntryPipeline:
         }
 
     # ------------------------------------------------------------------
+    # Step 15b — System report generation
+    # ------------------------------------------------------------------
+
+    def _step_15b_system_report(self, *, ctx: PipelineContext) -> Dict[str, Any]:
+        """
+        Step 15b — Deterministic system report for the chat panel.
+
+        Reads all accumulated step results from *ctx* and assembles a
+        human-readable plain-text report plus a machine-readable context_data
+        dict. No LLM calls, no DB writes — all data is already on ctx.
+        Persisted as a PersonalityMessage(personality='system') in Tx B.
+        """
+        from datetime import timezone as _tz
+
+        xp = ctx.xp_result or {}
+        quest = ctx.quest_result or {}
+        anomaly = ctx.anomaly_result or {}
+        variety = ctx.variety_result or {}
+        strategy = ctx.strategy_result or {}
+        structured = ctx.structured_data or {}
+
+        # Approximate processing duration from pipeline start timestamp
+        now_utc = datetime.now(_tz.utc)
+        started = ctx.time.processing_started_at_utc
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=_tz.utc)
+        approx_ms = int((now_utc - started).total_seconds() * 1000)
+
+        lines: List[str] = [
+            f"SYSTEM REPORT — {ctx.time.local_event_date}",
+            f"Processing: ~{approx_ms} ms",
+        ]
+
+        # Skills detected
+        skills = structured.get("resolved_skill_names", [])
+        if skills:
+            lines.append(f"\n--- SKILLS ---\n  {', '.join(skills)}")
+
+        # Emotions / energy
+        emotions = structured.get("dominant_emotions", [])
+        energy = structured.get("energy_level")
+        if emotions or energy is not None:
+            parts = []
+            if emotions:
+                parts.append(f"emotions: {', '.join(str(e) for e in emotions)}")
+            if energy is not None:
+                parts.append(f"energy: {energy}")
+            lines.append(f"\n--- SIGNALS ---\n  {' | '.join(parts)}")
+
+        # XP awards
+        skill_awards = xp.get("skill_awards", [])
+        theme_awards = xp.get("theme_awards", [])
+        all_awards = skill_awards + theme_awards
+        if all_awards:
+            lines.append("\n--- XP GAINS ---")
+            for award in all_awards:
+                name = award.get("skill_name") or award.get("theme_name", "?")
+                amt = award.get("amount", 0)
+                lines.append(f"  {name}: +{amt} XP")
+            total_xp = xp.get("total_xp", 0)
+            lines.append(f"  ──────────────\n  Total: +{total_xp} XP")
+
+        # Multipliers (only show non-neutral ones)
+        troll_bp = anomaly.get("troll_multiplier_bp", 10000)
+        variety_bp = variety.get("variety_multiplier_bp", 10000)
+        dim_bp = strategy.get("diminishing_bp", 10000)
+        if any(x != 10000 for x in [troll_bp, variety_bp, dim_bp]):
+            lines.append("\n--- MULTIPLIERS ---")
+            if troll_bp != 10000:
+                lines.append(f"  Troll:       {troll_bp / 10000:.2f}x")
+            if variety_bp != 10000:
+                lines.append(f"  Variety:     {variety_bp / 10000:.2f}x")
+            if dim_bp != 10000:
+                lines.append(f"  Diminishing: {dim_bp / 10000:.2f}x")
+
+        # Quests
+        completed_quests = quest.get("completed_quests", [])
+        progressed_quests = quest.get("progressed_quests", [])
+        if completed_quests or progressed_quests:
+            lines.append("\n--- QUESTS ---")
+            for q in completed_quests:
+                title = q.get("title") or q.get("quest_id", "?")
+                lines.append(f"  COMPLETED:  {title}")
+            for q in progressed_quests:
+                title = q.get("title") or q.get("quest_id", "?")
+                prog = q.get("progress_value")
+                req = q.get("required_progress")
+                suffix = f" ({prog}/{req})" if prog is not None and req is not None else ""
+                lines.append(f"  Progressed: {title}{suffix}")
+
+        # Strategies
+        detected_strategies = strategy.get("detected_strategies", [])
+        if detected_strategies:
+            lines.append(f"\n--- STRATEGY ---\n  {', '.join(detected_strategies)}")
+
+        message_text = "\n".join(lines)
+
+        context_data: Dict[str, Any] = {
+            "pipeline_version": PIPELINE_VERSION,
+            "approx_processing_ms": approx_ms,
+            "xp_result": xp,
+            "quest_result": quest,
+            "anomaly_result": anomaly,
+            "variety_result": variety,
+            "strategy_result": strategy,
+            "structured_data": {
+                "resolved_skill_names": skills,
+                "dominant_emotions": emotions,
+                "energy_level": energy,
+            },
+        }
+
+        logger.debug(
+            "[pipeline:step] system_report built entry=%s skills=%d awards=%d",
+            ctx.entry_id,
+            len(skills),
+            len(all_awards),
+        )
+
+        return {
+            "personality": "system",
+            "message_type": "report_summary",
+            "message_text": message_text,
+            "logical_slot_key": "system_report",
+            "selector_version": 1,
+            "context_data": context_data,
+            "fallback_used": False,
+        }
+
+    # ------------------------------------------------------------------
     # Step 17 — Post-commit outbox dispatch
     # ------------------------------------------------------------------
 
@@ -2301,6 +2463,7 @@ class EntryPipeline:
                 arc_result=arc_result,
                 xp_result=xp_result,
                 personality_result=personality_result,
+                report_result=ctx.report_result or {},
                 personality_messages=[],  # loaded from DB in Tx B
                 active_personality=personality_result.get("personality"),
                 message=personality_result.get("message", ""),

@@ -36,7 +36,15 @@
       "Bash(grep -l \"story_arcs\\\\|arc_triggers\" /Users/sebastian/journal_bot/alembic/versions/*.py)",
       "Bash(ls /Users/sebastian/journal_bot/src/core/*.py)",
       "Bash(wc -l /Users/sebastian/journal_bot/src/db/models/*.py)",
-      "Bash(ls /Users/sebastian/journal_bot/src/ai/pipeline*)"
+      "Bash(ls /Users/sebastian/journal_bot/src/ai/pipeline*)",
+      "Bash(xargs grep:*)",
+      "Bash(find /c/Users/vazqse01/journal_bot -name alembic.ini -o -name env.py -path */alembic/*)",
+      "Bash(find /c/Users/vazqse01/journal_bot -type f -name *.log)",
+      "Bash(python3:*)",
+      "Bash(find /c/Users/vazqse01/journal_bot -path */test* -name *personality* -type f)",
+      "Bash(ls -la /c/Users/vazqse01/journal_bot/alembic/versions/b10000000*personality*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(python -m alembic upgrade head)"
     ],
     "additionalDirectories": [
       "/Users/sebastian/Python/projects/journal_bot",
