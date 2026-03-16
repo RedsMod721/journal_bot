@@ -71,16 +71,15 @@ _LEARNING_KW = (
     "learn",
     "study",
     "read",
-    "practice",
     "course",
     "lecture",
     "tutorial",
     "research",
     "review",
-    "drill",
-    "training",
+    "lesson",
 )
 _LEARNING_TYPES = frozenset(["analytical", "intellectual"])
+_LEARNING_ACTIVITY_KEYS = frozenset(["study", "read", "code"])
 
 
 def _coerce_int(value: object) -> int:
@@ -123,11 +122,16 @@ def _is_social_risk(
     return first_time or _has_solo_preference(user_id, db)
 
 
-def _is_learning_candidate(content: str, task_type: str | None) -> bool:
+def _is_learning_candidate(
+    content: str,
+    task_type: str | None,
+    detected_activities: list[str] | tuple[str, ...] | None = None,
+) -> bool:
     text = content.lower()
-    return any(kw in text for kw in _LEARNING_KW) or (
-        (task_type or "").lower() in _LEARNING_TYPES
-    )
+    activity_set = set(detected_activities or [])
+    return bool(activity_set.intersection(_LEARNING_ACTIVITY_KEYS)) or any(
+        kw in text for kw in _LEARNING_KW
+    ) or ((task_type or "").lower() in _LEARNING_TYPES)
 
 
 def _is_study_burst(
@@ -136,6 +140,7 @@ def _is_study_burst(
     entry_created_at: datetime,
     content: str,
     task_type: str | None,
+    detected_activities: list[str] | tuple[str, ...] | None,
     db: Session,
 ) -> bool:
     """Sec 5.2.3: entry is part of a >=3 learning-candidate burst within 7 days."""
@@ -165,10 +170,14 @@ def _is_study_burst(
                 structured.task_type if structured is not None else None,
             )
         ]
-        + ([(entry_id, entry_created_at)] if _is_learning_candidate(content, task_type) else []),
+        + (
+            [(entry_id, entry_created_at)]
+            if _is_learning_candidate(content, task_type, detected_activities)
+            else []
+        ),
         key=lambda item: item[1],
     )
-    if not _is_learning_candidate(content, task_type):
+    if not _is_learning_candidate(content, task_type, detected_activities):
         return False
     queue: list[tuple[str, datetime]] = []
     members: set[str] = set()
@@ -380,6 +389,7 @@ def run(
     """
     task_type: str | None = detection.get("task_type")
     energy_level: int | None = detection.get("energy_level")
+    detected_activities = list(detection.get("detected_activities", []) or [])
     entry_row = (
         db.query(JournalEntry)
         .filter(JournalEntry.user_id == user_id, JournalEntry.id == entry_id)
@@ -404,6 +414,7 @@ def run(
             entry_created_at,
             canonical_text,
             task_type,
+            detected_activities,
             db,
         ),
         "mundane": lambda: _is_mundane_focus(canonical_text, task_type, energy_level),
@@ -449,6 +460,13 @@ def run(
         "strategy_scores": strategy_scores,
         "diminishing_multiplier": diminishing_multiplier,
         "diminishing_bp": diminishing_bp,
+        "provenance": {
+            "detector_order": list(STRATEGY_KEYS),
+            "task_type": task_type,
+            "detected_activities": detected_activities,
+            "study_requires": "explicit learning activity, learning keywords, or intellectual task burst",
+            "fired_strategies": detected_strategies,
+        },
     }
 
 

@@ -22,6 +22,7 @@ def run(
     entry_id: str,
     canonical_text: str,
     detection: dict[str, Any],
+    resolved_skill_names: list[str] | None = None,
     db: Session,
 ) -> dict[str, Any]:
     """Upsert the structured representation of a journal entry.
@@ -31,6 +32,8 @@ def run(
         entry_id:       Journal entry UUID.
         canonical_text: Normalised entry text from the normalise step.
         detection:      Signal-detection output dict (step 07).
+        resolved_skill_names:
+            Canonical skill names resolved from activity routing, when available.
         db:             SQLAlchemy session (write — issues a flush).
 
     Returns:
@@ -65,7 +68,8 @@ def run(
     row.support_used = None
     row.delay_from_planned_time_minutes = None
     row.reflection_depth = None
-    row.skills_themes_involved = json.dumps(detection["detected_skills"])
+    skill_names = list(resolved_skill_names or detection["detected_skills"])
+    row.skills_themes_involved = json.dumps(skill_names)
     row.categories = None
     row.sentiment_score = None
     row.safety_flags = None

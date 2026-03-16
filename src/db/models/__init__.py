@@ -74,7 +74,10 @@ from src.db.models.anomaly import AnomalyScore
 # 9. Leisure
 from src.db.models.leisure import LeisureBudget, SubstanceLimit, SubstanceUsageLog
 
-# 10. Processing/idempotency/distributed execution
+# 10. Circuit breaker
+from src.db.models.circuit_breaker import CircuitBreakerState
+
+# 11. Processing/idempotency/distributed execution
 from src.db.models.processing import (
     EntryIdempotencyClaim,
     OutboxEvent,
@@ -147,6 +150,8 @@ __all__ = [
     "LevelUp",
     # Analytics
     "UserAnalytics",
+    # Circuit breaker
+    "CircuitBreakerState",
     # Processing
     "EntryIdempotencyClaim",
     "OutboxEvent",

@@ -152,6 +152,34 @@ def test_sync_mode_returns_terminal_success_and_replays(
             "message": "Primary reply",
             "message_id": "msg-primary",
             "personality": "coach",
+            "step_trace": [
+                {
+                    "step_name": "step_01_validate_input",
+                    "status": "succeeded",
+                    "duration_ms": 0,
+                    "critical": True,
+                    "fallback_used": False,
+                    "error_code": None,
+                    "error_message": None,
+                    "output": {"entry_id": entry_id},
+                    "not_persisted_reason": None,
+                }
+            ],
+            "quality": {
+                "degraded": False,
+                "degraded_codes": [],
+                "dependency_states": {"ollama": "ok", "qdrant": "ok", "rag": "ok"},
+            },
+            "meta": {
+                "degraded": False,
+                "degraded_codes": [],
+                "dependency_states": {"ollama": "ok", "qdrant": "ok", "rag": "ok"},
+            },
+            "provenance": {
+                "processing_run_id": job.processing_run_id,
+                "pipeline_version": "test-v1",
+                "ruleset_version": "test-rules",
+            },
             "personality_messages": [
                 {
                     "id": "msg-primary",
@@ -237,6 +265,7 @@ def test_sync_mode_returns_terminal_success_and_replays(
     assert poll.status_code == 200
     poll_payload = poll.json()
     assert poll_payload["status"] == "completed"
+    assert poll_payload["terminal_result"] == result
     assert [row["id"] for row in poll_payload["terminal_result"]["personality_messages"]] == [
         "msg-primary",
         "msg-secondary",

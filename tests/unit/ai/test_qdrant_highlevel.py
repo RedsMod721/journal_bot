@@ -109,6 +109,7 @@ def _patch_high_level_deps(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeAdapter.raw_results = []
     _FakeAdapter.fail_search_times = 0
 
+    monkeypatch.setenv("ENABLE_SENTENCE_TRANSFORMERS", "1")
     monkeypatch.setattr(qdrant_module, "QdrantClientAdapter", _FakeAdapter)
     monkeypatch.setattr(
         qdrant_module, "_SentenceTransformerLib", _FakeSentenceTransformer
@@ -138,6 +139,7 @@ def test_load_sentence_transformer_lib_uses_cache(
 def test_load_sentence_transformer_lib_import_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("ENABLE_SENTENCE_TRANSFORMERS", "1")
     fake_module = types.ModuleType("sentence_transformers")
 
     class _ImportedModel:
@@ -151,6 +153,22 @@ def test_load_sentence_transformer_lib_import_paths(
     bad_module = types.ModuleType("sentence_transformers")
     monkeypatch.setitem(sys.modules, "sentence_transformers", bad_module)
     monkeypatch.setattr(qdrant_module, "_SentenceTransformerLib", None)
+    assert qdrant_module._load_sentence_transformer_lib() is None
+
+
+def test_load_sentence_transformer_lib_respects_explicit_disable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_module = types.ModuleType("sentence_transformers")
+
+    class _ImportedModel:
+        pass
+
+    fake_module.SentenceTransformer = _ImportedModel
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    monkeypatch.setenv("ENABLE_SENTENCE_TRANSFORMERS", "0")
+    monkeypatch.setattr(qdrant_module, "_SentenceTransformerLib", None)
+
     assert qdrant_module._load_sentence_transformer_lib() is None
 
 

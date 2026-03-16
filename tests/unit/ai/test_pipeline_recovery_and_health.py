@@ -130,12 +130,12 @@ async def test_check_services_health_all_ok(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
     health = await pipeline.check_services_health()
-    assert health == {
-        "ollama": True,
-        "ollama_model": True,
-        "qdrant": True,
-        "degraded": False,
-    }
+    assert health["ollama"] is True
+    assert health["ollama_model"] is True
+    assert health["qdrant"] is True
+    assert health["degraded"] is False
+    assert health["ready"] is True
+    assert health["error_codes"] == []
 
 
 @pytest.mark.asyncio
@@ -151,6 +151,9 @@ async def test_check_services_health_degraded_for_non_adapter_qdrant() -> None:
     assert health["ollama"] is False
     assert health["qdrant"] is False
     assert health["degraded"] is True
+    assert health["ready"] is True
+    assert "DEPENDENCY_OLLAMA_UNAVAILABLE" in health["error_codes"]
+    assert "DEPENDENCY_QDRANT_UNAVAILABLE" in health["error_codes"]
 
 
 def test_rule_based_activity_extraction_handles_duration_and_default() -> None:

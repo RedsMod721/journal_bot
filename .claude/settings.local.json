@@ -34,13 +34,16 @@
       "Bash(xargs -I {} basename {})",
       "Bash(ls -1 /Users/sebastian/journal_bot/alembic/versions/*.py)",
       "Bash(grep -l \"story_arcs\\\\|arc_triggers\" /Users/sebastian/journal_bot/alembic/versions/*.py)",
-      "Bash(ls /Users/sebastian/journal_bot/src/core/*.py)"
+      "Bash(ls /Users/sebastian/journal_bot/src/core/*.py)",
+      "Bash(wc -l /Users/sebastian/journal_bot/src/db/models/*.py)",
+      "Bash(ls /Users/sebastian/journal_bot/src/ai/pipeline*)"
     ],
     "additionalDirectories": [
       "/Users/sebastian/Python/projects/journal_bot",
       "/Users/sebastian/Python/projects/journal_bot/app/core",
       "c:\\Users\\vazqse01\\.claude\\projects\\c--Users-vazqse01-journal-bot\\memory",
-      "/Users/sebastian/journal_bot"
+      "/Users/sebastian/journal_bot",
+      "/Users/sebastian/journal_bot/src/ai"
     ]
   }
 }

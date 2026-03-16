@@ -6,9 +6,12 @@ Implements Section 3.4 (Message Templates) from architecture.
 CRITICAL: ALL user-facing LLM-generated content goes through this service.
 Observer is default/fallback for any generation.
 """
+import json
 import random
+import re
 from typing import Any, Dict, List, Optional
 
+from src.ai.ollama import OllamaClient
 from src.core.personality_memory import PersonalityMemoryService
 from src.core.personality_rag import PersonalityRAGService
 
@@ -23,6 +26,12 @@ PERSONALITY_COLORS: Dict[str, str] = {
 }
 
 
+def _valid_citation(citation: Any) -> bool:
+    return isinstance(citation, dict) and bool(
+        citation.get("doc_id") or citation.get("title") or citation.get("chunk_id")
+    )
+
+
 class PersonalityMessageGenerator:
     """
     Generate personality messages with templates and RAG.
@@ -35,9 +44,11 @@ class PersonalityMessageGenerator:
         self,
         rag_service: PersonalityRAGService,
         memory_service: PersonalityMemoryService,
+        ollama_client: OllamaClient | None = None,
     ) -> None:
         self.rag = rag_service
         self.memory = memory_service
+        self.ollama = ollama_client or OllamaClient()
 
     # ------------------------------------------------------------------
     # Public API
@@ -60,6 +71,29 @@ class PersonalityMessageGenerator:
         Called for EVERY journal entry. Uses RAG context + memory +
         personality template. Falls back to observer for unknown personalities.
         """
+        plan = self.plan_entry_feedback(
+            user_id=user_id,
+            entry_id=entry_id,
+            entry_text=entry_text,
+            personality=personality,
+            user_state=user_state,
+            safety_result=safety_result,
+            extend_thread=extend_thread,
+        )
+        return str(plan["message"])
+
+    def plan_entry_feedback(
+        self,
+        user_id: str,
+        entry_id: str,
+        entry_text: str,
+        personality: str,
+        user_state: Dict[str, Any],
+        safety_result: Dict[str, Any],
+        *,
+        extend_thread: bool = True,
+    ) -> Dict[str, Any]:
+        """Plan journal entry feedback with generation provenance."""
         rag_context = self.rag.retrieve_relevant_context(
             query_text=entry_text,
             user_id=user_id,
@@ -70,17 +104,40 @@ class PersonalityMessageGenerator:
         if extend_thread:
             self.memory.extend_thread_ttl(user_id)
 
+        if personality == "therapist":
+            return self._plan_therapist_feedback(
+                entry_text,
+                user_state,
+                safety_result,
+                rag_context,
+            )
+        if personality == "raphael":
+            return self._plan_raphael_feedback(entry_text, user_state, rag_context)
+
         dispatch = {
-            "observer":  lambda: self._generate_observer_feedback(entry_text, user_state, rag_context),
-            "therapist": lambda: self._generate_therapist_feedback(entry_text, user_state, safety_result, rag_context),
-            "coach":     lambda: self._generate_coach_feedback(entry_text, user_state, rag_context),
-            "sassy":     lambda: self._generate_sassy_feedback(entry_text, user_state, rag_context),
-            "wargod":    lambda: self._generate_wargod_feedback(entry_text, user_state, rag_context),
-            "raphael":   lambda: self._generate_raphael_feedback(entry_text, user_state, rag_context),
+            "observer": lambda: self._template_payload(
+                self._generate_observer_feedback(entry_text, user_state, rag_context),
+                template_key="observer.entry_feedback",
+            ),
+            "coach": lambda: self._template_payload(
+                self._generate_coach_feedback(entry_text, user_state, rag_context),
+                template_key="coach.entry_feedback",
+            ),
+            "sassy": lambda: self._template_payload(
+                self._generate_sassy_feedback(entry_text, user_state, rag_context),
+                template_key="sassy.entry_feedback",
+            ),
+            "wargod": lambda: self._template_payload(
+                self._generate_wargod_feedback(entry_text, user_state, rag_context),
+                template_key="wargod.entry_feedback",
+            ),
         }
         return dispatch.get(
             personality,
-            lambda: self._generate_observer_feedback(entry_text, user_state, rag_context),
+            lambda: self._template_payload(
+                self._generate_observer_feedback(entry_text, user_state, rag_context),
+                template_key="observer.entry_feedback",
+            ),
         )()
 
     def generate_quest_description(
@@ -201,7 +258,7 @@ class PersonalityMessageGenerator:
     ) -> str:
         """Observer: neutral, factual, analytical."""
         templates = [
-            "[OBS] Entry recorded. XP calculated based on skills and novelty.",
+            "[OBS] Entry recorded. Processing complete.",
             "[OBS] Noted. Your approach shows {skill_count} distinct skill application(s).",
             "[OBS] Entry processed. Anomaly score: {anomaly_score}/10.",
         ]
@@ -289,3 +346,142 @@ class PersonalityMessageGenerator:
             "[RAPHAEL] 🌙 The observer within you grows wiser with each word written.",
         ]
         return random.choice(templates)
+
+    def _template_payload(
+        self,
+        message: str,
+        *,
+        template_key: str,
+    ) -> Dict[str, Any]:
+        return {
+            "message": message,
+            "generation_mode": "template",
+            "citations": [],
+            "fallback_reason": None,
+            "template_key": template_key,
+        }
+
+    def _safe_fallback_payload(
+        self,
+        *,
+        personality: str,
+        fallback_reason: str,
+    ) -> Dict[str, Any]:
+        if personality == "therapist":
+            message = (
+                "[THE] 💙 I may be missing context and I cannot verify sources right now. "
+                "Take one gentle next step, keep the bar low, and reach out for support if things feel heavy."
+            )
+        else:
+            message = (
+                "[RAPHAEL] 🌙 I may be missing context and I cannot verify sources right now. "
+                "Stay with the smallest honest next step, and let clarity grow from action."
+            )
+        return {
+            "message": message,
+            "generation_mode": "safe_fallback",
+            "citations": [],
+            "fallback_reason": fallback_reason,
+            "template_key": f"{personality}.safe_fallback",
+        }
+
+    def _llm_feedback_payload(
+        self,
+        *,
+        personality: str,
+        entry_text: str,
+        user_state: Dict[str, Any],
+        rag_context: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        evidence_block = "\n".join(
+            f"- {item.get('content', '').strip()}"
+            for item in rag_context[:3]
+            if item.get("content")
+        )
+        system = (
+            "Return JSON only with a single key: message. "
+            "Keep it under 60 words, supportive, specific, and grounded in the provided evidence."
+        )
+        prompt = (
+            f"You are writing as {personality}.\n\n"
+            f"User entry:\n{entry_text}\n\n"
+            f"User state:\n{json.dumps(user_state, sort_keys=True)}\n\n"
+            f"Evidence:\n{evidence_block}"
+        )
+        raw = self.ollama.generate_json(prompt, system=system)
+        cleaned = re.sub(r"^```(?:json)?\s*", "", raw.get("response", "").strip())
+        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+        parsed = json.loads(cleaned or "{}")
+        message = str(parsed.get("message", "")).strip()
+        if not message:
+            raise ValueError("missing message in llm personality response")
+        return {
+            "message": message[:500],
+            "generation_mode": "llm_rag",
+            "citations": [
+                item.get("citation")
+                for item in rag_context[:3]
+                if isinstance(item, dict) and _valid_citation(item.get("citation"))
+            ],
+            "fallback_reason": None,
+            "template_key": None,
+        }
+
+    def _plan_therapist_feedback(
+        self,
+        entry_text: str,
+        user_state: Dict[str, Any],
+        safety_result: Dict[str, Any],
+        rag_context: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        citations = [
+            item.get("citation")
+            for item in rag_context[:3]
+            if isinstance(item, dict) and _valid_citation(item.get("citation"))
+        ]
+        if not citations:
+            return self._safe_fallback_payload(
+                personality="therapist",
+                fallback_reason="DEPENDENCY_QDRANT_UNAVAILABLE_OR_EMPTY",
+            )
+        try:
+            return self._llm_feedback_payload(
+                personality="therapist",
+                entry_text=entry_text,
+                user_state={**user_state, "safety": safety_result},
+                rag_context=rag_context,
+            )
+        except Exception:
+            return self._safe_fallback_payload(
+                personality="therapist",
+                fallback_reason="DEPENDENCY_OLLAMA_UNAVAILABLE",
+            )
+
+    def _plan_raphael_feedback(
+        self,
+        entry_text: str,
+        user_state: Dict[str, Any],
+        rag_context: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        citations = [
+            item.get("citation")
+            for item in rag_context[:3]
+            if isinstance(item, dict) and _valid_citation(item.get("citation"))
+        ]
+        if not citations:
+            return self._safe_fallback_payload(
+                personality="raphael",
+                fallback_reason="DEPENDENCY_QDRANT_UNAVAILABLE_OR_EMPTY",
+            )
+        try:
+            return self._llm_feedback_payload(
+                personality="raphael",
+                entry_text=entry_text,
+                user_state=user_state,
+                rag_context=rag_context,
+            )
+        except Exception:
+            return self._safe_fallback_payload(
+                personality="raphael",
+                fallback_reason="DEPENDENCY_OLLAMA_UNAVAILABLE",
+            )

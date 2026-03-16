@@ -43,6 +43,9 @@ class _HealthyQdrant:
     def ensure_collection(self):
         return None
 
+    def encode_text(self, _text: str):
+        return [0.2] * self.vector_size
+
     def search(self, _vector, limit=5):
         return [{"point_id": "p1", "score": 0.9, "payload": {}}][:limit]
 
@@ -264,6 +267,21 @@ def test_step_embedding_raises_when_ollama_disconnected():
         )
 
 
+def test_step_embedding_prefers_qdrant_encoder_when_available():
+    out = embedding.run(
+        entry_id="entry-y",
+        normalized_text="text",
+        ollama_health={"connected": True},
+        ollama=_HealthyOllama(),
+        qdrant=_HealthyQdrant(),
+        cache=StepCache(),
+    )
+
+    assert out["fallback"] is False
+    assert out["from_cache"] is False
+    assert out["vector"] == [0.2] * 8
+
+
 def test_step_rag_search_empty_vector_returns_fallback():
     # Step logic lives in src.ai.steps.rag — test the module directly.
     out = rag.run(vector=[], qdrant=_HealthyQdrant())
@@ -276,12 +294,12 @@ def test_step_rag_search_empty_vector_returns_fallback():
 @pytest.mark.parametrize(
     ("ollama", "qdrant", "expected_codes"),
     [
-        (_DownOllama(), _HealthyQdrant(), {"STEP_05_EMBEDDING"}),
-        (_HealthyOllama(), _DownQdrant(), {"STEP_06_RAG_SEARCH"}),
+        (_DownOllama(), _HealthyQdrant(), {"RAG_EMPTY_CONTEXT"}),
+        (_HealthyOllama(), _DownQdrant(), {"STEP_06_RAG_SEARCH", "RAG_EMPTY_CONTEXT"}),
         (
             _DownOllama(),
             _DownQdrant(),
-            {"STEP_05_EMBEDDING", "STEP_06_RAG_SEARCH"},
+            {"STEP_05_EMBEDDING", "STEP_06_RAG_SEARCH", "RAG_EMPTY_CONTEXT"},
         ),
     ],
 )

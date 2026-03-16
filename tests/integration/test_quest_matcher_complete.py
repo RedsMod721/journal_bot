@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -183,6 +183,24 @@ def _theme_awards(result: dict) -> list[XpAward]:
     return [a for a in result["xp_awards"] if a.distribution_type == "theme"]
 
 
+def _skill_total_xp(db_session: Session, user_id: str) -> int:
+    return int(
+        db_session.query(func.coalesce(func.sum(Skill.xp), 0))
+        .filter(Skill.user_id == user_id)
+        .scalar()
+        or 0
+    )
+
+
+def _theme_total_xp(db_session: Session, user_id: str) -> int:
+    return int(
+        db_session.query(func.coalesce(func.sum(Theme.xp), 0))
+        .filter(Theme.user_id == user_id)
+        .scalar()
+        or 0
+    )
+
+
 def _write_templates(tmp_path: Path, templates: list[dict]) -> Path:
     path = tmp_path / "quest_templates_v1.json"
     path.write_text(
@@ -212,6 +230,79 @@ def _new_entry(
     db_session.add(entry)
     db_session.commit()
     return entry
+
+
+def _make_progression_root_skill(db_session: Session, test_user: User) -> Skill:
+    global_skill = GlobalSkill(
+        id="00000000-0000-0000-0000-000000000901",
+        source_skill_id="skill_creative_creativity",
+        canonical_name="Creativity",
+        category="Creative",
+        hierarchy_level=1,
+    )
+    db_session.add(global_skill)
+    db_session.flush()
+    skill = Skill(
+        id="00000000-0000-0000-0000-000000000902",
+        user_id=test_user.id,
+        name="Creativity",
+        canonical_name="creativity",
+        global_skill_id=global_skill.id,
+        xp=0,
+        level=1,
+        rank="F",
+    )
+    db_session.add(skill)
+    db_session.commit()
+    return skill
+
+
+def _seed_global_skill(
+    db_session: Session,
+    *,
+    global_id: str,
+    source_skill_id: str,
+    canonical_name: str,
+    category: str,
+) -> GlobalSkill:
+    global_skill = GlobalSkill(
+        id=global_id,
+        source_skill_id=source_skill_id,
+        canonical_name=canonical_name,
+        category=category,
+    )
+    db_session.add(global_skill)
+    db_session.commit()
+    return global_skill
+
+
+def _seed_running_cardio_globals(db_session: Session) -> dict[str, GlobalSkill]:
+    running = _seed_global_skill(
+        db_session,
+        global_id="00000000-0000-0000-0000-000000000911",
+        source_skill_id="skill_physical_running",
+        canonical_name="Running",
+        category="Physical",
+    )
+    cardio = _seed_global_skill(
+        db_session,
+        global_id="00000000-0000-0000-0000-000000000912",
+        source_skill_id="skill_physical_cardio_endurance",
+        canonical_name="Cardio Endurance",
+        category="Physical",
+    )
+    cardiorespiratory = _seed_global_skill(
+        db_session,
+        global_id="00000000-0000-0000-0000-000000000913",
+        source_skill_id="skill_physical_cardiorespiratory_fitness",
+        canonical_name="Cardiorespiratory Fitness",
+        category="Physical",
+    )
+    return {
+        "running": running,
+        "cardio": cardio,
+        "cardiorespiratory": cardiorespiratory,
+    }
 
 
 # ── Tests: Instant quest creation ─────────────────────────────────────────
@@ -247,6 +338,40 @@ class TestInstantQuestCreation:
         assert quest.base_xp == 480
         assert quest.user_id == test_user.id
         assert quest.entry_id == test_entry.id
+
+    def test_instant_quest_persists_completed_progress_row(
+        self, db_session: Session, test_user: User, test_entry: JournalEntry, test_skill_a: Skill
+    ) -> None:
+        structured_data = {
+            "extraction_confidence_score": 0.80,
+            "skills_weights_bp": {test_skill_a.id: 10000},
+            "pattern_hits_json": [],
+        }
+
+        result = QuestMatcherStep(db_session).execute(
+            user=test_user,
+            entry=test_entry,
+            structured_data=structured_data,
+            troll_multiplier_bp=10000,
+            variety_multiplier_bp=10000,
+            processing_run_id="instant_progress_test",
+        )
+
+        quest = result["instant_quest"]
+        assert quest is not None
+        db_session.refresh(quest)
+
+        progress = (
+            db_session.query(QuestProgress)
+            .filter(QuestProgress.quest_id == quest.id)
+            .one()
+        )
+
+        assert quest.status == "completed"
+        assert quest.current_progress == 1
+        assert quest.required_progress == 1
+        assert progress.progress_value == 1
+        assert progress.required_progress == 1
 
     def test_instant_quest_assigns_primary_skill(
         self,
@@ -304,6 +429,115 @@ class TestInstantQuestCreation:
         assert result["instant_quest"] is None
         assert result["total_xp_awarded"] == 0
         assert any("INSTANT_SKIPPED" in n for n in result["notes"])
+
+    def test_activity_source_skills_create_running_primary_and_award_xp(
+        self,
+        db_session: Session,
+        test_user: User,
+        test_entry: JournalEntry,
+    ) -> None:
+        globals_by_name = _seed_running_cardio_globals(db_session)
+        structured_data = {
+            "extraction_confidence_score": 0.80,
+            "source_skills_weights_bp": {
+                "skill_physical_running": 7000,
+                "skill_physical_cardio_endurance": 1500,
+                "skill_physical_cardiorespiratory_fitness": 1500,
+            },
+            "skills_weights_bp": {},
+            "resolved_skill_names": [
+                "Running",
+                "Cardio Endurance",
+                "Cardiorespiratory Fitness",
+            ],
+            "pattern_hits_json": [
+                {"semantic_key": "run", "confidence_score": 0.70},
+            ],
+            "task_type": "physical",
+            "primary_action_type": "run",
+        }
+
+        result = QuestMatcherStep(db_session).execute(
+            user=test_user,
+            entry=test_entry,
+            structured_data=structured_data,
+            troll_multiplier_bp=10000,
+            variety_multiplier_bp=10000,
+            processing_run_id="running_source_skill_test",
+        )
+
+        assert "error" not in result
+        instant_quest = result["instant_quest"]
+        assert instant_quest is not None
+        assert len(result["streak_quests"]) == 1
+
+        user_skills = (
+            db_session.query(Skill)
+            .filter(Skill.user_id == test_user.id)
+            .order_by(Skill.global_skill_id.asc())
+            .all()
+        )
+        skills_by_global = {skill.global_skill_id: skill for skill in user_skills}
+        running_skill = skills_by_global[globals_by_name["running"].id]
+        cardio_skill = skills_by_global[globals_by_name["cardio"].id]
+        cardiorespiratory_skill = skills_by_global[globals_by_name["cardiorespiratory"].id]
+
+        assert instant_quest.skill_id == running_skill.id
+        assert result["streak_quests"][0].semantic_key == "run"
+        assert result["streak_quests"][0].skill_id == running_skill.id
+
+        awards = {award.skill_id: award.amount for award in _skill_awards(result)}
+        assert set(awards) == {
+            running_skill.id,
+            cardio_skill.id,
+            cardiorespiratory_skill.id,
+        }
+        assert awards[running_skill.id] > awards[cardio_skill.id]
+        assert awards[running_skill.id] > awards[cardiorespiratory_skill.id]
+        assert sum(awards.values()) == result["total_xp_awarded"]
+
+    def test_unresolved_activity_signals_skip_without_arbitrary_fallback(
+        self,
+        db_session: Session,
+        test_user: User,
+        test_entry: JournalEntry,
+        test_skill_a: Skill,
+    ) -> None:
+        structured_data = {
+            "extraction_confidence_score": 0.80,
+            "source_skills_weights_bp": {"skill_unknown_mystery": 10000},
+            "skills_weights_bp": {},
+            "pattern_hits_json": [
+                {"semantic_key": "mystery_activity", "confidence_score": 0.70},
+            ],
+            "task_type": "physical",
+            "primary_action_type": "mystery_activity",
+        }
+
+        result = QuestMatcherStep(db_session).execute(
+            user=test_user,
+            entry=test_entry,
+            structured_data=structured_data,
+            troll_multiplier_bp=10000,
+            variety_multiplier_bp=10000,
+            processing_run_id="unresolved_activity_test",
+        )
+
+        assert "error" not in result
+        assert result["instant_quest"] is None
+        assert result["streak_quests"] == []
+        assert result["total_xp_awarded"] == 0
+        assert _skill_awards(result) == []
+        user_skills = (
+            db_session.query(Skill)
+            .filter(Skill.user_id == test_user.id)
+            .order_by(Skill.id.asc())
+            .all()
+        )
+        assert [skill.id for skill in user_skills] == [test_skill_a.id]
+        assert "SKILL_ROUTING_UNRESOLVED" in result["notes"]
+        assert "INSTANT_SKIPPED_NO_SKILL" in result["notes"]
+        assert "STREAK_SKIPPED_ENSURE_FAILED_mystery_activity" in result["notes"]
 
     def test_entry_not_completed_returns_error(
         self, db_session: Session, test_user: User, test_skill_a: Skill
@@ -617,6 +851,87 @@ class TestThemeXPDerivation:
         # Skill XP is still awarded; theme derivation silently skips missing themes
         assert result["total_xp_awarded"] == 480
         assert len(_theme_awards(result)) == 0
+
+
+class TestQuestMatcherProgression:
+    """Quest matcher awards must propagate into visible skill/theme totals exactly once."""
+
+    def test_execute_updates_skill_and_theme_progression_totals(
+        self,
+        db_session: Session,
+        test_user: User,
+        test_entry: JournalEntry,
+        test_themes: dict[str, Theme],
+    ) -> None:
+        progression_skill = _make_progression_root_skill(db_session, test_user)
+        structured_data = {
+            "extraction_confidence_score": 0.80,
+            "skills_weights_bp": {progression_skill.id: 10000},
+            "pattern_hits_json": [],
+        }
+        before_skill_total = _skill_total_xp(db_session, test_user.id)
+        before_theme_total = _theme_total_xp(db_session, test_user.id)
+
+        result = QuestMatcherStep(db_session).execute(
+            user=test_user,
+            entry=test_entry,
+            structured_data=structured_data,
+            troll_multiplier_bp=10000,
+            variety_multiplier_bp=10000,
+            processing_run_id="progression_run_1",
+        )
+
+        after_skill_total = _skill_total_xp(db_session, test_user.id)
+        after_theme_total = _theme_total_xp(db_session, test_user.id)
+
+        assert result["progression"]["updated_skills"] >= 1
+        assert result["progression"]["updated_themes"] >= 1
+        assert after_skill_total > before_skill_total
+        assert after_theme_total > before_theme_total
+        assert after_skill_total - before_skill_total == result["total_xp_awarded"]
+
+    def test_execute_does_not_double_apply_progression_on_replay(
+        self,
+        db_session: Session,
+        test_user: User,
+        test_entry: JournalEntry,
+        test_themes: dict[str, Theme],
+    ) -> None:
+        progression_skill = _make_progression_root_skill(db_session, test_user)
+        structured_data = {
+            "extraction_confidence_score": 0.80,
+            "skills_weights_bp": {progression_skill.id: 10000},
+            "pattern_hits_json": [],
+        }
+        step = QuestMatcherStep(db_session)
+
+        first = step.execute(
+            user=test_user,
+            entry=test_entry,
+            structured_data=structured_data,
+            troll_multiplier_bp=10000,
+            variety_multiplier_bp=10000,
+            processing_run_id="progression_run_1",
+        )
+        after_first_skill_total = _skill_total_xp(db_session, test_user.id)
+        after_first_theme_total = _theme_total_xp(db_session, test_user.id)
+
+        second = step.execute(
+            user=test_user,
+            entry=test_entry,
+            structured_data=structured_data,
+            troll_multiplier_bp=10000,
+            variety_multiplier_bp=10000,
+            processing_run_id="progression_run_2",
+        )
+        after_second_skill_total = _skill_total_xp(db_session, test_user.id)
+        after_second_theme_total = _theme_total_xp(db_session, test_user.id)
+
+        assert first["progression"]["updated_skills"] >= 1
+        assert second["progression"]["updated_skills"] == 0
+        assert second["progression"]["updated_themes"] == 0
+        assert after_second_skill_total == after_first_skill_total
+        assert after_second_theme_total == after_first_theme_total
 
 
 # ── Tests: Streak quest contributions ─────────────────────────────────────

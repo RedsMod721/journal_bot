@@ -9,9 +9,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from src.ai import pipeline_core as pipeline_core_module
 from src.ai.pipeline import PipelineProcessor
 from src.db.base import Base
 import src.db.models  # noqa: F401
+from src.db.models.global_kb import GlobalSkill
 from src.db.models.journal_entry import JournalEntry, JournalEntryStructured
 from src.db.models.processing import EntryIdempotencyClaim, OutboxEvent, ProcessingJob
 from src.db.models.quest import Quest
@@ -62,7 +64,21 @@ class _HealthyQdrant:
         return None
 
     def search(self, _vector, limit=5):
-        return [{"point_id": "p1", "score": 0.91, "payload": {"title": "doc"}}][:limit]
+        return [
+            {
+                "point_id": "p1",
+                "score": 0.91,
+                "payload": {
+                    "doc_id": "doc-1",
+                    "content": "Consistent effort compounds when sessions stay repeatable.",
+                    "metadata": {
+                        "chunk_id": "chunk-1",
+                        "title": "Training note",
+                        "source_type": "rag_document",
+                    },
+                },
+            }
+        ][:limit]
 
 
 class _DownQdrant:
@@ -186,8 +202,14 @@ def test_pipeline_happy_path_persists_structured_and_awards():
 
         assert result["status"] == "completed"
         assert result["meta"]["degraded"] is False
+        assert result["quality"]["degraded"] is False
         assert result["summary"]["matched_quest_count"] >= 1
         assert result["summary"]["skill_award_count"] >= 1
+        assert result["step_trace"]
+        assert result["step_trace"][0]["step_name"] == "step_01_validate_input"
+        assert any(
+            step["step_name"] == "step_16r_quest_matcher" for step in result["step_trace"]
+        )
         assert len(result["personality_messages"]) == 1
         message = result["personality_messages"][0]
         assert message["id"] == result["message_id"]
@@ -330,3 +352,121 @@ def test_pipeline_smoke_latency_under_two_seconds_with_local_stubs():
 
         assert result["status"] == "completed"
         assert elapsed < 2.0
+
+
+def test_pipeline_core_resolves_run_cardio_source_skill_weights():
+    with _make_db() as db:
+        user = User(
+            id="00000000-0000-0000-0000-000000000201",
+            email="resolver@example.com",
+            password_hash="x",
+            home_country="US",
+        )
+        db.add(user)
+        db.add_all(
+            [
+                GlobalSkill(
+                    id="00000000-0000-0000-0000-000000000202",
+                    source_skill_id="skill_physical_running",
+                    canonical_name="Running",
+                    category="Physical",
+                ),
+                GlobalSkill(
+                    id="00000000-0000-0000-0000-000000000203",
+                    source_skill_id="skill_physical_cardio_endurance",
+                    canonical_name="Cardio Endurance",
+                    category="Physical",
+                ),
+                GlobalSkill(
+                    id="00000000-0000-0000-0000-000000000204",
+                    source_skill_id="skill_physical_cardiorespiratory_fitness",
+                    canonical_name="Cardiorespiratory Fitness",
+                    category="Physical",
+                ),
+            ]
+        )
+        db.commit()
+
+        signals = pipeline_core_module._derive_week7_structured_signals(
+            user_id=user.id,
+            canonical_text="today i practiced cardio by doing a 10km run in 1h",
+            detection={
+                "detected_skills": [],
+                "detected_activities": ["practice", "run"],
+            },
+            db=db,
+        )
+
+        assert signals["source_skills_weights_bp"] == {
+            "skill_physical_running": 7000,
+            "skill_physical_cardio_endurance": 1500,
+            "skill_physical_cardiorespiratory_fitness": 1500,
+        }
+        assert signals["skills_weights_bp"] == {}
+        assert signals["resolved_skill_names"] == [
+            "Running",
+            "Cardio Endurance",
+            "Cardiorespiratory Fitness",
+        ]
+        assert signals["pattern_hits_json"] == [
+            {"semantic_key": "practice", "confidence_score": 0.70},
+            {"semantic_key": "run", "confidence_score": 0.70},
+        ]
+
+
+def test_pipeline_pushup_regression_exposes_lineage_and_avoids_study_strategy():
+    with _make_db() as db:
+        user = User(
+            id="00000000-0000-0000-0000-000000000211",
+            email="pushups@example.com",
+            password_hash="x",
+            home_country="US",
+        )
+        db.add(user)
+        db.add_all(
+            [
+                GlobalSkill(
+                    id="00000000-0000-0000-0000-000000000212",
+                    source_skill_id="skill_physical_strength_training",
+                    canonical_name="Strength Training",
+                    category="Physical",
+                ),
+                GlobalSkill(
+                    id="00000000-0000-0000-0000-000000000213",
+                    source_skill_id="skill_physical_physical_health",
+                    canonical_name="Physical Health",
+                    category="Physical",
+                ),
+            ]
+        )
+        entry = JournalEntry(
+            id="00000000-0000-0000-0000-000000000214",
+            user_id=user.id,
+            content="today I did 50 pushups for endurance and strength training",
+            entry_type="text",
+            status="pending",
+            question_state="none",
+        )
+        db.add(entry)
+        db.commit()
+
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
+        result = processor.process_entry(
+            entry_id=entry.id,
+            user_id=user.id,
+            idempotency_key="idemp-pushup-lineage-1",
+        )
+
+        assert result["status"] == "completed"
+        assert result["summary"]["detected_activities"]
+        assert result["structured_data"]["task_type"] == "physical"
+        assert result["strategy_detected"] != "study"
+        lineage = result["quest_result"]["xp_lineage"]
+        assert "skill_physical_strength_training" in lineage["source_skill_weights_bp"]
+        assert "skill_physical_physical_health" in lineage["final_target_skill_ids"]
+        assert any(
+            path["target_skill_id"] == "skill_physical_physical_health"
+            for path in lineage["redirect_paths"]
+        )

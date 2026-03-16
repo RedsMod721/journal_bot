@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from src.ai.steps import progression as _s_progression
 from src.core.arc_lifecycle import ArcLifecycleService
 from src.core.quest_matcher import QuestMatcherService
 from src.core.quest_theme_derivation import ThemeXPDerivationService
@@ -105,7 +106,16 @@ class QuestMatcherStep:
             key is also present and the award lists are empty.
         """
         logger.info(
-            "QuestMatcherStep.execute: entry=%s user=%s", entry.id, user.id
+            "[pipeline:quest_matcher] execute entry=%s user=%s confidence=%s "
+            "weighted_skills=%d source_weighted_skills=%d pattern_hits=%d troll_bp=%d variety_bp=%d",
+            entry.id,
+            user.id,
+            structured_data.get("extraction_confidence_score", 0.0),
+            len(structured_data.get("skills_weights_bp", {}) or {}),
+            len(structured_data.get("source_skills_weights_bp", {}) or {}),
+            len(structured_data.get("pattern_hits_json", []) or []),
+            troll_multiplier_bp,
+            variety_multiplier_bp,
         )
 
         # -- Arc multipliers ---------------------------------------------
@@ -153,6 +163,20 @@ class QuestMatcherStep:
         progressed_quests: List["Quest"] = match_result.get("progressed_quests", [])
         completed_quests: List["Quest"] = match_result.get("completed_quests", [])
         notes: List[str] = match_result.get("notes", [])
+        logger.info(
+            "[pipeline:quest_matcher] matched entry=%s instant=%s created=%d progressed=%d "
+            "completed=%d notes=%s",
+            entry.id,
+            instant_quest.id if instant_quest is not None else None,
+            len(created_quests),
+            len(progressed_quests),
+            len(completed_quests),
+            notes,
+        )
+        structured_data["skills_weights_bp"] = self.quest_matcher.resolve_user_skill_weights(
+            user.id,
+            structured_data,
+        )
 
         # -- 2. XP calculation and distribution ---------------------------
         xp_awards: List["XpAward"] = []
@@ -180,6 +204,14 @@ class QuestMatcherStep:
 
             xp_reason = f"quest_{completed_quest.completion_type}_complete"
             if skills_weights_bp and sum(skills_weights_bp.values()) > 0:
+                logger.info(
+                    "[pipeline:quest_matcher] quest=%s entry=%s distributing_xp=%d "
+                    "weights=%s",
+                    completed_quest.id,
+                    entry.id,
+                    final_xp,
+                    skills_weights_bp,
+                )
                 # Huntington-Hill apportionment across skills (Section 10.6.4)
                 skill_awards_dict = self.xp_dist.apportion_xp(final_xp, skills_weights_bp)
 
@@ -208,11 +240,17 @@ class QuestMatcherStep:
                 xp_awards.extend(theme_award_rows)
 
             else:
-                # No valid weights — fall back to single skill
-                fallback_skill_id = self.quest_matcher._get_fallback_skill(user.id)
-                if fallback_skill_id:
-                    fallback_weights = {fallback_skill_id: 10000}
-                    skill_awards_dict = {fallback_skill_id: final_xp}
+                if completed_quest.skill_id:
+                    logger.info(
+                        "[pipeline:quest_matcher] quest=%s entry=%s using quest_skill=%s "
+                        "for_xp=%d",
+                        completed_quest.id,
+                        entry.id,
+                        completed_quest.skill_id,
+                        final_xp,
+                    )
+                    fallback_weights = {completed_quest.skill_id: 10000}
+                    skill_awards_dict = {completed_quest.skill_id: final_xp}
 
                     skill_award_rows = self.xp_dist.persist_xp_awards(
                         user_id=user.id,
@@ -225,13 +263,73 @@ class QuestMatcherStep:
                         quest_matcher_version=QUEST_MATCHER_VERSION,
                     )
                     xp_awards.extend(skill_award_rows)
+                    theme_award_rows = self.theme_derivation.derive_theme_awards(
+                        user_id=user.id,
+                        entry_id=entry.id,
+                        quest_id=completed_quest.id,
+                        skill_awards=skill_award_rows,
+                        xp_reason=xp_reason,
+                        processing_run_id=processing_run_id,
+                        quest_matcher_version=QUEST_MATCHER_VERSION,
+                    )
+                    xp_awards.extend(theme_award_rows)
                 else:
                     logger.warning(
-                        "QuestMatcherStep: no fallback skill for user=%s, "
+                        "QuestMatcherStep: no quest skill for user=%s quest=%s, "
                         "skipping XP award persist",
                         user.id,
+                        completed_quest.id,
                     )
-                    notes.append("NO_FALLBACK_SKILL")
+                    notes.append(f"QUEST_XP_SKIPPED_NO_SKILL_{completed_quest.id}")
+
+        skill_award_payloads = [
+            {
+                "skill_id": award.skill_id,
+                "amount": int(award.amount),
+                "replayed": bool(getattr(award, "_quest_matcher_replayed", False)),
+            }
+            for award in xp_awards
+            if award.skill_id is not None
+        ]
+        theme_award_payloads = [
+            {
+                "theme_id": award.theme_id,
+                "amount": int(award.amount),
+                "replayed": bool(getattr(award, "_quest_matcher_replayed", False)),
+            }
+            for award in xp_awards
+            if award.theme_id is not None
+        ]
+        progression_result = {
+            "updated_skills": 0,
+            "updated_themes": 0,
+            "discoveries": [],
+            "xp_distributions": {},
+            "xp_results": {},
+            "activations": [],
+            "unlocks": [],
+            "total_skills_affected": 0,
+        }
+        if skill_award_payloads or theme_award_payloads:
+            progression_result = _s_progression.update_counters(
+                skill_awards=skill_award_payloads,
+                theme_awards=theme_award_payloads,
+                db=self.db,
+                user_id=user.id,
+                entry_id=entry.id,
+            )
+        logger.info(
+            "[pipeline:quest_matcher] progression entry=%s new_skill_awards=%d "
+            "replayed_skill_awards=%d new_theme_awards=%d replayed_theme_awards=%d "
+            "updated_skills=%d updated_themes=%d",
+            entry.id,
+            sum(1 for award in skill_award_payloads if not award["replayed"]),
+            sum(1 for award in skill_award_payloads if award["replayed"]),
+            sum(1 for award in theme_award_payloads if not award["replayed"]),
+            sum(1 for award in theme_award_payloads if award["replayed"]),
+            progression_result.get("updated_skills", 0),
+            progression_result.get("updated_themes", 0),
+        )
 
         # Flush within the outer transaction — no commit.
         self.db.flush()
@@ -258,4 +356,5 @@ class QuestMatcherStep:
             "xp_awards": xp_awards,
             "total_xp_awarded": total_xp,
             "notes": notes,
+            "progression": progression_result,
         }

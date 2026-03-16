@@ -66,7 +66,7 @@ def _seed_user_and_entry(db: Session) -> tuple[str, str]:
     return user.id, entry.id
 
 
-def test_insights_fallback_when_ollama_disconnected_still_persists_rows() -> None:
+def test_insights_without_retrieval_context_are_suppressed_without_persisting() -> None:
     with _make_db() as db:
         user_id, entry_id = _seed_user_and_entry(db)
         ollama = _OllamaStub(response='{"insight_text":"ignored"}')
@@ -85,9 +85,11 @@ def test_insights_fallback_when_ollama_disconnected_still_persists_rows() -> Non
 
         assert out["from_ollama"] is False
         assert out["from_cache"] is False
+        assert out["generated"] is False
+        assert out["suppression_reason"] == "RAG_EMPTY_CONTEXT"
         assert ollama.calls == 0
-        assert db.query(Insight).count() == 1
-        assert db.query(InsightEvidence).count() == 1
+        assert db.query(Insight).count() == 0
+        assert db.query(InsightEvidence).count() == 0
 
 
 def test_insights_llm_parse_sanitizes_category_and_confidence() -> None:
@@ -101,7 +103,15 @@ def test_insights_llm_parse_sanitizes_category_and_confidence() -> None:
             user_id=user_id,
             entry_id=entry_id,
             canonical_text="Read 10 pages",
-            rag_hits=[],
+            rag_hits=[
+                {
+                    "payload": {
+                        "content": "Spaced review improves long-term retention.",
+                        "doc_id": "doc-1",
+                        "metadata": {"chunk_id": "chunk-1", "title": "Study guide"},
+                    }
+                }
+            ],
             detection={"task_type": "learning", "detected_skills": []},
             ollama_health={"connected": True},
             ollama=ollama,
@@ -113,6 +123,7 @@ def test_insights_llm_parse_sanitizes_category_and_confidence() -> None:
         assert out["insight_confidence"] == 1.0
         assert out["from_ollama"] is True
         assert out["from_cache"] is False
+        assert out["generated"] is True
 
 
 def test_insights_cache_hit_avoids_second_ollama_call_but_writes_new_db_rows() -> None:

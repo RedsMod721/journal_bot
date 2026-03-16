@@ -36,6 +36,8 @@ import functools
 import hashlib
 import json
 import logging
+import os
+import sys
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -74,6 +76,7 @@ from src.core.arc_lifecycle import ArcLifecycleService
 from src.core.arc_recovery_detection import RecoveryDetectionService
 from src.core.arc_regression_trigger import RegressionTriggerService
 from src.core.arc_vacation import VacationModeService
+from src.core.entry_skill_resolver import resolve_entry_skill_signals
 from src.core.forgiveness_decay_service import ForgivenessDecayService
 from src.core.harmony_classifier import HarmonyClassifier
 from src.core.harmony_refresh_service import HarmonyRefreshService
@@ -95,6 +98,12 @@ logger = logging.getLogger(__name__)
 
 PIPELINE_VERSION = "week3-v2"
 RULESET_VERSION = "s10-v8"
+
+
+def _compat_pipeline_attr(name: str, default: Any) -> Any:
+    """Resolve legacy patch points from ``src.ai.pipeline`` when available."""
+    pipeline_module = sys.modules.get("src.ai.pipeline")
+    return getattr(pipeline_module, name, default) if pipeline_module else default
 
 
 # ---------------------------------------------------------------------------
@@ -168,76 +177,26 @@ def _config_version() -> str:
     return "config-v1"
 
 
-def _allocate_basis_points(recipient_ids: list[str]) -> dict[str, int]:
-    if not recipient_ids:
-        return {}
-
-    ordered = sorted(recipient_ids)
-    base = 10000 // len(ordered)
-    remainder = 10000 - (base * len(ordered))
-    return {
-        recipient_id: base + (1 if index < remainder else 0)
-        for index, recipient_id in enumerate(ordered)
-    }
-
-
-def _normalize_pattern_key(raw: str) -> str:
-    key = raw.strip().lower().replace(" ", "_").replace("-", "_")
-    return "".join(char for char in key if char.isalnum() or char == "_")
-
-
 def _derive_week7_structured_signals(
     *,
     user_id: str,
+    canonical_text: str,
     detection: dict[str, Any],
     db: Session,
 ) -> dict[str, Any]:
-    from src.db.models.skill import Skill
-
-    detected_skill_names = {
-        str(name).strip().lower()
-        for name in detection.get("detected_skills", [])
-        if str(name).strip()
-    }
-
-    matched_skill_ids: list[str] = []
-    if detected_skill_names:
-        skills = db.query(Skill).filter(Skill.user_id == user_id).all()
-        for skill in skills:
-            candidates = {
-                str(skill.name or "").strip().lower(),
-                str(skill.canonical_name or "").strip().lower(),
-                str(skill.canonical_name or "").strip().lower().replace("_", " "),
-            }
-            if detected_skill_names.intersection(candidates):
-                matched_skill_ids.append(skill.id)
-
-    pattern_hits: list[dict[str, Any]] = []
-    seen_pattern_keys: set[str] = set()
-    for activity in sorted(
-        {
-            str(activity).strip().lower()
-            for activity in detection.get("detected_activities", [])
-            if str(activity).strip()
-        }
-    ):
-        semantic_key = _normalize_pattern_key(activity)
-        if semantic_key and semantic_key not in seen_pattern_keys:
-            pattern_hits.append(
-                {"semantic_key": semantic_key, "confidence_score": 0.70}
-            )
-            seen_pattern_keys.add(semantic_key)
-
-    extraction_confidence = (
-        0.80
-        if matched_skill_ids
-        else (0.65 if pattern_hits else 0.0)
+    resolution = resolve_entry_skill_signals(
+        user_id=user_id,
+        canonical_text=canonical_text,
+        detected_skills=detection.get("detected_skills", []),
+        detected_activities=detection.get("detected_activities", []),
+        db=db,
     )
-
     return {
-        "skills_weights_bp": _allocate_basis_points(matched_skill_ids),
-        "extraction_confidence_score": extraction_confidence,
-        "pattern_hits_json": pattern_hits,
+        "source_skills_weights_bp": resolution.source_skills_weights_bp,
+        "skills_weights_bp": resolution.skills_weights_bp,
+        "resolved_skill_names": resolution.resolved_skill_names,
+        "extraction_confidence_score": resolution.extraction_confidence_score,
+        "pattern_hits_json": resolution.pattern_hits_json,
     }
 
 
@@ -288,8 +247,11 @@ class StepMetrics:
     step_name: str
     attempt: int
     duration_ms: int
-    status: Literal["succeeded", "failed_critical", "failed_noncritical", "fallback"]
+    status: Literal["succeeded", "failed_critical", "fallback", "suppressed"]
     error_code: str | None = None
+    critical: bool = False
+    fallback_used: bool = False
+    not_persisted_reason: str | None = None
 
 
 @dataclass
@@ -354,6 +316,11 @@ class EntryProcessingSuccessResult:
     message_id: str | None = None
     personality: str | None = None
     meta: dict[str, Any] = field(default_factory=dict)
+    step_trace: list[dict[str, Any]] = field(default_factory=list)
+    quality: dict[str, Any] = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
+    insight_result: dict[str, Any] = field(default_factory=dict)
+    personality_result: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -377,6 +344,9 @@ class EntryProcessingFailureResult:
     retry_after_ms: int | None = None
     job_id: str | None = None
     poll_path: str | None = None
+    step_trace: list[dict[str, Any]] = field(default_factory=list)
+    quality: dict[str, Any] = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -399,6 +369,158 @@ class EntryProcessingAckResult:
 # ---------------------------------------------------------------------------
 # Private step helpers — called from within _run_steps lambdas
 # ---------------------------------------------------------------------------
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, datetime):
+        return _iso8601z(value)
+    return str(value)
+
+
+def _store_step_output(ctx: PipelineContext, step_name: str, value: Any) -> None:
+    ctx.outputs.setdefault("step_outputs", {})[step_name] = _json_safe(value)
+
+
+def _record_manual_step(
+    *,
+    ctx: PipelineContext,
+    step_name: str,
+    duration_ms: int,
+    output: Any,
+    critical: bool,
+    not_persisted_reason: str | None = None,
+) -> None:
+    _store_step_output(ctx, step_name, output)
+    ctx.step_metrics.append(
+        StepMetrics(
+            step_name=step_name,
+            attempt=ctx.attempt_id,
+            duration_ms=duration_ms,
+            status="succeeded",
+            critical=critical,
+            fallback_used=False,
+            not_persisted_reason=not_persisted_reason,
+        )
+    )
+
+
+def _build_step_trace(
+    ctx: PipelineContext,
+    *,
+    quality: dict[str, Any],
+) -> list[dict[str, Any]]:
+    outputs = ctx.outputs.get("step_outputs", {})
+    traces: list[dict[str, Any]] = []
+    for metric in ctx.step_metrics:
+        output = outputs.get(metric.step_name)
+        status = metric.status
+        if status == "succeeded" and isinstance(output, dict) and output.get(
+            "suppression_reason"
+        ):
+            status = "suppressed"
+        traces.append(
+            {
+                "step_name": metric.step_name,
+                "status": status,
+                "duration_ms": metric.duration_ms,
+                "critical": metric.critical,
+                "fallback_used": metric.fallback_used,
+                "error_code": metric.error_code,
+                "error_message": next(
+                    (
+                        err.message
+                        for err in ctx.noncritical_errors
+                        if err.step == metric.step_name and err.code == metric.error_code
+                    ),
+                    ctx.terminal_error.message
+                    if ctx.terminal_error is not None
+                    and ctx.terminal_error.step == metric.step_name
+                    and ctx.terminal_error.code == metric.error_code
+                    else None,
+                ),
+                "output": output,
+                "not_persisted_reason": metric.not_persisted_reason,
+            }
+        )
+    return traces
+
+
+def _build_quality_payload(
+    ctx: PipelineContext,
+    *,
+    cache_stats: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    step_outputs = ctx.outputs.get("step_outputs", {})
+    degraded_codes = sorted(
+        {
+            metric.error_code
+            for metric in ctx.step_metrics
+            if metric.status == "fallback" and metric.error_code
+        }
+        | {
+            str((step_outputs.get(metric.step_name) or {}).get("suppression_reason"))
+            for metric in ctx.step_metrics
+            if metric.status == "suppressed"
+            and isinstance(step_outputs.get(metric.step_name), dict)
+            and (step_outputs.get(metric.step_name) or {}).get("suppression_reason")
+        }
+    )
+    ollama_health = step_outputs.get("step_04_ollama_health", {})
+    rag_result = step_outputs.get("step_06_rag_search", {})
+    dependency_states = {
+        "ollama": {
+            "connected": bool(ollama_health.get("connected")),
+            "error_code": None
+            if ollama_health.get("connected")
+            else "DEPENDENCY_OLLAMA_UNAVAILABLE",
+        },
+        "qdrant": {
+            "connected": not bool(rag_result.get("error")),
+            "error_code": "DEPENDENCY_QDRANT_UNAVAILABLE"
+            if rag_result.get("error")
+            else None,
+        },
+    }
+    if not rag_result.get("hits"):
+        dependency_states["rag"] = {
+            "connected": bool(rag_result) and not bool(rag_result.get("error")),
+            "error_code": "RAG_EMPTY_CONTEXT",
+        }
+    else:
+        dependency_states["rag"] = {"connected": True, "error_code": None}
+    return {
+        "degraded": bool(degraded_codes),
+        "degraded_codes": degraded_codes,
+        "dependency_states": dependency_states,
+        "cache_stats": cache_stats or {},
+    }
+
+
+def _build_provenance_payload(
+    ctx: PipelineContext,
+    *,
+    quality: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "pipeline_version": ctx.versions.pipeline_version,
+        "ruleset_version": ctx.versions.ruleset_version,
+        "config_version": ctx.versions.config_version,
+        "parser_version": ctx.versions.parser_version,
+        "timezone_rules_version": ctx.versions.timezone_rules_version,
+        "ai_models": _json_safe(ctx.versions.ai_models),
+        "prompt_versions": _json_safe(ctx.versions.prompt_versions),
+        "ai_params": _json_safe(ctx.versions.ai_params),
+        "request": _json_safe(ctx.request),
+        "idempotency_key": ctx.idempotency_key_normalized,
+        "processing_run_id": ctx.processing_run_id,
+        "quality_codes": list(quality.get("degraded_codes", [])),
+    }
 
 
 def _build_safety_result(detection: dict[str, Any]) -> dict[str, Any]:
@@ -523,7 +645,9 @@ def build_extraction_fallback(
         "self_compassion_score": None,
         "skills_themes_involved": [],
         "safety_flags": [],
+        "source_skills_weights_bp": {},
         "skills_weights_bp": {},
+        "resolved_skill_names": [],
         "extraction_confidence_score": 0.0,
         "pattern_hits_json": [],
         "extraction_status": "failed",
@@ -550,10 +674,13 @@ class PipelineProcessor:
         recovery: RecoveryQueue | None = None,
     ) -> None:
         self.db = db
-        self.ollama = ollama or OllamaClient()
+        ollama_cls = _compat_pipeline_attr("OllamaClient", OllamaClient)
+        cache_cls = _compat_pipeline_attr("StepCache", StepCache)
+        self.ollama = ollama or ollama_cls()
         self.qdrant = qdrant or self._build_default_qdrant()
-        self.cache = cache or StepCache(ttl_hours=24)
+        self.cache = cache or cache_cls(ttl_hours=24)
         self.recovery = recovery
+        self._strict_ai_dependencies = os.getenv("STRICT_AI_DEPENDENCIES", "0")
         self._active_db: Session | None = None
         bind = self.db.get_bind() if hasattr(self.db, "get_bind") else None
         self._session_factory = (
@@ -570,7 +697,10 @@ class PipelineProcessor:
     @staticmethod
     def _build_default_qdrant() -> Any:
         try:
-            return QdrantClientAdapter()
+            qdrant_cls = _compat_pipeline_attr(
+                "QdrantClientAdapter", QdrantClientAdapter
+            )
+            return qdrant_cls()
         except Exception:
 
             class _NoQdrant:
@@ -610,6 +740,13 @@ class PipelineProcessor:
         if self._session_factory is None:
             raise RuntimeError("PipelineProcessor requires a SQLAlchemy session")
 
+        logger.info(
+            "[pipeline:trace] start entry=%s user=%s idempotency=%s reserved_claim=%s",
+            entry_id,
+            user_id,
+            normalized_key,
+            reserved_claim,
+        )
         try:
             if not reserved_claim:
                 replay = self._get_idempotent_replay(user_id, normalized_key)
@@ -628,6 +765,18 @@ class PipelineProcessor:
             replay_payload = ctx.outputs.get("replay_payload")
             if isinstance(replay_payload, dict):
                 return replay_payload
+            _record_manual_step(
+                ctx=ctx,
+                step_name="step_01_validate_input",
+                duration_ms=0,
+                output={
+                    "user_id": user_id,
+                    "entry_id": entry_id,
+                    "idempotency_key": normalized_key,
+                },
+                critical=True,
+                not_persisted_reason="validation-only step",
+            )
             plan = self._plan_outside_tx(ctx)
             result = self._apply_tx_b(ctx, plan, idempotency_key=normalized_key)
             self._dispatch_outbox_for_run(ctx.processing_run_id)
@@ -918,12 +1067,18 @@ class PipelineProcessor:
         started = time.perf_counter()
         try:
             value = fn()
+            _store_step_output(ctx, step_name, value)
+            status: Literal["succeeded", "suppressed"] = "succeeded"
+            if isinstance(value, dict) and value.get("suppression_reason"):
+                status = "suppressed"
             ctx.step_metrics.append(
                 StepMetrics(
                     step_name=step_name,
                     attempt=ctx.attempt_id,
                     duration_ms=int((time.perf_counter() - started) * 1000),
-                    status="succeeded",
+                    status=status,
+                    critical=critical,
+                    fallback_used=False,
                 )
             )
             return value
@@ -946,6 +1101,8 @@ class PipelineProcessor:
                         duration_ms=duration_ms,
                         status="failed_critical",
                         error_code=error_code,
+                        critical=critical,
+                        fallback_used=False,
                     )
                 )
                 raise PipelineStepError(step_name, error_code, str(exc)) from exc
@@ -957,13 +1114,24 @@ class PipelineProcessor:
                         step_name=step_name,
                         attempt=ctx.attempt_id,
                         duration_ms=duration_ms,
-                        status="failed_noncritical",
+                        status="suppressed",
                         error_code=error_code,
+                        critical=critical,
+                        fallback_used=False,
                     )
+                )
+                _store_step_output(
+                    ctx,
+                    step_name,
+                    {
+                        "suppression_reason": error_code,
+                        "error_message": str(exc),
+                    },
                 )
                 return None
 
             value = fallback_fn(exc)
+            _store_step_output(ctx, step_name, value)
             ctx.step_metrics.append(
                 StepMetrics(
                     step_name=step_name,
@@ -971,6 +1139,8 @@ class PipelineProcessor:
                     duration_ms=duration_ms,
                     status="fallback",
                     error_code=error_code,
+                    critical=critical,
+                    fallback_used=True,
                 )
             )
             return value
@@ -986,6 +1156,7 @@ class PipelineProcessor:
         try:
             week7_signals = _derive_week7_structured_signals(
                 user_id=ctx.user_id,
+                canonical_text=canonical_text,
                 detection=detection,
                 db=db,
             )
@@ -1000,9 +1171,16 @@ class PipelineProcessor:
                 "energy_level": int(detection["energy_level"]),
                 "self_compassion_score": int(detection["self_compassion_score"]),
                 "task_type": detection["task_type"],
-                "skills_themes_involved": list(detection["detected_skills"]),
+                "skills_themes_involved": list(
+                    week7_signals["resolved_skill_names"]
+                    or detection["detected_skills"]
+                ),
                 "safety_flags": list(detection.get("safety_flags", [])),
+                "source_skills_weights_bp": week7_signals[
+                    "source_skills_weights_bp"
+                ],
                 "skills_weights_bp": week7_signals["skills_weights_bp"],
+                "resolved_skill_names": week7_signals["resolved_skill_names"],
                 "extraction_confidence_score": week7_signals[
                     "extraction_confidence_score"
                 ],
@@ -1020,6 +1198,7 @@ class PipelineProcessor:
 
     def _plan_outside_tx(self, ctx: PipelineContext) -> dict[str, Any]:
         with self._new_session() as db, self._use_db(db):
+            load_started = time.perf_counter()
             entry = self._get_entry(user_id=ctx.user_id, entry_id=ctx.entry_id)
             if entry is None:
                 raise PipelineStepError(
@@ -1027,6 +1206,17 @@ class PipelineProcessor:
                     "STEP_02_LOAD_ENTRY",
                     f"journal entry {ctx.entry_id} not found during planning",
                 )
+            _record_manual_step(
+                ctx=ctx,
+                step_name="step_02_load_entry",
+                duration_ms=int((time.perf_counter() - load_started) * 1000),
+                output={
+                    "entry_id": entry.id,
+                    "status": entry.status,
+                    "created_at_utc": _iso8601z(entry.created_at) if entry.created_at else None,
+                },
+                critical=True,
+            )
 
             normalized = self._run_step(
                 ctx=ctx,
@@ -1049,6 +1239,7 @@ class PipelineProcessor:
                     "model_available": False,
                     "models": [],
                     "error": str(exc),
+                    "error_code": "DEPENDENCY_OLLAMA_UNAVAILABLE",
                 },
             )
             embedding = self._run_step(
@@ -1063,6 +1254,7 @@ class PipelineProcessor:
                     normalized_text=normalized["canonical_text"],
                     ollama_health=ollama_health,
                     ollama=self.ollama,
+                    qdrant=self.qdrant,
                     cache=self.cache,
                 ),
                 fallback_fn=lambda _exc: {
@@ -1089,6 +1281,7 @@ class PipelineProcessor:
                     "hit_count": 0,
                     "fallback": True,
                     "error": str(exc),
+                    "error_code": "DEPENDENCY_QDRANT_UNAVAILABLE",
                 },
             )
             detection = self._run_step(
@@ -1239,12 +1432,18 @@ class PipelineProcessor:
                 fallback_fn=lambda _exc: {
                     "user_id": ctx.user_id,
                     "entry_id": ctx.entry_id,
+                    "generated": False,
+                    "persisted": False,
                     "insight_text": "",
                     "insight_category": "general",
                     "insight_confidence": 0.0,
                     "title": None,
                     "from_ollama": False,
                     "from_cache": False,
+                    "citations": [],
+                    "prompt_inputs": {},
+                    "generation_mode": "suppressed",
+                    "suppression_reason": "STEP_12_INSIGHT_PLAN",
                 },
             )
             safety_result = _build_safety_result(detection)
@@ -1305,7 +1504,14 @@ class PipelineProcessor:
                             "primary_personality": "observer",
                         },
                         "pipeline_version": ctx.versions.pipeline_version,
+                        "generation_mode": "safe_fallback",
+                        "fallback_reason": "STEP_15_PERSONALITY_PLAN",
+                        "template_key": "observer.safe_fallback",
                     },
+                    "generation_mode": "safe_fallback",
+                    "citations": [],
+                    "fallback_reason": "STEP_15_PERSONALITY_PLAN",
+                    "template_key": "observer.safe_fallback",
                     "selector_version": 1,
                     "selector_seed_hash": None,
                     "logical_slot_key": "primary",
@@ -1323,6 +1529,52 @@ class PipelineProcessor:
                 },
             )
 
+            structured_data = self._planned_structured_data(
+                canonical_text=normalized["canonical_text"],
+                detection=detection,
+                db=db,
+                ctx=ctx,
+            )
+            logger.info(
+                "[pipeline:trace] planning run=%s entry=%s detected_skills=%s "
+                "detected_activities=%s task_type=%s matched_quests=%d completed_preview=%d "
+                "reward_preview=%d confidence=%s weights=%s pattern_hits=%s",
+                ctx.processing_run_id,
+                ctx.entry_id,
+                detection.get("detected_skills", []),
+                detection.get("detected_activities", []),
+                detection.get("task_type"),
+                len(matched_preview.get("matched_quest_ids", [])),
+                len(progress_preview.get("completed_quest_ids", [])),
+                len(quest_rewards_preview.get("rewards", [])),
+                structured_data.get("extraction_confidence_score", 0.0),
+                structured_data.get("skills_weights_bp", {}),
+                structured_data.get("pattern_hits_json", []),
+            )
+            if (
+                not detection.get("detected_skills")
+                and not detection.get("detected_activities")
+            ):
+                logger.warning(
+                    "[pipeline:trace] planning run=%s entry=%s found no deterministic "
+                    "skill/activity matches preview=%r",
+                    ctx.processing_run_id,
+                    ctx.entry_id,
+                    (entry.content or "")[:160],
+                )
+            if not structured_data.get("skills_weights_bp") or float(
+                structured_data.get("extraction_confidence_score", 0.0) or 0.0
+            ) <= 0.0:
+                logger.warning(
+                    "[pipeline:trace] planning run=%s entry=%s built low-confidence "
+                    "structured data confidence=%s weights=%s pattern_hits=%s",
+                    ctx.processing_run_id,
+                    ctx.entry_id,
+                    structured_data.get("extraction_confidence_score", 0.0),
+                    structured_data.get("skills_weights_bp", {}),
+                    structured_data.get("pattern_hits_json", []),
+                )
+
             db.rollback()
             return {
                 "entry_content": entry.content or "",
@@ -1331,12 +1583,7 @@ class PipelineProcessor:
                 "embedding": embedding,
                 "rag": rag,
                 "detection": detection,
-                "structured_data": self._planned_structured_data(
-                    canonical_text=normalized["canonical_text"],
-                    detection=detection,
-                    db=db,
-                    ctx=ctx,
-                ),
+                "structured_data": structured_data,
                 "safety_result": safety_result,
                 "strategy_preview": strategy_preview,
                 "variety_preview": variety_preview,
@@ -1573,10 +1820,96 @@ class PipelineProcessor:
             "xp_award_count": len(xp_awards),
             "total_xp_awarded": result.get("total_xp_awarded", 0),
             "notes": result.get("notes", []),
+            "progression": result.get("progression", {}),
         }
         if "error" in result:
             out["error"] = result["error"]
+        logger.info(
+            "[pipeline:quest_matcher] serialized entry=%s instant=%s created=%d "
+            "progressed=%d completed=%d xp_award_count=%d total_xp=%d progression=%s "
+            "notes=%s",
+            entry.id,
+            out["instant_quest_id"],
+            len(out["created_quests"]),
+            len(out["progressed_quests"]),
+            len(out["completed_quests"]),
+            out["xp_award_count"],
+            out["total_xp_awarded"],
+            out["progression"],
+            out["notes"],
+        )
         return out
+
+    def _build_xp_lineage(
+        self,
+        *,
+        db: Session,
+        structured_data: dict[str, Any],
+        quest_matcher_out: dict[str, Any],
+    ) -> dict[str, Any]:
+        from src.core.skill_unlocks import SkillUnlockService
+
+        resolver = SkillUnlockService(db)
+        hierarchy = resolver.hierarchy
+        source_skill_weights_bp = dict(
+            structured_data.get("source_skills_weights_bp", {}) or {}
+        )
+        final_distributions = dict(
+            (quest_matcher_out.get("progression", {}) or {}).get("xp_distributions", {})
+            or {}
+        )
+
+        def _path_to_target(source_skill_id: str, target_skill_id: str) -> list[str]:
+            if source_skill_id == target_skill_id:
+                return [source_skill_id]
+            frontier: list[tuple[str, list[str]]] = [(source_skill_id, [source_skill_id])]
+            seen = {source_skill_id}
+            while frontier:
+                current, path = frontier.pop(0)
+                parents = hierarchy.get(current, {}).get("parent_skill_ids", [])
+                for parent_id in parents:
+                    if parent_id in seen:
+                        continue
+                    next_path = path + [parent_id]
+                    if parent_id == target_skill_id:
+                        return next_path
+                    seen.add(parent_id)
+                    frontier.append((parent_id, next_path))
+            return []
+
+        redirect_paths: list[dict[str, Any]] = []
+        for source_skill_id in source_skill_weights_bp:
+            for target_skill_id, xp_amount in final_distributions.items():
+                path = _path_to_target(source_skill_id, target_skill_id)
+                if not path:
+                    continue
+                redirect_paths.append(
+                    {
+                        "source_skill_id": source_skill_id,
+                        "target_skill_id": target_skill_id,
+                        "path": path,
+                        "xp_amount": xp_amount,
+                        "reason": (
+                            "xp redirected to an XP-eligible ancestor under hierarchy rules"
+                            if source_skill_id != target_skill_id
+                            else "xp stayed on the directly resolved source skill"
+                        ),
+                    }
+                )
+
+        return {
+            "resolved_skill_names": list(structured_data.get("resolved_skill_names", [])),
+            "source_skill_weights_bp": source_skill_weights_bp,
+            "user_skill_weights_bp": dict(structured_data.get("skills_weights_bp", {}) or {}),
+            "pattern_hits_json": list(structured_data.get("pattern_hits_json", [])),
+            "final_xp_distributions": final_distributions,
+            "redirect_paths": redirect_paths,
+            "redirected_to_ancestor": any(
+                item["source_skill_id"] != item["target_skill_id"]
+                for item in redirect_paths
+            ),
+            "final_target_skill_ids": sorted(final_distributions),
+        }
 
     def _apply_tx_b(
         self,
@@ -1610,6 +1943,9 @@ class PipelineProcessor:
                     entry_id=ctx.entry_id,
                     canonical_text=plan["normalized"]["canonical_text"],
                     detection=plan["detection"],
+                    resolved_skill_names=plan["structured_data"].get(
+                        "resolved_skill_names", []
+                    ),
                     db=db,
                 ),
             )
@@ -1783,11 +2119,18 @@ class PipelineProcessor:
                 fn=lambda: _s_insights.persist_planned(plan=plan["insight_plan"], db=db),
                 fallback_fn=lambda _exc: {
                     "insight_id": None,
-                    "insight_text": plan["insight_plan"].get("insight_text", ""),
-                    "insight_category": plan["insight_plan"].get("insight_category", "general"),
-                    "insight_confidence": plan["insight_plan"].get("insight_confidence", 0.0),
+                    "generated": False,
+                    "persisted": False,
+                    "insight_text": "",
+                    "insight_category": "general",
+                    "insight_confidence": 0.0,
                     "title": plan["insight_plan"].get("title"),
                     "from_ollama": False,
+                    "from_cache": False,
+                    "citations": [],
+                    "prompt_inputs": dict(plan["insight_plan"].get("prompt_inputs", {}) or {}),
+                    "generation_mode": "suppressed",
+                    "suppression_reason": "STEP_16L_INSIGHT_PERSIST",
                 },
             )
             self._run_step(
@@ -1825,6 +2168,11 @@ class PipelineProcessor:
                     "message": "[OBS] Entry recorded.",
                     "message_id": None,
                     "context_data": plan["personality_plan"].get("context_data", {}),
+                    "generation_mode": "safe_fallback",
+                    "citations": [],
+                    "fallback_reason": "STEP_16N_PERSONALITY_PERSIST",
+                    "template_key": "observer.safe_fallback",
+                    "inserted": False,
                 },
             )
             summary = self._run_step(
@@ -1902,6 +2250,11 @@ class PipelineProcessor:
                     "notes": [],
                     "error": str(exc),
                 },
+            )
+            quest_matcher_out["xp_lineage"] = self._build_xp_lineage(
+                db=db,
+                structured_data=plan["structured_data"],
+                quest_matcher_out=quest_matcher_out,
             )
             persisted_personality_messages = serialize_personality_messages(
                 db.query(PersonalityMessage)
@@ -2001,9 +2354,102 @@ class PipelineProcessor:
         succeeded = [m for m in ctx.step_metrics if m.status == "succeeded"]
         structured_data = dict(plan["structured_data"])
         structured_data["structured_id"] = structured["structured_id"]
+        quality = _build_quality_payload(ctx, cache_stats=cache_stats)
+        step_trace = _build_step_trace(ctx, quality=quality)
         primary_message = _pick_primary_personality_message(
             persisted_personality_messages
         )
+        quest_progression = dict((quest_matcher_out or {}).get("progression", {}) or {})
+        summary_payload = dict(summary)
+        summary_payload["detected_skills"] = list(
+            structured_data.get("resolved_skill_names")
+            or plan["detection"].get("detected_skills", [])
+        )
+        summary_payload["detected_activities"] = list(
+            plan["detection"].get("detected_activities", [])
+        )
+        summary_payload["source_skill_ids"] = sorted(
+            structured_data.get("source_skills_weights_bp", {}).keys()
+        )
+        summary_payload["final_xp_target_skill_ids"] = list(
+            (quest_matcher_out or {}).get("xp_lineage", {}).get(
+                "final_target_skill_ids", []
+            )
+        )
+        skill_updates = [
+            {
+                "updated_skills": progression_out.get("updated_skills", 0),
+                "xp_results": progression_out.get("xp_results", {}),
+            }
+        ]
+        theme_updates = [
+            {"updated_themes": progression_out.get("updated_themes", 0)}
+        ]
+        if quest_progression:
+            skill_updates.append(
+                {
+                    "source": "quest_matcher",
+                    "updated_skills": quest_progression.get("updated_skills", 0),
+                    "xp_results": quest_progression.get("xp_results", {}),
+                }
+            )
+            theme_updates.append(
+                {
+                    "source": "quest_matcher",
+                    "updated_themes": quest_progression.get("updated_themes", 0),
+                }
+            )
+
+        personality_result = {
+            "personality": personality_out.get("personality"),
+            "selection_reason": personality_out.get("selection_reason"),
+            "message": (
+                str(primary_message.get("message_text", ""))
+                if primary_message is not None
+                else personality_out.get("message", "")
+            ),
+            "message_id": (
+                str(primary_message.get("id"))
+                if primary_message is not None and primary_message.get("id") is not None
+                else personality_out.get("message_id")
+            ),
+            "generation_mode": personality_out.get(
+                "generation_mode",
+                (personality_out.get("context_data", {}) or {}).get(
+                    "generation_mode", "template"
+                ),
+            ),
+            "citations": list(
+                personality_out.get(
+                    "citations",
+                    (personality_out.get("context_data", {}) or {}).get("citations", []),
+                )
+                or []
+            ),
+            "fallback_reason": personality_out.get(
+                "fallback_reason",
+                (personality_out.get("context_data", {}) or {}).get("fallback_reason"),
+            ),
+            "template_key": personality_out.get(
+                "template_key",
+                (personality_out.get("context_data", {}) or {}).get("template_key"),
+            ),
+            "inserted": personality_out.get("inserted"),
+            "context_data": dict(personality_out.get("context_data", {}) or {}),
+        }
+        provenance = _build_provenance_payload(ctx, quality=quality)
+        provenance["insight"] = {
+            "prompt_inputs": dict(insight_out.get("prompt_inputs", {}) or {}),
+            "generation_mode": insight_out.get("generation_mode"),
+            "suppression_reason": insight_out.get("suppression_reason"),
+            "citations": list(insight_out.get("citations", []) or []),
+        }
+        provenance["personality"] = {
+            "generation_mode": personality_result.get("generation_mode"),
+            "fallback_reason": personality_result.get("fallback_reason"),
+            "template_key": personality_result.get("template_key"),
+            "citations": personality_result.get("citations", []),
+        }
 
         payload = asdict(
             EntryProcessingSuccessResult(
@@ -2023,15 +2469,8 @@ class PipelineProcessor:
                     + list((quest_matcher_out or {}).get("xp_awards", []))
                 ),
                 level_ups=[],
-                skill_updates=[
-                    {
-                        "updated_skills": progression_out.get("updated_skills", 0),
-                        "xp_results": progression_out.get("xp_results", {}),
-                    }
-                ],
-                theme_updates=[
-                    {"updated_themes": progression_out.get("updated_themes", 0)}
-                ],
+                skill_updates=skill_updates,
+                theme_updates=theme_updates,
                 harmony_status=harmony_out,
                 strategy_detected=(
                     strategy_out.get("detected_strategies") or [None]
@@ -2060,29 +2499,16 @@ class PipelineProcessor:
                 processing_run_id=ctx.processing_run_id,
                 job_id=ctx.job_id,
                 poll_path=f"/api/v1/entry-jobs/{ctx.job_id}",
-                summary=summary,
-                message=(
-                    str(primary_message.get("message_text", ""))
-                    if primary_message is not None
-                    else personality_out.get("message", "")
-                ),
-                message_id=(
-                    str(primary_message.get("id"))
-                    if primary_message is not None and primary_message.get("id") is not None
-                    else personality_out.get("message_id")
-                ),
-                personality=(
-                    str(primary_message.get("personality"))
-                    if primary_message is not None and primary_message.get("personality") is not None
-                    else personality_out.get("personality")
-                ),
-                meta={
-                    "degraded": bool(fallbacks),
-                    "degraded_codes": sorted(
-                        metric.error_code for metric in fallbacks if metric.error_code
-                    ),
-                    "cache_stats": cache_stats,
-                },
+                summary=summary_payload,
+                message=personality_result["message"],
+                message_id=personality_result["message_id"],
+                personality=personality_result["personality"],
+                meta=quality,
+                step_trace=step_trace,
+                quality=quality,
+                provenance=provenance,
+                insight_result=dict(insight_out),
+                personality_result=personality_result,
             )
         )
         payload["status"] = "completed"
@@ -2098,6 +2524,9 @@ class PipelineProcessor:
     ) -> dict[str, Any]:
         completed_at = _iso8601z(_now_utc())
         ctx.time.processing_completed_at_utc = completed_at
+        quality = _build_quality_payload(ctx)
+        step_trace = _build_step_trace(ctx, quality=quality)
+        provenance = _build_provenance_payload(ctx, quality=quality)
         if ctx.terminal_error is None:
             ctx.terminal_error = ErrorRecord(
                 step="entry_pipeline",
@@ -2139,6 +2568,9 @@ class PipelineProcessor:
                 retry_after_ms=None,
                 job_id=ctx.job_id,
                 poll_path=f"/api/v1/entry-jobs/{ctx.job_id}",
+                step_trace=step_trace,
+                quality=quality,
+                provenance=provenance,
             )
         )
 
@@ -2782,7 +3214,8 @@ class JournalEntryPipeline:
                             ``data/recovery/`` is created automatically.
         """
         try:
-            self._recovery: RecoveryQueue = recovery or RecoveryQueue()
+            recovery_cls = _compat_pipeline_attr("RecoveryQueue", RecoveryQueue)
+            self._recovery: RecoveryQueue = recovery or recovery_cls()
         except Exception as exc:
             logger.warning(
                 "pipeline could not initialise RecoveryQueue (entry data may be"
@@ -2826,7 +3259,10 @@ class JournalEntryPipeline:
         # Qdrant: probe via ensure_collection(); detect _NoQdrant sentinel.
         def _qdrant_probe() -> bool:
             qdrant = self._processor.qdrant
-            if not isinstance(qdrant, QdrantClientAdapter):
+            qdrant_cls = _compat_pipeline_attr(
+                "QdrantClientAdapter", QdrantClientAdapter
+            )
+            if not isinstance(qdrant, qdrant_cls):
                 # _NoQdrant sentinel — real Qdrant was unavailable at startup.
                 return False
             try:
@@ -2840,6 +3276,16 @@ class JournalEntryPipeline:
 
         ollama_health, qdrant_ok = await asyncio.gather(ollama_future, qdrant_future)
         ollama_ok = bool(ollama_health.get("connected"))
+        strict_ai = str(
+            getattr(self._processor, "_strict_ai_dependencies", "0")
+            if hasattr(self._processor, "_strict_ai_dependencies")
+            else "0"
+        ).lower() in {"1", "true", "yes", "on"}
+        error_codes: list[str] = []
+        if not ollama_ok:
+            error_codes.append("DEPENDENCY_OLLAMA_UNAVAILABLE")
+        if not qdrant_ok:
+            error_codes.append("DEPENDENCY_QDRANT_UNAVAILABLE")
 
         logger.info(
             "pipeline services_health ollama=%s ollama_model=%s qdrant=%s",
@@ -2852,6 +3298,9 @@ class JournalEntryPipeline:
             "ollama_model": bool(ollama_health.get("model_available")),
             "qdrant": qdrant_ok,
             "degraded": not (ollama_ok and qdrant_ok),
+            "ready": (ollama_ok and qdrant_ok) or not strict_ai,
+            "strict_ai_dependencies": strict_ai,
+            "error_codes": error_codes,
         }
 
     # ------------------------------------------------------------------

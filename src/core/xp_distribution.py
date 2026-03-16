@@ -299,6 +299,14 @@ class XPDistributionService:
         self.db.commit()
         return results
 
+    def get_or_create_skill_for_source(
+        self,
+        user_id: str,
+        source_skill_id: str,
+    ) -> Optional[Skill]:
+        """Resolve/create the user's Skill row for a global source skill id."""
+        return self._get_or_create_skill(user_id, source_skill_id)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

@@ -14,6 +14,7 @@ To add a new task-type branch, add an ``elif`` block to ``_classify_task_type``.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -21,21 +22,58 @@ from sqlalchemy.orm import Session
 
 from src.db.models.skill import Skill
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Keyword registries (module-level constants for easy extension/testing)
 # ---------------------------------------------------------------------------
 
-_ACTIVITY_KEYWORDS: list[str] = [
-    "run",
-    "study",
-    "code",
-    "write",
-    "read",
-    "workout",
-    "meditate",
-    "walk",
-    "practice",
-    "build",
+_ACTIVITY_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
+    ("run", ("run", "runs", "ran", "running", "jog", "jogging", "sprint")),
+    (
+        "study",
+        (
+            "study",
+            "studied",
+            "studying",
+            "flashcard",
+            "lecture",
+            "tutorial",
+            "course",
+            "research",
+            "review",
+        ),
+    ),
+    (
+        "code",
+        ("code", "coded", "coding", "programming", "python", "javascript", "debug"),
+    ),
+    ("write", ("write", "wrote", "writing", "draft", "drafted", "journaled")),
+    ("read", ("read", "reading", "book", "article", "chapter")),
+    (
+        "workout",
+        ("workout", "exercise", "exercised", "exercising", "gym", "training session"),
+    ),
+    (
+        "pushup",
+        ("pushup", "pushups", "push-up", "push-ups", "push up", "push ups"),
+    ),
+    (
+        "strength_training",
+        (
+            "strength training",
+            "resistance training",
+            "weights",
+            "lifting",
+            "lifted",
+            "barbell",
+            "dumbbell",
+        ),
+    ),
+    ("meditate", ("meditate", "meditated", "meditation", "mindfulness", "breathing")),
+    ("walk", ("walk", "walked", "walking", "hike", "hiking", "stroll", "strolled")),
+    ("practice", ("practice", "practiced", "practise", "practised", "drill")),
+    ("build", ("build", "built", "ship", "shipped", "create", "created")),
 ]
 
 _EMOTION_KEYWORDS: list[str] = [
@@ -48,8 +86,36 @@ _EMOTION_KEYWORDS: list[str] = [
 ]
 
 _CREATIVE_TOKENS: frozenset[str] = frozenset(["draw", "paint", "design", "compose"])
-_PHYSICAL_TOKENS: frozenset[str] = frozenset(["run", "lift", "swim", "walk"])
+_PHYSICAL_TOKENS: frozenset[str] = frozenset(
+    [
+        "run",
+        "lift",
+        "swim",
+        "walk",
+        "workout",
+        "exercise",
+        "pushup",
+        "strength training",
+        "weights",
+    ]
+)
 _SOCIAL_TOKENS: frozenset[str] = frozenset(["talk", "friend", "team", "meeting"])
+_PHYSICAL_ACTIVITY_KEYS: frozenset[str] = frozenset(
+    ["run", "workout", "pushup", "strength_training", "walk"]
+)
+_LEARNING_ACTIVITY_KEYS: frozenset[str] = frozenset(["study", "read", "code"])
+_UNMAPPED_ACTIVITY_HINTS: dict[str, tuple[str, ...]] = {
+    "exercise": ("exercise", "exercising"),
+    "gym": ("gym",),
+    "pushup": ("pushup", "pushups", "push-up", "push-ups", "push up", "push ups"),
+    "strength_training": (
+        "strength training",
+        "resistance training",
+        "lifting",
+        "lifted",
+        "weights",
+    ),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -57,11 +123,16 @@ _SOCIAL_TOKENS: frozenset[str] = frozenset(["talk", "friend", "team", "meeting"]
 # ---------------------------------------------------------------------------
 
 
-def _classify_task_type(lowered: str) -> str:
+def _classify_task_type(lowered: str, detected_activities: list[str]) -> str:
+    activity_set = set(detected_activities)
     if any(t in lowered for t in _CREATIVE_TOKENS):
         return "creative"
-    if any(t in lowered for t in _PHYSICAL_TOKENS):
+    if activity_set.intersection(_PHYSICAL_ACTIVITY_KEYS) or any(
+        t in lowered for t in _PHYSICAL_TOKENS
+    ):
         return "physical"
+    if activity_set.intersection(_LEARNING_ACTIVITY_KEYS):
+        return "intellectual"
     if any(t in lowered for t in _SOCIAL_TOKENS):
         return "social"
     return "analytical"
@@ -111,15 +182,51 @@ def run(*, user_id: str, canonical_text: str, db: Session) -> dict[str, Any]:
         if tokens and tokens.intersection(words):
             detected_skills.append(skill.name)
 
-    detected_activities = sorted([kw for kw in _ACTIVITY_KEYWORDS if kw in lowered])
+    detected_activities = [
+        activity
+        for activity, markers in _ACTIVITY_PATTERNS
+        if any(marker in lowered for marker in markers)
+    ]
     dominant_emotions = [e for e in _EMOTION_KEYWORDS if e in lowered]
     self_compassion_score = 3 if "hate myself" in lowered else 7
+    unmapped_hints = sorted(
+        hint
+        for hint, keywords in _UNMAPPED_ACTIVITY_HINTS.items()
+        if any(keyword in lowered for keyword in keywords)
+    )
 
-    return {
+    result = {
         "detected_skills": sorted(set(detected_skills)),
         "detected_activities": detected_activities,
         "dominant_emotions": dominant_emotions,
         "energy_level": _estimate_energy(lowered),
         "self_compassion_score": self_compassion_score,
-        "task_type": _classify_task_type(lowered),
+        "task_type": _classify_task_type(lowered, detected_activities),
     }
+    logger.info(
+        "[pipeline:signals] user=%s roster=%d detected_skills=%s detected_activities=%s "
+        "task_type=%s energy=%s unmapped_hints=%s",
+        user_id,
+        len(skills),
+        result["detected_skills"],
+        result["detected_activities"],
+        result["task_type"],
+        result["energy_level"],
+        unmapped_hints,
+    )
+    if unmapped_hints and not result["detected_skills"]:
+        logger.warning(
+            "[pipeline:signals] user=%s found activity hints without user skill matches "
+            "hints=%s roster_preview=%s",
+            user_id,
+            unmapped_hints,
+            [skill.canonical_name for skill in skills[:8]],
+        )
+    if unmapped_hints and not result["detected_activities"]:
+        logger.warning(
+            "[pipeline:signals] user=%s found raw activity hints that did not map into "
+            "detected_activities hints=%s",
+            user_id,
+            unmapped_hints,
+        )
+    return result

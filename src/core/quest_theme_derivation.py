@@ -243,6 +243,7 @@ class ThemeXPDerivationService:
             self.db.add(award)
             self.db.flush()
             sp.commit()
+            setattr(award, "_quest_matcher_replayed", False)
             return award
         except IntegrityError:
             sp.rollback()
@@ -252,6 +253,7 @@ class ThemeXPDerivationService:
                 .first()
             )
             if existing:
+                setattr(existing, "_quest_matcher_replayed", True)
                 return existing
             logger.error(
                 "theme_derivation: IntegrityError but no existing row found "

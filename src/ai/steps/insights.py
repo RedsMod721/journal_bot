@@ -61,6 +61,19 @@ _VALID_CATEGORIES = frozenset(
 )
 
 
+def _citation_from_hit(hit: dict[str, Any]) -> dict[str, Any]:
+    payload = hit.get("payload", {}) or {}
+    metadata = payload.get("metadata", {}) or {}
+    return {
+        "doc_id": payload.get("doc_id") or hit.get("doc_id"),
+        "chunk_id": metadata.get("chunk_id") or payload.get("chunk_id"),
+        "title": metadata.get("title") or payload.get("title"),
+        "source_type": metadata.get("source_type") or payload.get("source_type") or "rag_document",
+        "locator": metadata.get("locator") or payload.get("locator"),
+        "retrieved_at_utc": metadata.get("retrieved_at_utc") or payload.get("retrieved_at_utc"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -96,6 +109,21 @@ def _insight_cache_key(entry_summary: str, rag_context: list[str]) -> str:
     raw = f"{entry_summary}|{context_str}"
     digest = hashlib.sha256(raw.encode()).hexdigest()[:16]
     return f"insight:{digest}"
+
+
+def _prompt_inputs(
+    entry_summary: str,
+    rag_context: list[str],
+    citations: list[dict[str, Any]],
+    ollama_health: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "entry_summary": entry_summary,
+        "rag_context": rag_context[:3],
+        "citations": citations[:3],
+        "ollama_connected": bool(ollama_health.get("connected")),
+        "cache_key": _insight_cache_key(entry_summary, rag_context),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -148,26 +176,35 @@ def plan(
         for h in rag_hits
         if h.get("payload", {}).get("content")
     ]
+    citations = [_citation_from_hit(hit) for hit in rag_hits][:3]
 
     insight_data = _FALLBACK.copy()
     from_ollama = False
     from_cache = False
+    prompt_inputs = _prompt_inputs(entry_summary, rag_context, citations, ollama_health)
+    suppression_reason: str | None = None
+    generation_mode = "suppressed"
 
     # ── Cache read (LLM text only — DB write still happens below) ──────
     cache_key: str | None = None
-    if cache is not None:
+    if cache is not None and rag_context and ollama_health.get("connected"):
         cache_key = _insight_cache_key(entry_summary, rag_context)
         cached_llm = cache.get(cache_key)
         if cached_llm is not None:
             insight_data = cached_llm
             from_ollama = True  # cached from a prior successful LLM call
             from_cache = True
+            generation_mode = "llm_rag"
             logger.debug(
                 "insights cache_hit entry_id=%s cache_key=%s", entry_id, cache_key
             )
 
     # ── LLM call (skipped on cache hit or when Ollama is down) ─────────
-    if not from_cache and ollama_health.get("connected"):
+    if not rag_context:
+        suppression_reason = "RAG_EMPTY_CONTEXT"
+    elif not ollama_health.get("connected"):
+        suppression_reason = "DEPENDENCY_OLLAMA_UNAVAILABLE"
+    elif not from_cache:
         prompt = _build_prompt(entry_summary, rag_context)
         raw_result = ollama.generate_json(prompt)
         response_text = raw_result.get("response", "{}")
@@ -190,6 +227,7 @@ def plan(
                 "confidence": confidence,
             }
             from_ollama = True
+            generation_mode = "llm_rag"
 
         # Cache the LLM output for future identical prompts.
         if from_ollama and cache is not None and cache_key is not None:
@@ -201,12 +239,18 @@ def plan(
     return {
         "user_id": user_id,
         "entry_id": entry_id,
-        "insight_text": insight_data["insight_text"],
-        "insight_category": insight_data["category"],
-        "insight_confidence": insight_data["confidence"],
+        "generated": from_ollama,
+        "persisted": False,
+        "insight_text": insight_data["insight_text"] if from_ollama else "",
+        "insight_category": insight_data["category"] if from_ollama else "general",
+        "insight_confidence": insight_data["confidence"] if from_ollama else 0.0,
         "title": _build_title(detection),
         "from_ollama": from_ollama,
         "from_cache": from_cache,
+        "citations": citations if from_ollama else [],
+        "prompt_inputs": prompt_inputs,
+        "generation_mode": generation_mode,
+        "suppression_reason": suppression_reason,
     }
 
 
@@ -216,6 +260,22 @@ def persist_planned(
     db: Session,
 ) -> dict[str, Any]:
     """Persist a previously planned insight."""
+    if not plan.get("generated", False):
+        return {
+            "insight_id": None,
+            "generated": False,
+            "persisted": False,
+            "insight_text": "",
+            "insight_category": "general",
+            "insight_confidence": 0.0,
+            "from_ollama": False,
+            "from_cache": bool(plan.get("from_cache")),
+            "citations": [],
+            "prompt_inputs": dict(plan.get("prompt_inputs", {})),
+            "generation_mode": str(plan.get("generation_mode", "suppressed")),
+            "suppression_reason": plan.get("suppression_reason"),
+        }
+
     insight_row = Insight(
         user_id=plan["user_id"],
         insight_type=plan["insight_category"],
@@ -239,11 +299,17 @@ def persist_planned(
 
     return {
         "insight_id": insight_row.id,
+        "generated": True,
+        "persisted": True,
         "insight_text": plan["insight_text"],
         "insight_category": plan["insight_category"],
         "insight_confidence": plan["insight_confidence"],
         "from_ollama": bool(plan.get("from_ollama")),
         "from_cache": bool(plan.get("from_cache")),
+        "citations": list(plan.get("citations", [])),
+        "prompt_inputs": dict(plan.get("prompt_inputs", {})),
+        "generation_mode": str(plan.get("generation_mode", "llm_rag")),
+        "suppression_reason": None,
     }
 
 

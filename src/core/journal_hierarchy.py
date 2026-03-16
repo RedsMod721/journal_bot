@@ -167,6 +167,26 @@ def process_journal_entry_with_hierarchy(
             user_id,
         )
 
+    logger.info(
+        "[pipeline:hierarchy] entry=%s user=%s source_awards=%s discoveries=%d "
+        "merged_distribution=%s activations=%d unlocks=%d",
+        entry_id,
+        user_id,
+        skill_xp_awards,
+        len(discoveries),
+        merged_distribution,
+        len(activations),
+        len(meaningful_unlocks),
+    )
+    if skill_xp_awards and not merged_distribution:
+        logger.warning(
+            "[pipeline:hierarchy] entry=%s user=%s produced no XP distribution from "
+            "source awards=%s",
+            entry_id,
+            user_id,
+            skill_xp_awards,
+        )
+
     return {
         "discoveries": discoveries,
         "xp_distributions": merged_distribution,

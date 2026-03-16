@@ -24,6 +24,7 @@ Idempotency (Section 10.6.5):
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import uuid
 from datetime import datetime, timezone
@@ -33,6 +34,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.db.models.xp import XpAward
+
+logger = logging.getLogger(__name__)
 
 
 class QuestXPDistributionService:
@@ -272,6 +275,7 @@ class QuestXPDistributionService:
                 self.db.add(award)
                 self.db.flush()
                 sp.commit()
+                setattr(award, "_quest_matcher_replayed", False)
                 persisted.append(award)
             except IntegrityError:
                 sp.rollback()
@@ -281,7 +285,16 @@ class QuestXPDistributionService:
                     .first()
                 )
                 if existing:
+                    setattr(existing, "_quest_matcher_replayed", True)
                     persisted.append(existing)
+                else:
+                    logger.warning(
+                        "[pipeline:quest_xp] duplicate identity=%s for entry=%s quest=%s "
+                        "but no existing row could be loaded",
+                        identity_key,
+                        entry_id,
+                        quest_id,
+                    )
 
         return persisted
 

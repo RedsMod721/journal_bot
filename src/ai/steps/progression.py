@@ -18,6 +18,7 @@ hierarchy).
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -25,6 +26,8 @@ from sqlalchemy.orm import Session
 from src.core.enums import get_rank_from_level
 from src.core.xp import calculate_level_from_xp
 from src.db.models.skill import Skill, Theme
+
+logger = logging.getLogger(__name__)
 
 
 def _now_utc() -> datetime:
@@ -70,6 +73,8 @@ def update_counters(
     theme_updates = 0
     hierarchy_meta: dict[str, Any] = {}
     direct_skill_updates = 0
+    source_xp: dict[str, int] = {}
+    legacy_awards: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Skill XP — hierarchy-aware path (user_id required)
@@ -77,9 +82,6 @@ def update_counters(
     if user_id is not None:
         from src.db.models.global_kb import GlobalSkill
         from src.core.journal_hierarchy import process_journal_entry_with_hierarchy
-
-        source_xp: dict[str, int] = {}   # {source_skill_id: xp}
-        legacy_awards: list[dict[str, Any]] = []  # skills with no hierarchy row
 
         for award in skill_awards:
             if award.get("replayed"):
@@ -158,9 +160,28 @@ def update_counters(
     updated_skills = (
         hierarchy_meta.get("total_skills_affected", 0) + direct_skill_updates
     )
-
-    return {
+    result = {
         "updated_skills": updated_skills,
         "updated_themes": theme_updates,
         **hierarchy_meta,
     }
+    logger.info(
+        "[pipeline:progression] entry=%s user=%s skill_awards=%d theme_awards=%d "
+        "hierarchy_sources=%s legacy_awards=%d updated_skills=%d updated_themes=%d",
+        entry_id,
+        user_id,
+        len(skill_awards),
+        len(theme_awards),
+        source_xp,
+        len(legacy_awards),
+        updated_skills,
+        theme_updates,
+    )
+    if user_id is not None and skill_awards and not source_xp and not legacy_awards:
+        logger.warning(
+            "[pipeline:progression] entry=%s user=%s received skill awards but none could "
+            "be mapped into hierarchy or legacy progression payloads",
+            entry_id,
+            user_id,
+        )
+    return result

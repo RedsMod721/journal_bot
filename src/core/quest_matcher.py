@@ -28,6 +28,7 @@ from src.core.quest_template_registry import (
     QuestTemplateDefinition,
     load_quest_template_registry,
 )
+from src.core.xp_distribution import XPDistributionService
 from src.db.models.global_kb import GlobalSkill
 from src.db.models.quest import Quest
 from src.db.models.quest_progress import (
@@ -96,6 +97,7 @@ class QuestMatcherService:
     ) -> None:
         self.db = db
         self.learning = QuestLearningService(db)
+        self.skill_distribution = XPDistributionService(db)
         self.template_registry = load_quest_template_registry(templates_path)
 
     # ------------------------------------------------------------------
@@ -115,15 +117,53 @@ class QuestMatcherService:
         Returns a deterministic summary of created, progressed, and completed
         quests. Existing rows are returned when a retry replays the same entry.
         """
+        if not isinstance(structured_data, dict):
+            structured_data = {}
+
+        raw_pattern_hits = structured_data.get("pattern_hits_json", [])
+        pattern_hit_count = len(raw_pattern_hits) if isinstance(raw_pattern_hits, list) else 0
+        weight_count = len(structured_data.get("skills_weights_bp", {}) or {})
+        source_weight_count = len(structured_data.get("source_skills_weights_bp", {}) or {})
+        log.info(
+            "[pipeline:quest_matcher] start entry=%s user=%s status=%s confidence=%s "
+            "weighted_skills=%d source_weighted_skills=%d pattern_hits=%d learning_complete=%s",
+            entry.id,
+            user.id,
+            entry.status,
+            structured_data.get("extraction_confidence_score", 0.0),
+            weight_count,
+            source_weight_count,
+            pattern_hit_count,
+            user.learning_phase_complete,
+        )
         if entry.status != "completed":
+            log.warning(
+                "[pipeline:quest_matcher] entry=%s user=%s skipped because status=%s",
+                entry.id,
+                user.id,
+                entry.status,
+            )
             return {"error": "ENTRY_NOT_COMPLETED", "notes": []}
 
         entry_ts_ms = self._entry_timestamp_ms(entry)
         if entry_ts_ms is None:
+            log.warning(
+                "[pipeline:quest_matcher] entry=%s user=%s missing timestamp for quest matching",
+                entry.id,
+                user.id,
+            )
             return {"error": "ENTRY_TIME_MISSING", "notes": []}
 
+        structured_data["skills_weights_bp"] = self.resolve_user_skill_weights(
+            user.id,
+            structured_data,
+        )
         local_date = self._get_local_date(entry_ts_ms, user.timezone)
         accumulator = MatchAccumulator()
+        if not structured_data.get("skills_weights_bp") and self._has_skill_routing_signals(
+            structured_data
+        ):
+            accumulator.notes.append("SKILL_ROUTING_UNRESOLVED")
 
         accumulator.notes.extend(
             self._expire_stale_longterm_quests(
@@ -169,7 +209,7 @@ class QuestMatcherService:
 
         self.db.flush()
 
-        return {
+        result = {
             "instant_quest": instant_quest,
             "streak_quests": accumulator.streak_quests,
             "created_count": accumulator.created_count,
@@ -178,6 +218,18 @@ class QuestMatcherService:
             "progressed_quests": accumulator.progressed_quests,
             "completed_quests": accumulator.completed_quests,
         }
+        log.info(
+            "[pipeline:quest_matcher] complete entry=%s user=%s created=%d progressed=%d "
+            "completed=%d streaks=%d notes=%s",
+            entry.id,
+            user.id,
+            len(accumulator.created_quests),
+            len(accumulator.progressed_quests),
+            len(accumulator.completed_quests),
+            len(accumulator.streak_quests),
+            accumulator.notes,
+        )
+        return result
 
     # ------------------------------------------------------------------
     # Step 0 — Expiry / streak break handling
@@ -298,6 +350,12 @@ class QuestMatcherService:
             .first()
         )
         if existing:
+            self._ensure_instant_quest_completion_state(
+                user_id=user.id,
+                quest=existing,
+                local_date=local_date,
+                timestamp_ms=entry_ts_ms,
+            )
             return existing, "INSTANT_ENSURED", False
 
         skill_id = self._get_primary_skill(
@@ -322,13 +380,26 @@ class QuestMatcherService:
             creation_confidence_bp=min(10000, int(round(confidence * 10000))),
             created_at_utc_ms=now_ms,
             updated_at_utc_ms=now_ms,
+            current_progress=1,
+            required_progress=1,
             completed_at=datetime.fromtimestamp(entry_ts_ms / 1000, tz=timezone.utc),
             completed_at_utc_ms=entry_ts_ms,
+        )
+        progress = QuestProgress(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            quest_id=quest.id,
+            progress_value=1,
+            required_progress=1,
+            last_progress_local_date=local_date,
+            last_progress_date=local_date,
+            updated_at_utc_ms=entry_ts_ms,
         )
 
         try:
             with self.db.begin_nested():
                 self.db.add(quest)
+                self.db.add(progress)
                 self.db.flush()
             return quest, "INSTANT_CREATED", True
         except IntegrityError:
@@ -341,6 +412,13 @@ class QuestMatcherService:
                 )
                 .first()
             )
+            if existing is not None:
+                self._ensure_instant_quest_completion_state(
+                    user_id=user.id,
+                    quest=existing,
+                    local_date=local_date,
+                    timestamp_ms=entry_ts_ms,
+                )
             return existing, "INSTANT_ENSURED", False
 
     # ------------------------------------------------------------------
@@ -974,6 +1052,32 @@ class QuestMatcherService:
         self.db.flush()
         return progress
 
+    def _ensure_instant_quest_completion_state(
+        self,
+        *,
+        user_id: str,
+        quest: Quest,
+        local_date: str,
+        timestamp_ms: int,
+    ) -> None:
+        quest.required_progress = max(1, int(quest.required_progress or 1))
+        quest.current_progress = max(int(quest.current_progress or 0), quest.required_progress)
+        progress = self._get_or_create_progress(
+            user_id=user_id,
+            quest=quest,
+            required_progress=quest.required_progress,
+            now_ms=timestamp_ms,
+        )
+        progress.required_progress = quest.required_progress
+        progress.progress_value = max(int(progress.progress_value or 0), quest.required_progress)
+        progress.last_progress_local_date = local_date
+        progress.last_progress_date = local_date
+        self._mark_quest_completed(
+            quest=quest,
+            progress=progress,
+            timestamp_ms=timestamp_ms,
+        )
+
     def _mark_quest_completed(
         self,
         *,
@@ -981,6 +1085,8 @@ class QuestMatcherService:
         progress: QuestProgress,
         timestamp_ms: int,
     ) -> None:
+        quest.required_progress = max(1, int(quest.required_progress or 1))
+        quest.current_progress = max(int(quest.current_progress or 0), quest.required_progress)
         quest.status = "completed"
         quest.completed_at = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
         quest.completed_at_utc_ms = timestamp_ms
@@ -1292,37 +1398,78 @@ class QuestMatcherService:
     # Skill / confidence / timestamp helpers
     # ------------------------------------------------------------------
 
+    def resolve_user_skill_weights(
+        self,
+        user_id: str,
+        structured_data: dict,
+    ) -> dict[str, int]:
+        source_weights_bp = self._normalize_weight_map(
+            structured_data.get("source_skills_weights_bp", {})
+        )
+        if source_weights_bp:
+            resolved: dict[str, int] = {}
+            for source_skill_id, weight in sorted(source_weights_bp.items()):
+                skill = self.skill_distribution.get_or_create_skill_for_source(
+                    user_id,
+                    source_skill_id,
+                )
+                if skill is None:
+                    continue
+                resolved[skill.id] = resolved.get(skill.id, 0) + int(weight)
+            return resolved
+
+        return self._normalize_weight_map(structured_data.get("skills_weights_bp", {}))
+
+    def _normalize_weight_map(self, value: Any) -> dict[str, int]:
+        if not isinstance(value, dict):
+            return {}
+        normalized: dict[str, int] = {}
+        for skill_id, weight in value.items():
+            if not isinstance(skill_id, str):
+                continue
+            try:
+                parsed = int(weight)
+            except (TypeError, ValueError):
+                continue
+            if parsed <= 0:
+                continue
+            normalized[skill_id] = normalized.get(skill_id, 0) + parsed
+        return normalized
+
+    def _has_skill_routing_signals(self, structured_data: dict) -> bool:
+        if self._normalize_weight_map(structured_data.get("source_skills_weights_bp", {})):
+            return True
+        if structured_data.get("primary_action_type"):
+            return True
+        task_type = str(structured_data.get("task_type") or "").strip().lower()
+        if task_type and task_type != "unknown":
+            return True
+        if structured_data.get("resolved_skill_names"):
+            return True
+
+        pattern_hits = structured_data.get("pattern_hits_json", [])
+        if isinstance(pattern_hits, str):
+            try:
+                pattern_hits = json.loads(pattern_hits)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                pattern_hits = []
+        return isinstance(pattern_hits, list) and bool(pattern_hits)
+
     def _get_primary_skill(
         self,
         user_id: str,
         skills_weights_bp: dict,
     ) -> Optional[str]:
-        if skills_weights_bp:
-            try:
-                max_weight = max(int(weight) for weight in skills_weights_bp.values())
-                candidates = [
-                    str(skill_id)
-                    for skill_id, weight in skills_weights_bp.items()
-                    if int(weight) == max_weight
-                ]
-                if candidates:
-                    return min(candidates)
-            except (ValueError, TypeError):
-                pass
-
-        return self._get_fallback_skill(user_id)
-
-    def _get_fallback_skill(self, user_id: str) -> Optional[str]:
-        skill = (
-            self.db.query(Skill)
-            .filter(Skill.user_id == user_id)
-            .order_by(Skill.canonical_name.asc(), Skill.id.asc())
-            .first()
-        )
-        if skill is None:
-            log.warning("No skills found for user %r - cannot resolve primary skill", user_id)
+        normalized_weights = self._normalize_weight_map(skills_weights_bp)
+        if not normalized_weights:
             return None
-        return skill.id
+        max_weight = max(normalized_weights.values())
+        candidates = [
+            skill_id
+            for skill_id, weight in normalized_weights.items()
+            if weight == max_weight
+        ]
+        return min(candidates) if candidates else None
 
     def _entry_timestamp_ms(self, entry: "JournalEntry") -> Optional[int]:
         ts = entry.processed_at or entry.updated_at or entry.created_at

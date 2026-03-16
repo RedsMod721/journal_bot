@@ -16,6 +16,7 @@ def run(
     normalized_text: str,
     ollama_health: dict[str, Any],
     ollama: Any,
+    qdrant: Any | None = None,
     cache: Any,
 ) -> dict[str, Any]:
     """Produce a float embedding vector for *normalized_text*.
@@ -37,14 +38,24 @@ def run(
     Raises:
         RuntimeError: When Ollama is unavailable and no cache entry exists.
     """
-    cache_key = f"embedding:{entry_id}"
+    cache_key = f"embedding:v2:{entry_id}"
     cached = cache.get(cache_key)
     if cached is not None:
         return {"vector": cached, "from_cache": True, "fallback": False}
+
+    if qdrant is not None and hasattr(qdrant, "encode_text"):
+        vector = qdrant.encode_text(normalized_text[:4000] or f"entry:{entry_id}")
+        cache.set(cache_key, vector)
+        return {"vector": vector, "from_cache": False, "fallback": False}
 
     if not ollama_health.get("connected"):
         raise RuntimeError("ollama unavailable — cannot generate embedding")
 
     vector = ollama.embed(normalized_text[:4000] or f"entry:{entry_id}")
+    expected_dim = getattr(qdrant, "vector_size", None)
+    if expected_dim is not None and len(vector) != int(expected_dim):
+        raise RuntimeError(
+            f"embedding dimension mismatch: generated {len(vector)}, expected {expected_dim}"
+        )
     cache.set(cache_key, vector)
     return {"vector": vector, "from_cache": False, "fallback": False}

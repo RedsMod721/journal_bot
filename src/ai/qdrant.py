@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import sys
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +36,43 @@ except Exception:  # pragma: no cover - optional dependency fallback
     pass
 
 _SentenceTransformerLib: Any = None
+_SharedEmbeddingModel: Any = None
 _LOCAL_EMBEDDED_CLIENTS: dict[str, Any] = {}
+
+
+def _sentence_transformers_enabled() -> bool:
+    """Return whether sentence-transformers loading is enabled.
+
+    The embedding stack is opt-in because first-time model loading may require
+    heavyweight imports and local model artifacts. Set
+    ``ENABLE_SENTENCE_TRANSFORMERS=1`` to enable semantic search.
+    """
+    raw = os.getenv("ENABLE_SENTENCE_TRANSFORMERS")
+    if raw is None:
+        return False
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _sentence_transformers_allow_download() -> bool:
+    """Return whether model downloads are allowed during runtime loading."""
+    raw = os.getenv("SENTENCE_TRANSFORMERS_ALLOW_DOWNLOAD")
+    if raw is None:
+        return False
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@contextmanager
+def _temporary_env(overrides: dict[str, str]) -> Any:
+    previous = {key: os.environ.get(key) for key in overrides}
+    try:
+        os.environ.update(overrides)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _load_sentence_transformer_lib() -> Any:
@@ -46,9 +84,12 @@ def _load_sentence_transformer_lib() -> Any:
     global _SentenceTransformerLib
     if _SentenceTransformerLib is not None:
         return _SentenceTransformerLib
+    if not _sentence_transformers_enabled():
+        _SentenceTransformerLib = None
+        return None
     if (
-        os.getenv("ENABLE_SENTENCE_TRANSFORMERS", "0") != "1"
-        and "sentence_transformers" not in sys.modules
+        "sentence_transformers" not in sys.modules
+        and importlib.util.find_spec("sentence_transformers") is None
     ):
         _SentenceTransformerLib = None
         return None
@@ -61,9 +102,72 @@ def _load_sentence_transformer_lib() -> Any:
     return _SentenceTransformerLib
 
 
+def _load_sentence_transformer_model(
+    sentence_transformer_lib: Any,
+    model_name: str,
+) -> Any:
+    """Instantiate a sentence-transformers model with local-cache-first semantics."""
+    kwargs: dict[str, Any] = {}
+    env_overrides: dict[str, str] = {}
+    if not _sentence_transformers_allow_download():
+        kwargs["local_files_only"] = True
+        env_overrides = {
+            "HF_HUB_OFFLINE": "1",
+            "TRANSFORMERS_OFFLINE": "1",
+        }
+
+    with _temporary_env(env_overrides):
+        try:
+            return sentence_transformer_lib(model_name, **kwargs)
+        except TypeError:
+            # Older tests/fakes accept only the model name.
+            return sentence_transformer_lib(model_name)
+
+
 # all-mpnet-base-v2 produces 768-dimensional vectors.
 _EMBEDDING_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
 _EMBEDDING_VECTOR_SIZE = 768
+
+
+def _get_shared_embedding_model() -> Any:
+    """Return the shared sentence-transformers model instance, if available."""
+    global _SharedEmbeddingModel
+    if _SharedEmbeddingModel is not None:
+        return _SharedEmbeddingModel
+
+    if not _sentence_transformers_enabled():
+        logger.info(
+            "sentence-transformers loading is disabled; set "
+            "ENABLE_SENTENCE_TRANSFORMERS=1 to enable semantic search."
+        )
+        return None
+
+    sentence_transformer_lib = _SentenceTransformerLib or _load_sentence_transformer_lib()
+    if sentence_transformer_lib is None:  # pragma: no cover
+        logger.warning(
+            "sentence-transformers could not be imported; semantic search "
+            "will remain unavailable."
+        )
+        return None
+
+    try:
+        logger.info("Loading embedding model: {}", _EMBEDDING_MODEL_NAME)
+        _SharedEmbeddingModel = _load_sentence_transformer_model(
+            sentence_transformer_lib,
+            _EMBEDDING_MODEL_NAME,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed to load embedding model '{}': {}. "
+            "Semantic search will remain unavailable until the model is "
+            "available locally or downloads are enabled via "
+            "SENTENCE_TRANSFORMERS_ALLOW_DOWNLOAD=1.",
+            _EMBEDDING_MODEL_NAME,
+            exc,
+        )
+        _SharedEmbeddingModel = None
+
+    return _SharedEmbeddingModel
 
 
 class QdrantClientAdapter:
@@ -91,6 +195,7 @@ class QdrantClientAdapter:
         self.local_path = Path(
             str(local_path) if local_path is not None else defaults["local_path"]
         )
+        self.embedding_model = _get_shared_embedding_model()
 
         if self.mode == "local":
             self.local_path.mkdir(parents=True, exist_ok=True)
@@ -165,6 +270,13 @@ class QdrantClientAdapter:
             for r in results
         ]
 
+    def encode_text(self, text: str) -> list[float]:
+        """Encode *text* with the shared RAG embedding model."""
+        if self.embedding_model is None:
+            raise RuntimeError("Embedding model unavailable")
+        vector = self.embedding_model.encode(text)
+        return vector.tolist()
+
 
 class QdrantClient:
     """High-level Qdrant client with natural-language semantic search.
@@ -213,6 +325,7 @@ class QdrantClient:
         self.port = self._adapter.port
         self.collection = self._adapter.collection
         self.vector_size = self._adapter.vector_size
+        self.embedding_model = self._adapter.embedding_model
 
         if self.vector_size != _EMBEDDING_VECTOR_SIZE:
             logger.warning(
@@ -226,28 +339,6 @@ class QdrantClient:
             )
             self.vector_size = _EMBEDDING_VECTOR_SIZE
             self._adapter.vector_size = _EMBEDDING_VECTOR_SIZE
-
-        sentence_transformer_lib = (
-            _SentenceTransformerLib or _load_sentence_transformer_lib()
-        )
-        if sentence_transformer_lib is None:  # pragma: no cover
-            logger.warning(
-                "sentence-transformers is not installed; "
-                "search() will return [] until it is available."
-            )
-            self.embedding_model = None
-        else:
-            try:
-                logger.info("Loading embedding model: {}", _EMBEDDING_MODEL_NAME)
-                self.embedding_model = sentence_transformer_lib(_EMBEDDING_MODEL_NAME)
-            except Exception as exc:
-                logger.warning(
-                    "Failed to load embedding model '{}': {}. "
-                    "Semantic search will return [] until the model is available.",
-                    _EMBEDDING_MODEL_NAME,
-                    exc,
-                )
-                self.embedding_model = None
 
         logger.info(
             "QdrantClient ready — {}:{}, collection='{}', vector_size={}",
@@ -354,7 +445,7 @@ class QdrantClient:
             return []
 
         if self.embedding_model is None:  # pragma: no cover
-            logger.warning("Embedding model unavailable; cannot perform search.")
+            logger.debug("Embedding model unavailable; skipping semantic search.")
             return []
 
         try:

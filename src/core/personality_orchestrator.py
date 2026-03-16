@@ -183,7 +183,7 @@ class PersonalityOrchestrator:
             selection_reason,
         )
 
-        message_text = self.message_generator.generate_entry_feedback(
+        feedback_plan = self.message_generator.plan_entry_feedback(
             user_id=user_id,
             entry_id=entry_id,
             entry_text=entry_text,
@@ -192,18 +192,9 @@ class PersonalityOrchestrator:
             safety_result=safety_result,
             extend_thread=False,
         )
+        message_text = str(feedback_plan["message"])
 
-        rag_context = self._rag_proxy.retrieve_relevant_context(
-            query_text=entry_text,
-            user_id=user_id,
-            personality=selected_personality,
-            limit=3,
-        )
-        citations = [
-            item["citation"]
-            for item in rag_context
-            if isinstance(item, dict) and item.get("citation")
-        ]
+        citations = list(feedback_plan.get("citations", []))
         seed_material = str(selection_factors.get("seed", ""))
         selector_seed_hash = (
             hashlib.sha256(seed_material.encode("utf-8")).hexdigest()
@@ -222,6 +213,9 @@ class PersonalityOrchestrator:
                 "matched_rules": safety_result.get("matched_rules", []),
             },
             "citations": citations,
+            "generation_mode": feedback_plan.get("generation_mode", "template"),
+            "fallback_reason": feedback_plan.get("fallback_reason"),
+            "template_key": feedback_plan.get("template_key"),
             "multi_personality": {
                 "is_primary": True,
                 "impact_multiplier": 1.0,
@@ -243,6 +237,10 @@ class PersonalityOrchestrator:
             "message": message_text,
             "message_type": "entry_feedback",
             "context_data": context_data,
+            "generation_mode": feedback_plan.get("generation_mode", "template"),
+            "citations": citations,
+            "fallback_reason": feedback_plan.get("fallback_reason"),
+            "template_key": feedback_plan.get("template_key"),
             "selector_version": SELECTOR_VERSION,
             "selector_seed_hash": selector_seed_hash,
             "logical_slot_key": "primary",
@@ -277,36 +275,7 @@ class PersonalityOrchestrator:
         selection_reason = str(plan["selection_reason"])
         selection_factors = dict(plan.get("selection_factors", {}))
         message_text = str(plan["message"])
-
-        self.state_manager.update_after_selection(
-            user_id=user_id,
-            selected_personality=selected_personality,
-            selection_reason=selection_reason,
-            selection_factors=selection_factors,
-            now_utc=now_utc,
-        )
-
-        for memory in plan.get("thread_memories", []):
-            self.memory_service.store_thread_memory(
-                user_id=user_id,
-                entry_id=entry_id,
-                role=memory["role"],
-                content=memory["content"],
-                personality=memory.get("personality"),
-                message_type=memory.get("message_type"),
-                now_utc=now_utc,
-            )
-
-        self.memory_service.extend_thread_ttl(user_id, now_utc)
-        self.memory_service.store_short_term_memory(
-            user_id=user_id,
-            entry_id=entry_id,
-            summary=str(plan.get("short_term_summary", "")),
-            personality=selected_personality,
-            now_utc=now_utc,
-        )
-
-        message = self.message_persistence.store_message(
+        stored = self.message_persistence.store_message(
             user_id=user_id,
             entry_id=entry_id,
             personality=selected_personality,
@@ -318,13 +287,47 @@ class PersonalityOrchestrator:
             context_data=dict(plan.get("context_data", {})),
             now_utc=now_utc,
         )
+        message = stored["message"]
+        if stored["inserted"]:
+            self.state_manager.update_after_selection(
+                user_id=user_id,
+                selected_personality=selected_personality,
+                selection_reason=selection_reason,
+                selection_factors=selection_factors,
+                now_utc=now_utc,
+            )
+
+            for memory in plan.get("thread_memories", []):
+                self.memory_service.store_thread_memory(
+                    user_id=user_id,
+                    entry_id=entry_id,
+                    role=memory["role"],
+                    content=memory["content"],
+                    personality=memory.get("personality"),
+                    message_type=memory.get("message_type"),
+                    now_utc=now_utc,
+                )
+
+            self.memory_service.extend_thread_ttl(user_id, now_utc)
+            self.memory_service.store_short_term_memory(
+                user_id=user_id,
+                entry_id=entry_id,
+                summary=str(plan.get("short_term_summary", "")),
+                personality=selected_personality,
+                now_utc=now_utc,
+            )
 
         return {
             "personality": selected_personality,
             "selection_reason": selection_reason,
-            "message": message_text,
+            "message": message.message_text,
             "message_id": message.id,
             "context_data": dict(plan.get("context_data", {})),
+            "generation_mode": plan.get("generation_mode", "template"),
+            "citations": list(plan.get("citations", [])),
+            "fallback_reason": plan.get("fallback_reason"),
+            "template_key": plan.get("template_key"),
+            "inserted": bool(stored["inserted"]),
         }
 
 
