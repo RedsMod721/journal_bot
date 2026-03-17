@@ -34,15 +34,22 @@ def resolve_entry_skill_signals(
     canonical_text: str,
     detected_skills: Iterable[str],
     detected_activities: Iterable[str],
+    detected_global_skill_ids: Iterable[str] = (),
+    detected_skill_weights: dict[str, float] | None = None,
+    detected_global_skill_weights: dict[str, float] | None = None,
     db: Session,
 ) -> EntrySkillResolution:
     """Resolve entry signals into source-skill and user-skill weights.
 
     Resolution order:
-        1. Existing detected user skills that already map to GlobalSkill rows.
-        2. Existing detected legacy user skills with no GlobalSkill link.
-        3. Explicit activity routing from journal text and detected activities.
+        1+2. LLM-detected user skills (linked to GlobalSkill) and LLM-discovered
+             new GlobalSkill IDs are merged so discovery is never blocked by
+             existing roster matches. Weights are proportional to LLM confidence.
+        3. Existing detected legacy user skills with no GlobalSkill link.
+        4. Explicit activity routing from journal text and detected activities.
     """
+    _skill_w: dict[str, float] = detected_skill_weights or {}
+    _global_w: dict[str, float] = detected_global_skill_weights or {}
 
     pattern_hits = _build_pattern_hits(detected_activities)
     skills = db.query(Skill).filter(Skill.user_id == user_id).all()
@@ -76,21 +83,64 @@ def resolve_entry_skill_signals(
         }
     )
 
-    if detected_sources:
-        source_weights = _allocate_equal_basis_points(detected_sources)
+    # Priority 1 + 2: LLM-detected user skills (linked to GlobalSkill) and
+    # LLM-discovered new GlobalSkill IDs are merged so that skill discovery is
+    # never blocked by existing roster matches.
+    direct_global_ids = [
+        str(sid).strip()
+        for sid in detected_global_skill_ids
+        if str(sid).strip()
+    ]
+    if direct_global_ids:
+        available = _load_global_rows_by_source(
+            source_skill_ids=direct_global_ids, db=db
+        )
+        valid_discovery_ids = sorted({sid for sid in direct_global_ids if sid in available})
+    else:
+        valid_discovery_ids = []
+
+    # Combine: existing-user-skill sources + newly discovered global sources
+    combined_sources = sorted(set(detected_sources) | set(valid_discovery_ids))
+    if combined_sources:
+        # Build source_skill_id → int score from LLM float weights.
+        # Scale by 1000 — _allocate_weighted_basis_points only needs relative
+        # proportions and rescales to 10000 internally.
+        combined_weight_scores: dict[str, int] = {}
+        for skill in matched_skills:
+            if not skill.global_skill_id or skill.global_skill_id not in globals_by_id:
+                continue
+            gs = globals_by_id[str(skill.global_skill_id)]
+            if gs.source_skill_id:
+                sid = str(gs.source_skill_id)
+                raw_w = _skill_w.get(skill.name, 0.0) or _skill_w.get(
+                    _normalize_label(skill.name), 0.0
+                )
+                combined_weight_scores[sid] = max(1, round(raw_w * 1000))
+        for sid in valid_discovery_ids:
+            if sid not in combined_weight_scores:  # don't overwrite P1 weight
+                raw_w = _global_w.get(sid, 0.0)
+                combined_weight_scores[sid] = max(1, round(raw_w * 1000))
+
+        source_weights = (
+            _allocate_weighted_basis_points(combined_weight_scores)
+            if combined_weight_scores
+            else _allocate_equal_basis_points(combined_sources)
+        )
         user_skill_weights = _map_source_weights_to_user_skills(
             user_id=user_id,
             source_weights_bp=source_weights,
             db=db,
         )
+        confidence = 0.85 if valid_discovery_ids else 0.80
         return EntrySkillResolution(
             source_skills_weights_bp=source_weights,
             skills_weights_bp=user_skill_weights,
             resolved_skill_names=_ordered_skill_names(source_weights, db=db),
             pattern_hits_json=pattern_hits,
-            extraction_confidence_score=0.80,
+            extraction_confidence_score=confidence,
         )
 
+    # Priority 3: legacy user skills (no global link)
     if legacy_skill_ids:
         return EntrySkillResolution(
             source_skills_weights_bp={},
@@ -100,6 +150,7 @@ def resolve_entry_skill_signals(
             extraction_confidence_score=0.80,
         )
 
+    # Priority 4: hardcoded activity routing
     activity_source_scores = _activity_source_scores(
         canonical_text=canonical_text,
         detected_activities=detected_activities,

@@ -47,6 +47,7 @@ class UserCreate(BaseModel):
     display_name: Optional[str] = Field(None, max_length=100)
     timezone: str = Field("UTC", description="IANA timezone string")
     home_country: str = Field("FR", min_length=2, max_length=2, description="ISO 3166-1 alpha-2")
+    enable_tutorial: bool = Field(True, description="Create tutorial arc on account creation")
 
 
 class UserListItem(BaseModel):
@@ -229,21 +230,22 @@ def create_user(
             exc_info=True,
         )
 
-    tutorial_lifecycle = ArcLifecycleService(db)
-    tutorial_arc = tutorial_lifecycle.create_arc(
-        user_id=user.id,
-        arc_type="tutorial",
-        xp_requirement_multiplier_bp=9000,
-        xp_reward_multiplier_bp=10000,
-        decay_rate_multiplier_bp=10000,
-        make_active=True,
-    )
-    tutorial_lifecycle._write_trigger(
-        arc_id=tutorial_arc.id,
-        user_id=user.id,
-        trigger_type="signup",
-        trigger_data={"source": "users.create_user"},
-    )
+    if payload.enable_tutorial:
+        tutorial_lifecycle = ArcLifecycleService(db)
+        tutorial_arc = tutorial_lifecycle.create_arc(
+            user_id=user.id,
+            arc_type="tutorial",
+            xp_requirement_multiplier_bp=9000,
+            xp_reward_multiplier_bp=10000,
+            decay_rate_multiplier_bp=10000,
+            make_active=True,
+        )
+        tutorial_lifecycle._write_trigger(
+            arc_id=tutorial_arc.id,
+            user_id=user.id,
+            trigger_type="signup",
+            trigger_data={"source": "users.create_user"},
+        )
 
     db.commit()
 

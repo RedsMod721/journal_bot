@@ -83,9 +83,13 @@ from src.core.harmony_refresh_service import HarmonyRefreshService
 from src.core.personality_message_persistence import MessagePersistenceService
 from src.core.personality_message_serialization import serialize_personality_messages
 from src.core.personality_orchestrator import PersonalityOrchestrator
+from src.db.models.global_kb import GlobalSkill
 from src.db.models.journal_entry import JournalEntry, JournalEntryStructured
 from src.db.models.personality import PersonalityMessage
+from src.db.models.quest import Quest
 from src.db.models.server_config import ServerConfig
+from src.db.models.skill import Skill
+from src.db.models.skill import Theme
 from src.db.models.user import User
 from src.db.models.processing import (
     EntryIdempotencyClaim,
@@ -190,6 +194,9 @@ def _derive_week7_structured_signals(
         canonical_text=canonical_text,
         detected_skills=detection.get("detected_skills", []),
         detected_activities=detection.get("detected_activities", []),
+        detected_global_skill_ids=detection.get("detected_global_skills", []),
+        detected_skill_weights=detection.get("skills_weights", {}),
+        detected_global_skill_weights=detection.get("global_skills_weights", {}),
         db=db,
     )
     return {
@@ -1297,6 +1304,10 @@ class PipelineProcessor:
                     user_id=ctx.user_id,
                     canonical_text=normalized["canonical_text"],
                     db=db,
+                    ollama_health=ollama_health,
+                    ollama=self.ollama,
+                    rag_hits=rag.get("hits", []),
+                    qdrant=self.qdrant,
                 ),
                 fallback_fn=lambda _exc: {
                     "detected_skills": [],
@@ -1305,6 +1316,12 @@ class PipelineProcessor:
                     "energy_level": 5,
                     "self_compassion_score": 7,
                     "task_type": "unknown",
+                    "detected_themes": [],
+                    "skills_weights": {},
+                    "detected_global_skills": [],
+                    "global_skills_weights": {},
+                    "certainty": 0.0,
+                    "llm_inputs_snapshot": {},
                 },
             )
 
@@ -1629,9 +1646,13 @@ class PipelineProcessor:
     def _serialize_quest_summary(self, quest: Any) -> dict[str, Any]:
         return {
             "quest_id": quest.id,
+            "name": getattr(quest, "name", None),
+            "title": getattr(quest, "name", None),
             "quest_type": quest.quest_type,
             "completion_type": quest.completion_type,
             "status": quest.status,
+            "progress_value": getattr(quest, "current_progress", None),
+            "required_progress": getattr(quest, "required_progress", None),
         }
 
     def _serialize_arc_summary(self, arc: Any) -> dict[str, Any]:
@@ -1903,6 +1924,120 @@ class PipelineProcessor:
                 lines.append("- no details available")
         return "\n".join(lines)
 
+    def _resolve_skill_labels_for_report(
+        self,
+        *,
+        user_id: str,
+        skills: list[str],
+        db: Session | None,
+    ) -> list[str]:
+        normalized: list[str] = []
+        seen_inputs: set[str] = set()
+        for raw in skills:
+            value = str(raw or "").strip()
+            if not value:
+                continue
+            if value in seen_inputs:
+                continue
+            seen_inputs.add(value)
+            normalized.append(value)
+
+        if not normalized or db is None:
+            return normalized
+
+        user_skill_rows = (
+            db.query(Skill)
+            .filter(Skill.user_id == user_id, Skill.id.in_(normalized))
+            .all()
+        )
+        user_skill_names = {str(row.id): str(row.name) for row in user_skill_rows}
+
+        global_source_rows = (
+            db.query(GlobalSkill)
+            .filter(GlobalSkill.source_skill_id.in_(normalized))
+            .all()
+        )
+        global_source_names = {
+            str(row.source_skill_id): str(row.canonical_name)
+            for row in global_source_rows
+            if row.source_skill_id
+        }
+
+        global_id_rows = db.query(GlobalSkill).filter(GlobalSkill.id.in_(normalized)).all()
+        global_id_names = {str(row.id): str(row.canonical_name) for row in global_id_rows}
+
+        resolved: list[str] = []
+        seen_resolved: set[str] = set()
+        for value in normalized:
+            label = (
+                user_skill_names.get(value)
+                or global_source_names.get(value)
+                or global_id_names.get(value)
+                or value
+            )
+            if label in seen_resolved:
+                continue
+            seen_resolved.add(label)
+            resolved.append(label)
+        return resolved
+
+    def _resolve_quest_labels_for_report(
+        self,
+        *,
+        quest_ids: list[str],
+        db: Session | None,
+    ) -> dict[str, str]:
+        normalized_ids = sorted({str(qid).strip() for qid in quest_ids if str(qid).strip()})
+        if not normalized_ids or db is None:
+            return {}
+        rows = db.query(Quest).filter(Quest.id.in_(normalized_ids)).all()
+        return {
+            str(row.id): str(row.name)
+            for row in rows
+            if str(getattr(row, "name", "") or "").strip()
+        }
+
+    def _format_xp_award_for_report(
+        self,
+        *,
+        award: dict[str, Any],
+        quest_names_by_id: dict[str, str],
+        skill_names_by_id: dict[str, str],
+        theme_names_by_id: dict[str, str],
+    ) -> str:
+        amount = int(award.get("amount", award.get("xp_awarded", 0)) or 0)
+
+        skill_name = award.get("skill_name")
+        if not skill_name and award.get("skill_id"):
+            skill_name = skill_names_by_id.get(str(award.get("skill_id")))
+
+        theme_name = award.get("theme_name")
+        if not theme_name and award.get("theme_id"):
+            theme_name = theme_names_by_id.get(str(award.get("theme_id")))
+
+        destination_label = str(
+            skill_name
+            or theme_name
+            or award.get("skill_id")
+            or award.get("theme_id")
+            or "unknown_destination"
+        )
+
+        quest_id = str(award.get("quest_id") or "").strip()
+        quest_label = (
+            quest_names_by_id.get(quest_id)
+            if quest_id
+            else None
+        ) or (quest_id if quest_id else None)
+
+        reason = str(award.get("xp_reason") or award.get("distribution_type") or "unspecified")
+
+        detail_parts: list[str] = [f"target: {destination_label}"]
+        if quest_label:
+            detail_parts.append(f"quest: {quest_label}")
+        detail_parts.append(f"reason: {reason}")
+        return f"{' | '.join(detail_parts)}: +{amount} XP"
+
     def _fallback_system_report_payload(
         self,
         *,
@@ -2016,6 +2151,11 @@ class PipelineProcessor:
             or detection.get("detected_skills", [])
             or []
         )
+        skills = self._resolve_skill_labels_for_report(
+            user_id=ctx.user_id,
+            skills=skills,
+            db=db,
+        )
         emotions = list(
             structured_data.get("dominant_emotions")
             or detection.get("dominant_emotions", [])
@@ -2028,23 +2168,57 @@ class PipelineProcessor:
             + list(theme_awards.get("theme_awards", []))
             + list((quest_matcher_out or {}).get("xp_awards", []))
         )
+
+        quest_ids_for_lookup = [
+            str(quest.get("quest_id") or "")
+            for quest in (
+                list((quest_matcher_out or {}).get("created_quests", []) or [])
+                + list((quest_matcher_out or {}).get("completed_quests", []) or [])
+                + list((quest_matcher_out or {}).get("progressed_quests", []) or [])
+            )
+        ] + [str(award.get("quest_id") or "") for award in all_awards]
+        quest_names_by_id = self._resolve_quest_labels_for_report(
+            quest_ids=quest_ids_for_lookup,
+            db=db,
+        )
+
+        skill_ids_for_lookup = sorted(
+            {
+                str(award.get("skill_id"))
+                for award in all_awards
+                if award.get("skill_id")
+            }
+        )
+        theme_ids_for_lookup = sorted(
+            {
+                str(award.get("theme_id"))
+                for award in all_awards
+                if award.get("theme_id")
+            }
+        )
+        skill_names_by_id = {}
+        theme_names_by_id = {}
+        if db is not None and skill_ids_for_lookup:
+            skill_rows = db.query(Skill).filter(Skill.id.in_(skill_ids_for_lookup)).all()
+            skill_names_by_id = {str(row.id): str(row.name) for row in skill_rows}
+        if db is not None and theme_ids_for_lookup:
+            theme_rows = db.query(Theme).filter(Theme.id.in_(theme_ids_for_lookup)).all()
+            theme_names_by_id = {str(row.id): str(row.name) for row in theme_rows}
+
         total_xp = sum(
             int(award.get("amount", award.get("xp_awarded", 0)) or 0)
             for award in all_awards
         )
         award_summaries = []
-        for award in all_awards[:5]:
-            name = (
-                award.get("skill_name")
-                or award.get("theme_name")
-                or award.get("xp_reason")
-                or award.get("quest_id")
-                or award.get("skill_id")
-                or award.get("theme_id")
-                or "award"
+        for award in all_awards:
+            award_summaries.append(
+                self._format_xp_award_for_report(
+                    award=award,
+                    quest_names_by_id=quest_names_by_id,
+                    skill_names_by_id=skill_names_by_id,
+                    theme_names_by_id=theme_names_by_id,
+                )
             )
-            amount = int(award.get("amount", award.get("xp_awarded", 0)) or 0)
-            award_summaries.append(f"{name}: +{amount} XP")
 
         created_quests = list((quest_matcher_out or {}).get("created_quests", []) or [])
         completed_quests = list(
@@ -2058,7 +2232,12 @@ class PipelineProcessor:
             quest_details.append(
                 "created: "
                 + ", ".join(
-                    str(quest.get("title") or quest.get("name") or quest.get("quest_id", "?"))
+                    str(
+                        quest.get("title")
+                        or quest.get("name")
+                        or quest_names_by_id.get(str(quest.get("quest_id") or ""))
+                        or quest.get("quest_id", "?")
+                    )
                     for quest in created_quests[:3]
                 )
             )
@@ -2066,7 +2245,12 @@ class PipelineProcessor:
             quest_details.append(
                 "completed: "
                 + ", ".join(
-                    str(quest.get("title") or quest.get("name") or quest.get("quest_id", "?"))
+                    str(
+                        quest.get("title")
+                        or quest.get("name")
+                        or quest_names_by_id.get(str(quest.get("quest_id") or ""))
+                        or quest.get("quest_id", "?")
+                    )
                     for quest in completed_quests[:3]
                 )
             )
@@ -2074,7 +2258,10 @@ class PipelineProcessor:
             progress_parts = []
             for quest in progressed_quests[:3]:
                 label = str(
-                    quest.get("title") or quest.get("name") or quest.get("quest_id", "?")
+                    quest.get("title")
+                    or quest.get("name")
+                    or quest_names_by_id.get(str(quest.get("quest_id") or ""))
+                    or quest.get("quest_id", "?")
                 )
                 progress_value = quest.get("progress_value")
                 required_progress = quest.get("required_progress")
@@ -2781,6 +2968,7 @@ class PipelineProcessor:
                     insight_out=insight_out,
                     personality_out=personality_out,
                     run_started=run_started,
+                    db=db,
                 ),
                 fallback_fn=lambda exc: self._fallback_system_report_payload(
                     ctx=ctx,

@@ -14,7 +14,6 @@ import { useQuests } from "@/hooks/useQuests";
 import { useUser } from "@/contexts/UserContext";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardNav";
 import { LiveRegion } from "@/components/accessibility/LiveRegion";
-import { UserIdSelector } from "@/components/user/UserIdSelector";
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -53,14 +52,6 @@ export function Dashboard() {
     .filter((q) => q.status === "active")
     .slice(0, 3);
 
-  if (!user) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-3xl font-display font-bold">Dashboard</h1>
-        <UserIdSelector />
-      </div>
-    );
-  }
 
   if (statsError || skillsError || questsError) {
     const firstError = (statsError || skillsError || questsError) as Error;

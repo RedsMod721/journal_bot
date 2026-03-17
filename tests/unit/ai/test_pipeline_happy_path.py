@@ -507,6 +507,117 @@ def test_pipeline_core_resolves_run_cardio_source_skill_weights():
         ]
 
 
+def test_pipeline_system_report_signals_show_skill_name_not_id(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    with _make_db() as db:
+        ids = _seed_core_graph(db)
+        db.add(
+            GlobalSkill(
+                id="00000000-0000-0000-0000-000000000299",
+                source_skill_id="skill_professional_programming",
+                canonical_name="Programming",
+                category="Professional",
+            )
+        )
+        db.commit()
+
+        original = PipelineProcessor._planned_structured_data
+
+        def _force_source_skill_id(self, *, canonical_text, detection, db, ctx):
+            planned = original(
+                self,
+                canonical_text=canonical_text,
+                detection=detection,
+                db=db,
+                ctx=ctx,
+            )
+            planned["resolved_skill_names"] = ["skill_professional_programming"]
+            planned["skills_themes_involved"] = ["skill_professional_programming"]
+            return planned
+
+        monkeypatch.setattr(
+            PipelineProcessor,
+            "_planned_structured_data",
+            _force_source_skill_id,
+        )
+
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
+        result = processor.process_entry(
+            entry_id=ids.entry_id,
+            user_id=ids.user_id,
+            idempotency_key="idemp-signal-skill-name-1",
+        )
+
+        assert result["status"] == "completed"
+        system_message = next(
+            message
+            for message in result["personality_messages"]
+            if message["personality"] == "system"
+        )
+        assert "- skills: Programming" in system_message["message_text"]
+        assert "skill_professional_programming" not in system_message["message_text"]
+
+
+def test_pipeline_system_report_shows_quest_name_and_xp_target_details(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    with _make_db() as db:
+        ids = _seed_core_graph(db)
+
+        def _fake_execute_quest_matcher(self, db, ctx, entry, plan, variety_out):
+            return {
+                "instant_quest_id": ids.quest_id,
+                "streak_quest_ids": [],
+                "created_quests": [{"quest_id": ids.quest_id}],
+                "progressed_quests": [{"quest_id": ids.quest_id}],
+                "completed_quests": [{"quest_id": ids.quest_id}],
+                "xp_awards": [
+                    {
+                        "id": "award-1",
+                        "quest_id": ids.quest_id,
+                        "skill_id": ids.skill_id,
+                        "theme_id": None,
+                        "distribution_type": "quest_completion",
+                        "amount": 240,
+                        "xp_reason": "quest_one_time_complete",
+                    }
+                ],
+                "xp_award_count": 1,
+                "total_xp_awarded": 240,
+                "notes": [],
+                "progression": {},
+            }
+
+        monkeypatch.setattr(
+            PipelineProcessor,
+            "_execute_quest_matcher",
+            _fake_execute_quest_matcher,
+        )
+
+        processor = PipelineProcessor(
+            db=db, ollama=_HealthyOllama(), qdrant=_HealthyQdrant()
+        )
+        result = processor.process_entry(
+            entry_id=ids.entry_id,
+            user_id=ids.user_id,
+            idempotency_key="idemp-report-quest-names-1",
+        )
+
+        assert result["status"] == "completed"
+        system_message = next(
+            message
+            for message in result["personality_messages"]
+            if message["personality"] == "system"
+        )
+        assert "Ship Python quest" in system_message["message_text"]
+        assert "target: Python Programming" in system_message["message_text"]
+        assert "reason: quest_one_time_complete" in system_message["message_text"]
+        assert str(ids.quest_id) not in system_message["message_text"]
+
+
 def test_pipeline_pushup_regression_exposes_lineage_and_avoids_study_strategy():
     with _make_db() as db:
         user = User(

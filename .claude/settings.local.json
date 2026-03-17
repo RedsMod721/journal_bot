@@ -44,7 +44,8 @@
       "Bash(find /c/Users/vazqse01/journal_bot -path */test* -name *personality* -type f)",
       "Bash(ls -la /c/Users/vazqse01/journal_bot/alembic/versions/b10000000*personality*)",
       "Bash(grep -v \"^$\")",
-      "Bash(python -m alembic upgrade head)"
+      "Bash(python -m alembic upgrade head)",
+      "Bash(grep -E \"\\\\.py$\")"
     ],
     "additionalDirectories": [
       "/Users/sebastian/Python/projects/journal_bot",

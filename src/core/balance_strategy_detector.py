@@ -39,6 +39,11 @@ class StrategyDetector:
         task_type: str | None = structured.task_type if structured else None
         energy_level: int | None = structured.energy_level if structured else None
         goal_relation: str | None = structured.goal_relation if structured else None
+        detected_activities: list[str] = (
+            list(getattr(structured, "detected_activities", None) or [])
+            if structured
+            else []
+        )
         skills_themes_involved: str | None = (
             structured.skills_themes_involved if structured else None
         )
@@ -53,6 +58,7 @@ class StrategyDetector:
                 entry.created_at,
                 canonical_text,
                 task_type,
+                detected_activities,
                 self.db,
             ),
             "mundane": _is_mundane_focus(canonical_text, task_type, energy_level),

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { userService, type UserListItem } from "@/services/user.service";
+import { userService, type UserListItem, type UserCreateRequest } from "@/services/user.service";
 
 interface User {
   id: string;
@@ -11,6 +11,7 @@ interface UserContextType {
   user: User | null;
   setUser: (user: User | null) => void;
   setUserId: (userId: string) => Promise<void>;
+  createUser: (payload: UserCreateRequest) => Promise<void>;
   logout: () => void;
   availableUsers: UserListItem[];
   isLoading: boolean;
@@ -84,6 +85,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
     setError(null);
   };
 
+  const createUser = async (payload: UserCreateRequest) => {
+    const newUser = await userService.createUser(payload);
+    setAvailableUsers((prev) => [...prev, newUser]);
+    setActiveUser(newUser);
+  };
+
   const logout = () => {
     localStorage.removeItem(USER_ID_STORAGE_KEY);
     setUser(null);
@@ -113,7 +120,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   return (
     <UserContext.Provider
-      value={{ user, setUser, setUserId, logout, availableUsers, isLoading, error }}
+      value={{ user, setUser, setUserId, createUser, logout, availableUsers, isLoading, error }}
     >
       {children}
     </UserContext.Provider>

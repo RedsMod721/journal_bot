@@ -66,7 +66,22 @@ export interface RankWordingPresetResponse {
   ranks: RankWordingOption[];
 }
 
+export interface UserCreateRequest {
+  password: string;
+  email?: string;
+  username?: string;
+  display_name?: string;
+  timezone?: string;
+  home_country?: string;
+  enable_tutorial?: boolean;
+}
+
 export const userService = {
+  createUser: async (payload: UserCreateRequest): Promise<UserListItem> => {
+    const { data } = await apiClient.post(apiPath("/users"), payload);
+    return data;
+  },
+
   listUsers: async (): Promise<UserListItem[]> => {
     const { data } = await apiClient.get(apiPath("/users"));
     return data;
