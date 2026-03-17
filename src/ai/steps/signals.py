@@ -26,6 +26,7 @@ import difflib
 import json
 import logging
 import re
+import threading
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -160,6 +161,40 @@ _FUZZY_SKILL_CUTOFF: float = 0.72
 _GLOBAL_SKILL_SEARCH_TOP_K: int = 15
 # Pre-filter pool for keyword pass before optional embedding re-rank
 _GLOBAL_SKILL_CANDIDATE_POOL: int = 40
+_GLOBAL_SKILL_OVERLAP_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "did",
+        "do",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "i",
+        "in",
+        "is",
+        "it",
+        "my",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "today",
+        "was",
+        "with",
+    }
+)
 
 _PROMPT_DETECT_SIGNALS = """\
 # Mission
@@ -328,6 +363,66 @@ def _cosine(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+def _normalize_lookup_label(value: str) -> str:
+    """Normalize a skill label for case-insensitive exact lookup."""
+    return re.sub(r"\s+", " ", (value or "").strip().lower().replace("_", " "))
+
+
+def _overlap_tokens(value: str) -> set[str]:
+    """Tokenize *value* while excluding high-noise stopwords."""
+    return {
+        token
+        for token in re.findall(r"\w+", (value or "").lower())
+        if len(token) > 2 and token not in _GLOBAL_SKILL_OVERLAP_STOPWORDS
+    }
+
+
+# ---------------------------------------------------------------------------
+# Module-level cache for GlobalSkill embeddings
+# Populated lazily on first use; persists for the process lifetime.
+# GlobalSkill KB is static (not user-editable), so no invalidation needed.
+# ---------------------------------------------------------------------------
+_global_skill_embed_cache: dict[str, list[float]] = {}  # gs.id (str) → vector
+_global_skill_embed_lock = threading.Lock()
+
+
+def _ensure_global_skill_embeddings(
+    all_skills: list, qdrant: Any
+) -> None:
+    """Encode and cache embeddings for any GlobalSkills not yet in the cache.
+
+    Uses batch encoding when available (``encode_batch``), otherwise falls back
+    to individual ``encode_text`` calls.  The cache is populated once per process
+    and reused on all subsequent calls, making per-entry latency negligible.
+    """
+    uncached = [gs for gs in all_skills if str(gs.id) not in _global_skill_embed_cache]
+    if not uncached:
+        return
+    logger.info(
+        "[pipeline:signals] Building GlobalSkill embedding cache for %d skills …",
+        len(uncached),
+    )
+    texts = [
+        f"{gs.canonical_name or ''} {gs.description or ''}".strip()
+        for gs in uncached
+    ]
+    try:
+        if hasattr(qdrant, "encode_batch"):
+            vectors = qdrant.encode_batch(texts)
+        else:
+            vectors = [qdrant.encode_text(t) for t in texts]
+        for gs, vec in zip(uncached, vectors):
+            _global_skill_embed_cache[str(gs.id)] = vec
+        logger.info(
+            "[pipeline:signals] GlobalSkill embedding cache ready (%d total)",
+            len(_global_skill_embed_cache),
+        )
+    except Exception as exc:
+        logger.warning(
+            "[pipeline:signals] GlobalSkill embedding cache build failed: %s", exc
+        )
+
+
 def _search_global_skills(
     canonical_text: str,
     db: Session,
@@ -336,10 +431,16 @@ def _search_global_skills(
 ) -> list:
     """Find the most relevant GlobalSkill entries for *canonical_text*.
 
-    Two-pass:
-    1. Keyword/token overlap against canonical_name + description → top-40 candidates.
-    2. If ``qdrant.encode_text`` is available: re-rank candidates by embedding cosine
-       similarity → top-10.  Falls back to pass-1 ranking on any error.
+    When the qdrant client (with ``encode_text``) is available, uses semantic
+    embedding similarity ranked across **all** global skills — no keyword
+    pre-filtering gate.  This correctly surfaces skills whose descriptions are
+    semantically related to the entry even when there is zero literal token
+    overlap (e.g. "mushrooms and roots in the forest" → Foraging).
+
+    The per-skill embeddings are computed once and stored in a module-level
+    cache, so the cost is only paid on first call per process.
+
+    Falls back to keyword/token-overlap ranking when embeddings are unavailable.
     """
     all_skills: list[GlobalSkill] = (
         db.query(GlobalSkill).filter(GlobalSkill.description.isnot(None)).all()
@@ -347,40 +448,49 @@ def _search_global_skills(
     if not all_skills:
         return []
 
-    entry_tokens = set(re.findall(r"\w+", canonical_text.lower()))
+    # Primary path: full semantic embedding ranking across all global skills
+    if qdrant is not None and hasattr(qdrant, "encode_text"):
+        try:
+            with _global_skill_embed_lock:
+                _ensure_global_skill_embeddings(all_skills, qdrant)
+            entry_vec = qdrant.encode_text(canonical_text)
+            embed_scored: list[tuple[GlobalSkill, float]] = []
+            for gs in all_skills:
+                gs_vec = _global_skill_embed_cache.get(str(gs.id))
+                if gs_vec:
+                    score = _cosine(entry_vec, gs_vec)
+                    embed_scored.append((gs, score))
+            embed_scored.sort(key=lambda x: -x[1])
+            result = [gs for gs, _ in embed_scored[:top_k]]
+            logger.debug(
+                "[pipeline:signals] GlobalSkill embedding ranked top-%d: %s",
+                top_k,
+                [gs.canonical_name for gs in result],
+            )
+            return result
+        except Exception as exc:
+            logger.warning(
+                "[pipeline:signals] GlobalSkill embedding ranking failed, "
+                "falling back to keyword overlap: %s",
+                exc,
+            )
 
-    # Pass 1: keyword token overlap
+    # Fallback: keyword/token overlap
+    entry_tokens = _overlap_tokens(canonical_text)
     scored: list[tuple[GlobalSkill, int]] = []
     for gs in all_skills:
         text = f"{gs.canonical_name or ''} {gs.description or ''}".lower()
-        gs_tokens = set(re.findall(r"\w+", text))
+        gs_tokens = _overlap_tokens(text)
         overlap = len(entry_tokens & gs_tokens)
         scored.append((gs, overlap))
 
     scored.sort(key=lambda x: -x[1])
     candidates = [gs for gs, sc in scored[:_GLOBAL_SKILL_CANDIDATE_POOL] if sc > 0]
     if not candidates:
-        # Short entry with no keyword overlap — still surface top-k by name similarity
+        # Short entry with no keyword overlap — still surface top-k
         candidates = [gs for gs, _ in scored[:top_k]]
 
-    # Pass 2: optional embedding re-rank
-    if qdrant is not None and hasattr(qdrant, "encode_text") and candidates:
-        try:
-            entry_vec = qdrant.encode_text(canonical_text)
-            embed_scored: list[tuple[GlobalSkill, float]] = []
-            for gs in candidates:
-                gs_text = f"{gs.canonical_name or ''} {gs.description or ''}"
-                gs_vec = qdrant.encode_text(gs_text)
-                score = _cosine(entry_vec, gs_vec)
-                embed_scored.append((gs, score))
-            embed_scored.sort(key=lambda x: -x[1])
-            return [gs for gs, _ in embed_scored[:top_k]]
-        except Exception as exc:
-            logger.warning(
-                "[pipeline:signals] GlobalSkill embedding re-rank failed: %s", exc
-            )
-
-    return [gs for gs, _ in scored[:top_k]]
+    return candidates[:top_k]
 
 
 def _load_skill_descriptions(skills: list, db: Session) -> dict[str, str]:
@@ -444,9 +554,17 @@ def _format_hints(rule_based: dict) -> str:
 
 def _format_rag(rag_hits: list[dict]) -> str:
     """Format top-3 RAG hit content snippets for the LLM prompt."""
-    snippets = [
-        h.get("content", "") for h in (rag_hits or []) if h.get("content")
-    ][:3]
+    snippets: list[str] = []
+    for hit in rag_hits or []:
+        if not isinstance(hit, dict):
+            continue
+        content = hit.get("content")
+        if not content and isinstance(hit.get("payload"), dict):
+            content = hit["payload"].get("content")
+        if content:
+            snippets.append(str(content))
+        if len(snippets) >= 3:
+            break
     if not snippets:
         return "No prior context available."
     return "\n".join(f"- {s.strip()}" for s in snippets)
@@ -493,7 +611,11 @@ def _normalize_weights(skill_weights: dict[str, float]) -> dict[str, float]:
 
 
 def _rule_based_as_llm_output(
-    rule_based: dict, llm_inputs_snapshot: dict
+    rule_based: dict,
+    llm_inputs_snapshot: dict,
+    llm_prompt: str = "",
+    llm_raw_output: str = "",
+    llm_failure_reason: str = "",
 ) -> dict[str, Any]:
     """Wrap a rule-based result in the extended shape returned by ``_llm_detect_signals``."""
     skill_names = rule_based.get("detected_skills", [])
@@ -510,6 +632,9 @@ def _rule_based_as_llm_output(
         "task_type": rule_based.get("task_type", "analytical"),
         "certainty": 0.0,
         "llm_inputs_snapshot": llm_inputs_snapshot,
+        "llm_prompt": llm_prompt,
+        "llm_raw_output": llm_raw_output,
+        "llm_failure_reason": llm_failure_reason,
     }
 
 
@@ -546,6 +671,19 @@ def _llm_detect_signals(
     global_candidates_by_lower: dict[str, GlobalSkill] = {
         (gs.canonical_name or "").lower(): gs for gs in global_candidates
     }
+    all_globals_for_exact_lookup: list[GlobalSkill] = (
+        db.query(GlobalSkill)
+        .filter(
+            GlobalSkill.canonical_name.isnot(None),
+            GlobalSkill.source_skill_id.isnot(None),
+        )
+        .all()
+    )
+    global_all_by_normalized_name: dict[str, GlobalSkill] = {
+        _normalize_lookup_label(str(gs.canonical_name)): gs
+        for gs in all_globals_for_exact_lookup
+        if gs.canonical_name
+    }
     logger.debug(
         "[pipeline:signals] user=%s global_candidates=%s",
         user_id,
@@ -571,6 +709,8 @@ def _llm_detect_signals(
 
     user_skill_invalid_feedback = ""
     global_skill_invalid_feedback = ""
+    best_attempt_result: dict[str, Any] | None = None
+    best_attempt_score: tuple[int, int, float] = (-1, -1, -1.0)
 
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         prompt = _PROMPT_DETECT_SIGNALS.format(
@@ -598,6 +738,7 @@ def _llm_detect_signals(
         )
 
         # --- LLM call ---
+        raw_response = ""
         try:
             raw_response = ollama.generate_json(prompt)["response"]
             parsed = json.loads(raw_response)
@@ -610,13 +751,26 @@ def _llm_detect_signals(
                 exc,
             )
             if attempt == _MAX_ATTEMPTS:
+                if best_attempt_result is not None:
+                    logger.warning(
+                        "[pipeline:signals] user=%s returning best partial LLM result "
+                        "after final call/parse failure",
+                        user_id,
+                    )
+                    return best_attempt_result
                 logger.warning(
                     "[pipeline:signals] user=%s all %d LLM attempts failed; "
                     "returning rule-based fallback",
                     user_id,
                     _MAX_ATTEMPTS,
                 )
-                return _rule_based_as_llm_output(rule_based_result, llm_inputs_snapshot)
+                return _rule_based_as_llm_output(
+                    rule_based_result,
+                    llm_inputs_snapshot,
+                    llm_prompt=prompt,
+                    llm_raw_output=raw_response,
+                    llm_failure_reason=str(exc),
+                )
             user_skill_invalid_feedback = ""
             global_skill_invalid_feedback = (
                 "Your previous response was not valid JSON. "
@@ -666,6 +820,10 @@ def _llm_detect_signals(
             except (TypeError, ValueError):
                 weight = 1.0
             matched_gs = _fuzzy_match_global(name, global_candidates_by_lower)
+            if matched_gs is None:
+                matched_gs = global_all_by_normalized_name.get(
+                    _normalize_lookup_label(name)
+                )
             if matched_gs and matched_gs.source_skill_id:
                 valid_global_ids.append(str(matched_gs.source_skill_id))
                 raw_global_weights[str(matched_gs.source_skill_id)] = weight
@@ -720,6 +878,46 @@ def _llm_detect_signals(
         except (TypeError, ValueError):
             certainty = 0.5
 
+        # --- Deduplicate and normalize weights ---
+        deduped_user = list(dict.fromkeys(valid_user_names))
+        deduped_user_weights = {s: raw_user_weights.get(s, 1.0) for s in deduped_user}
+        normalized_user = (
+            _normalize_weights(deduped_user_weights) if deduped_user_weights else {}
+        )
+
+        deduped_global = list(dict.fromkeys(valid_global_ids))
+        deduped_global_weights = {
+            sid: raw_global_weights.get(sid, 1.0) for sid in deduped_global
+        }
+        normalized_global = (
+            _normalize_weights(deduped_global_weights) if deduped_global_weights else {}
+        )
+
+        current_result = {
+            "detected_skills": sorted(set(deduped_user)),
+            "skills_weights": normalized_user,
+            "detected_global_skills": sorted(set(deduped_global)),
+            "global_skills_weights": normalized_global,
+            "detected_themes": sorted(set(valid_themes)),
+            "detected_activities": activities,
+            "dominant_emotions": emotions,
+            "energy_level": energy,
+            "task_type": task_type,
+            "certainty": certainty,
+            "llm_inputs_snapshot": llm_inputs_snapshot,
+            "llm_prompt": prompt,
+            "llm_raw_output": raw_response,
+            "llm_failure_reason": "",
+        }
+        current_score = (
+            len(deduped_user) + len(deduped_global),
+            len(deduped_global),
+            certainty,
+        )
+        if current_score > best_attempt_score:
+            best_attempt_result = current_result
+            best_attempt_score = current_score
+
         # --- Handle unrecognized names → build retry feedback ---
         needs_retry = False
         user_skill_invalid_feedback = ""
@@ -763,6 +961,13 @@ def _llm_detect_signals(
             continue
 
         if unrecognized_user or unrecognized_global:
+            if best_attempt_result is not None and best_attempt_score > current_score:
+                logger.warning(
+                    "[pipeline:signals] user=%s max retries reached; returning best "
+                    "prior partial result instead of worse final attempt",
+                    user_id,
+                )
+                return best_attempt_result
             logger.warning(
                 "[pipeline:signals] user=%s max retries reached; "
                 "keeping %d valid user skills, %d valid global skills; "
@@ -773,19 +978,6 @@ def _llm_detect_signals(
                 unrecognized_user,
                 unrecognized_global,
             )
-
-        # --- Deduplicate and normalize weights ---
-        deduped_user = list(dict.fromkeys(valid_user_names))
-        deduped_user_weights = {s: raw_user_weights.get(s, 1.0) for s in deduped_user}
-        normalized_user = _normalize_weights(deduped_user_weights) if deduped_user_weights else {}
-
-        deduped_global = list(dict.fromkeys(valid_global_ids))
-        deduped_global_weights = {
-            sid: raw_global_weights.get(sid, 1.0) for sid in deduped_global
-        }
-        normalized_global = (
-            _normalize_weights(deduped_global_weights) if deduped_global_weights else {}
-        )
 
         logger.info(
             "[pipeline:signals] user=%s LLM attempt=%d "
@@ -803,19 +995,7 @@ def _llm_detect_signals(
             certainty,
         )
 
-        return {
-            "detected_skills": sorted(set(deduped_user)),
-            "skills_weights": normalized_user,
-            "detected_global_skills": sorted(set(deduped_global)),
-            "global_skills_weights": normalized_global,
-            "detected_themes": sorted(set(valid_themes)),
-            "detected_activities": activities,
-            "dominant_emotions": emotions,
-            "energy_level": energy,
-            "task_type": task_type,
-            "certainty": certainty,
-            "llm_inputs_snapshot": llm_inputs_snapshot,
-        }
+        return current_result
 
     # Unreachable — the loop always returns or continues.
     return _rule_based_as_llm_output(rule_based_result, llm_inputs_snapshot)
@@ -870,6 +1050,9 @@ def run(
             ``task_type``             — one of: analytical, creative, physical, social, intellectual.
             ``certainty``             — float 0-1; LLM confidence (0.0 when rule-based fallback).
             ``llm_inputs_snapshot``   — dict of rendered prompt fields for monitoring.
+                ``llm_prompt``            — full prompt sent to the LLM for the returned attempt.
+                ``llm_raw_output``        — raw JSON string returned by the LLM for the returned attempt.
+                ``llm_failure_reason``    — parse/call failure reason when the step falls back.
     """
     lowered = canonical_text.lower()
     words = set(re.findall(r"[a-zA-Z][a-zA-Z0-9_\-']*", lowered))

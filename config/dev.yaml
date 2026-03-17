@@ -41,6 +41,8 @@ ai:
     local_path: "data/qdrant_local"
     collection: "rag_documents"
     vector_size: 768
+    enable_sentence_transformers: true
+    allow_sentence_transformers_download: false
 
 testing:
   database:

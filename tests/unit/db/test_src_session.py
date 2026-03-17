@@ -420,3 +420,77 @@ def test_assert_schema_ready_raises_when_runtime_schema_is_drifted(
 
     with pytest.raises(RuntimeError, match="runtime-critical columns or indexes are missing"):
         session.assert_schema_ready()
+
+
+def test_repair_sqlite_users_active_arc_fk_target_rewrites_legacy_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_dir = _repo_tmp_dir()
+    engine = None
+    try:
+        db_path = tmp_dir / "fk_repair.sqlite"
+        engine = session._build_engine(f"sqlite:///{db_path}")
+
+        with engine.begin() as conn:
+            conn.execute(session.text("PRAGMA foreign_keys=OFF"))
+            conn.execute(
+                session.text(
+                    """
+                    CREATE TABLE story_arcs (
+                        id TEXT PRIMARY KEY
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                session.text(
+                    """
+                    CREATE TABLE forgiveness_configs (
+                        id TEXT PRIMARY KEY
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                session.text(
+                    """
+                    CREATE TABLE users (
+                        id TEXT PRIMARY KEY,
+                        active_arc_id TEXT,
+                        forgiveness_config_id TEXT,
+                        FOREIGN KEY(active_arc_id)
+                            REFERENCES story_arcs__legacy_mb84(id)
+                            ON DELETE SET NULL,
+                        FOREIGN KEY(forgiveness_config_id)
+                            REFERENCES forgiveness_configs(id)
+                            ON DELETE SET NULL
+                    )
+                    """
+                )
+            )
+            conn.execute(
+                session.text(
+                    "INSERT INTO users (id, active_arc_id, forgiveness_config_id) "
+                    "VALUES ('u1', NULL, NULL)"
+                )
+            )
+            conn.execute(session.text("PRAGMA foreign_keys=ON"))
+
+        monkeypatch.setattr(session, "DATABASE_URL", f"sqlite:///{db_path}")
+        monkeypatch.setattr(session, "engine", engine)
+
+        repaired = session._repair_sqlite_users_active_arc_fk_target()
+        assert repaired is True
+
+        with engine.connect() as conn:
+            rows = conn.execute(session.text("PRAGMA foreign_key_list(users)")).mappings()
+            fk_target_by_column = {row["from"]: row["table"] for row in rows}
+            count = conn.execute(session.text("SELECT COUNT(*) FROM users")).scalar_one()
+
+        assert fk_target_by_column["active_arc_id"] == "story_arcs"
+        assert fk_target_by_column["forgiveness_config_id"] == "forgiveness_configs"
+        assert count == 1
+    finally:
+        if engine is not None:
+            engine.dispose()
+        shutil.rmtree(tmp_dir, ignore_errors=True)

@@ -27,6 +27,7 @@ PostgreSQL notes:
 """
 
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Iterator
@@ -281,6 +282,121 @@ def _ensure_sqlite_users_compat_columns() -> None:
             )
 
 
+def _sqlite_fk_target(
+    conn: Any,
+    table_name: str,
+    constrained_column: str,
+) -> str | None:
+    """Return the referred table name for a specific SQLite FK column."""
+    rows = conn.execute(text(f"PRAGMA foreign_key_list({table_name})")).mappings()
+    for row in rows:
+        if row.get("from") == constrained_column:
+            table = row.get("table")
+            return str(table) if table else None
+    return None
+
+
+def _repair_sqlite_users_active_arc_fk_target() -> bool:
+    """
+    Repair legacy SQLite FK drift where users.active_arc_id points to
+    story_arcs__legacy_mb84 instead of canonical story_arcs.
+
+    Returns True when a repair was applied.
+    """
+    if not DATABASE_URL.startswith("sqlite"):
+        return False
+
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        if "users" not in inspector.get_table_names():
+            return False
+
+        fk_target = _sqlite_fk_target(conn, "users", "active_arc_id")
+        if fk_target in (None, "story_arcs"):
+            return False
+        if not fk_target.startswith("story_arcs__legacy_"):
+            return False
+
+        create_sql = conn.execute(
+            text(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type='table' AND name='users'"
+            )
+        ).scalar_one_or_none()
+        if not isinstance(create_sql, str) or not create_sql.strip():
+            return False
+
+        users_indexes = [
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT sql FROM sqlite_master "
+                    "WHERE type='index' AND tbl_name='users' AND sql IS NOT NULL"
+                )
+            ).fetchall()
+            if row and row[0]
+        ]
+        users_triggers = [
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT sql FROM sqlite_master "
+                    "WHERE type='trigger' AND tbl_name='users' AND sql IS NOT NULL"
+                )
+            ).fetchall()
+            if row and row[0]
+        ]
+
+        temp_table = "users__fk_fix_active_arc"
+        conn.execute(text(f'DROP TABLE IF EXISTS "{temp_table}"'))
+
+        rewritten_sql = re.sub(
+            r'(?is)^\s*CREATE\s+TABLE\s+(?:"users"|`users`|\[users\]|users)',
+            f'CREATE TABLE "{temp_table}"',
+            create_sql,
+            count=1,
+        )
+        fk_pattern = re.compile(
+            rf'(?i)REFERENCES\s+(?:"|`|\[)?{re.escape(fk_target)}(?:"|`|\])?'
+        )
+        if not fk_pattern.search(rewritten_sql):
+            return False
+        rewritten_sql = fk_pattern.sub('REFERENCES "story_arcs"', rewritten_sql)
+
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        try:
+            conn.execute(text(rewritten_sql))
+
+            columns = [
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()
+                if row and len(row) > 1
+            ]
+            if not columns:
+                conn.execute(text(f'DROP TABLE IF EXISTS "{temp_table}"'))
+                return False
+
+            quoted_columns = ", ".join(f'"{name}"' for name in columns)
+            conn.execute(
+                text(
+                    f'INSERT INTO "{temp_table}" ({quoted_columns}) '
+                    f'SELECT {quoted_columns} FROM "users"'
+                )
+            )
+            conn.execute(text('DROP TABLE "users"'))
+            conn.execute(text(f'ALTER TABLE "{temp_table}" RENAME TO "users"'))
+
+            for statement in users_indexes:
+                conn.execute(text(statement))
+            for statement in users_triggers:
+                conn.execute(text(statement))
+        finally:
+            conn.execute(text("PRAGMA foreign_keys=ON"))
+
+        repaired_target = _sqlite_fk_target(conn, "users", "active_arc_id")
+        return repaired_target == "story_arcs"
+
+
 def _create_sqlite_tenant_integrity_triggers() -> None:
     """Install required SQLite tenant-integrity triggers for optional SET NULL FKs."""
     if not DATABASE_URL.startswith("sqlite"):
@@ -422,6 +538,8 @@ def get_current_schema_revision() -> str | None:
 
 def check_runtime_schema_integrity() -> dict[str, Any]:
     """Validate critical Week 7 runtime columns and indexes."""
+    _repair_sqlite_users_active_arc_fk_target()
+
     required_columns = {
         "users": {"confidence_threshold_streak"},
         "story_arcs": {
@@ -517,6 +635,19 @@ def check_runtime_schema_integrity() -> dict[str, Any]:
             "completion_type = 'recursive'",
         ),
     }
+    required_fk_tables = {
+        "users": {
+            ("active_arc_id",): "story_arcs",
+            ("forgiveness_config_id",): "forgiveness_configs",
+        },
+        "arc_triggers": {
+            ("user_id",): "users",
+            ("arc_id",): "story_arcs",
+        },
+        "story_arcs": {
+            ("user_id",): "users",
+        },
+    }
 
     def _normalize_sql(value: str | None) -> str:
         return " ".join((value or "").lower().split())
@@ -567,6 +698,18 @@ def check_runtime_schema_integrity() -> dict[str, Any]:
                 if _normalize_sql(snippet) not in normalized:
                     missing.append(f"{object_name}:sql")
                     break
+
+        for table_name, expected_fks in required_fk_tables.items():
+            if table_name not in tables:
+                continue
+            fk_rows = inspector.get_foreign_keys(table_name)
+            available = {
+                tuple(fk.get("constrained_columns") or []): fk.get("referred_table")
+                for fk in fk_rows
+            }
+            for constrained_columns, referred_table in expected_fks.items():
+                if available.get(constrained_columns) != referred_table:
+                    missing.append(f"{table_name}.fk.{constrained_columns}->{referred_table}")
 
     return {"ok": not missing, "missing": missing}
 

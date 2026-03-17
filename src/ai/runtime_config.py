@@ -82,6 +82,12 @@ def get_qdrant_defaults() -> dict[str, Any]:
         768,
     )
     mode = str(os.getenv("QDRANT_MODE") or cfg.get("mode") or "remote").lower()
+    enable_sentence_transformers = bool(
+        cfg.get("enable_sentence_transformers", False)
+    )
+    allow_sentence_transformers_download = bool(
+        cfg.get("allow_sentence_transformers_download", False)
+    )
 
     raw_local_path = os.getenv("QDRANT_LOCAL_PATH") or cfg.get(
         "local_path", "data/qdrant_local"
@@ -97,4 +103,6 @@ def get_qdrant_defaults() -> dict[str, Any]:
         "vector_size": vector_size,
         "mode": mode,
         "local_path": str(local_path),
+        "enable_sentence_transformers": enable_sentence_transformers,
+        "allow_sentence_transformers_download": allow_sentence_transformers_download,
     }

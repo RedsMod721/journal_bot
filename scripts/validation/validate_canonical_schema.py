@@ -230,9 +230,13 @@ def main() -> int:
         available = {**indexes, **uniques}
         for index_name, expected_columns in required_indexes.items():
             if available.get(index_name) != expected_columns:
-                missing_indexes.append(
-                    f"{table_name}.{index_name} -> expected {expected_columns}, found {available.get(index_name)}"
-                )
+                # SQLite may return None as the name for inline UNIQUE constraints
+                # defined with CONSTRAINT name UNIQUE (...) in CREATE TABLE.
+                # Fall back to matching by column set.
+                if expected_columns not in available.values():
+                    missing_indexes.append(
+                        f"{table_name}.{index_name} -> expected {expected_columns}, found {available.get(index_name)}"
+                    )
 
     with engine.connect() as conn:
         table_sql_rows = conn.execute(

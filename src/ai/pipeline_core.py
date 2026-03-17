@@ -1267,7 +1267,7 @@ class PipelineProcessor:
                     cache=self.cache,
                 ),
                 fallback_fn=lambda _exc: {
-                    "vector": [0.0] * 8,
+                    "vector": [],
                     "from_cache": False,
                     "fallback": True,
                 },

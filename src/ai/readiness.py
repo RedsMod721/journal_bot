@@ -6,6 +6,7 @@ import importlib
 import platform
 import shutil
 import sys
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import inspect, text
@@ -107,7 +108,16 @@ def check_required_imports() -> dict[str, Any]:
 
 
 def check_required_tools() -> dict[str, Any]:
-    missing = [tool for tool in REQUIRED_TOOLS if shutil.which(tool) is None]
+    # Also check the venv's Scripts/bin directory in case the venv is not activated.
+    venv_scripts = Path(sys.executable).parent
+    def _tool_found(tool: str) -> bool:
+        if shutil.which(tool) is not None:
+            return True
+        for ext in ("", ".exe", ".cmd"):
+            if (venv_scripts / (tool + ext)).is_file():
+                return True
+        return False
+    missing = [tool for tool in REQUIRED_TOOLS if not _tool_found(tool)]
     return {
         "ok": not missing,
         "missing": missing,
@@ -154,9 +164,12 @@ def check_database_readiness() -> dict[str, Any]:
         available = {**indexes, **uniques}
         for index_name, expected_columns in required_indexes.items():
             if available.get(index_name) != expected_columns:
-                missing_indexes.append(
-                    f"{table_name}.{index_name} -> expected {expected_columns}, found {available.get(index_name)}"
-                )
+                # SQLite may not preserve names for inline UNIQUE constraints
+                # and can report them as name=None via SQLAlchemy inspector.
+                if expected_columns not in available.values():
+                    missing_indexes.append(
+                        f"{table_name}.{index_name} -> expected {expected_columns}, found {available.get(index_name)}"
+                    )
 
     with engine.connect() as conn:
         sql_rows = conn.execute(

@@ -1414,6 +1414,10 @@ class EntryPipeline:
                 user_id=ctx.user_id,
                 canonical_text=normalized["canonical_text"],
                 db=db,
+                ollama_health=getattr(self, "ollama_health", None),
+                ollama=getattr(self, "ollama", None),
+                rag_hits=[],
+                qdrant=getattr(self, "qdrant", None),
             )
             logger.debug(
                 "[pipeline:step] extraction_detection entry=%s skills=%s activities=%s",
@@ -1426,6 +1430,9 @@ class EntryPipeline:
                 canonical_text=normalized["canonical_text"],
                 detected_skills=detection.get("detected_skills", []),
                 detected_activities=detection.get("detected_activities", []),
+                detected_global_skill_ids=detection.get("detected_global_skills", []),
+                detected_skill_weights=detection.get("skills_weights", {}),
+                detected_global_skill_weights=detection.get("global_skills_weights", {}),
                 db=db,
             )
 

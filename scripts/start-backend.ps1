@@ -33,6 +33,20 @@ $stdoutLog = Join-Path $logsDir ("backend_{0}_stdout.log" -f $Port)
 $stderrLog = Join-Path $logsDir ("backend_{0}_stderr.log" -f $Port)
 $pidFile = Join-Path $logsDir ("backend_{0}.pid.json" -f $Port)
 
+$envFile = Join-Path $repoRoot ".env"
+if (Test-Path $envFile) {
+    Get-Content $envFile | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith("#")) {
+            $parts = $line -split "=", 2
+            if ($parts.Length -eq 2) {
+                [System.Environment]::SetEnvironmentVariable($parts[0].Trim(), $parts[1].Trim(), "Process")
+            }
+        }
+    }
+    Write-Host ".env loaded from $envFile" -ForegroundColor DarkGray
+}
+
 New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 
 function Get-LiveProcessIds {
@@ -144,7 +158,13 @@ function Stop-BackendProcessTree {
     }
 
     try {
-        cmd /c "taskkill /PID $ProcessId /T /F" | Out-Null
+        $taskkillProc = Start-Process `
+            -FilePath "taskkill.exe" `
+            -ArgumentList @("/PID", "$ProcessId", "/T", "/F") `
+            -NoNewWindow `
+            -PassThru `
+            -Wait
+        $null = $taskkillProc.ExitCode
     } catch {
         try {
             Stop-Process -Id $ProcessId -Force -ErrorAction Stop

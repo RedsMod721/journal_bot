@@ -12,6 +12,14 @@ from typing import Any
 
 from loguru import logger
 
+# Inject the Windows system certificate store (includes corporate CAs) so that
+# requests to HuggingFace Hub succeed in environments that use TLS inspection.
+try:
+    import truststore  # type: ignore[import-untyped]
+    truststore.inject_into_ssl()
+except Exception:  # pragma: no cover - optional on non-Windows or absent install
+    pass
+
 from src.ai.runtime_config import get_qdrant_defaults
 from src.ai.tx_guard import assert_network_allowed
 
@@ -49,7 +57,8 @@ def _sentence_transformers_enabled() -> bool:
     """
     raw = os.getenv("ENABLE_SENTENCE_TRANSFORMERS")
     if raw is None:
-        return False
+        defaults = get_qdrant_defaults()
+        return bool(defaults.get("enable_sentence_transformers", False))
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -57,7 +66,8 @@ def _sentence_transformers_allow_download() -> bool:
     """Return whether model downloads are allowed during runtime loading."""
     raw = os.getenv("SENTENCE_TRANSFORMERS_ALLOW_DOWNLOAD")
     if raw is None:
-        return False
+        defaults = get_qdrant_defaults()
+        return bool(defaults.get("allow_sentence_transformers_download", False))
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -276,6 +286,13 @@ class QdrantClientAdapter:
             raise RuntimeError("Embedding model unavailable")
         vector = self.embedding_model.encode(text)
         return vector.tolist()
+
+    def encode_batch(self, texts: list[str]) -> list[list[float]]:
+        """Encode a list of texts in one batched call (faster than looping encode_text)."""
+        if self.embedding_model is None:
+            raise RuntimeError("Embedding model unavailable")
+        vectors = self.embedding_model.encode(texts)
+        return [v.tolist() for v in vectors]
 
 
 class QdrantClient:
