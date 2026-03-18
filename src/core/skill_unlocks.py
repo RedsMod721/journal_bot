@@ -11,8 +11,11 @@ on user_skill_states requires the UUID.  _resolve_global_id() bridges them.
 """
 from __future__ import annotations
 
+import csv
 import json
 from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -23,8 +26,64 @@ from src.db.models.skill import Skill
 from src.db.models.user import User
 from src.db.models.user_skill_state import UserSkillState
 
-_HIERARCHY_PATH = "data/seeds/kb/global_skill_hierarchy_v1.jsonl"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_HIERARCHY_PATH = _REPO_ROOT / "data" / "seeds" / "kb" / "global_skill_hierarchy_v1.jsonl"
+_ADVENTURE_ALIAS_CSV_PATH = (
+    _REPO_ROOT / "data" / "seeds" / "kb" / "global_skills_v1_adventure_patch_v2.csv"
+)
 _UNLOCK_LEVEL = 20  # Rank D threshold — at least one parent must reach this level
+
+
+@lru_cache(maxsize=1)
+def _load_adventure_alias_maps() -> tuple[dict[str, str], dict[str, str]]:
+    """Load legacy Adventure source id aliases from the migration CSV."""
+    legacy_to_canonical: dict[str, str] = {}
+    canonical_to_legacy: dict[str, str] = {}
+
+    if not _ADVENTURE_ALIAS_CSV_PATH.exists():
+        return legacy_to_canonical, canonical_to_legacy
+
+    with _ADVENTURE_ALIAS_CSV_PATH.open("r", newline="", encoding="utf-8") as alias_file:
+        for row in csv.DictReader(alias_file):
+            legacy_id = str(row.get("skill_id_before") or "").strip()
+            canonical_id = str(row.get("skill_id_after") or "").strip()
+            if not legacy_id or not canonical_id:
+                continue
+            legacy_to_canonical[legacy_id] = canonical_id
+            canonical_to_legacy[canonical_id] = legacy_id
+
+    return legacy_to_canonical, canonical_to_legacy
+
+
+def normalize_source_skill_id(source_skill_id: str | None) -> str | None:
+    """Map legacy Adventure ids to the canonical hierarchy ids."""
+    if source_skill_id is None:
+        return None
+
+    normalized = str(source_skill_id).strip()
+    if not normalized:
+        return None
+
+    legacy_to_canonical, _ = _load_adventure_alias_maps()
+    return legacy_to_canonical.get(normalized, normalized)
+
+
+def _source_skill_lookup_candidates(source_skill_id: str | None) -> list[str]:
+    """
+    Return source ids to try against the DB.
+
+    Canonical ids are tried first. If the database has not yet run the
+    Adventure source-id migration, the legacy id is used as a fallback.
+    """
+    canonical_id = normalize_source_skill_id(source_skill_id)
+    if canonical_id is None:
+        return []
+
+    _, canonical_to_legacy = _load_adventure_alias_maps()
+    legacy_id = canonical_to_legacy.get(canonical_id)
+    return list(
+        dict.fromkeys(candidate for candidate in (canonical_id, legacy_id) if candidate)
+    )
 
 
 class SkillUnlockService:
@@ -50,8 +109,8 @@ class SkillUnlockService:
 
     def _load_hierarchy(self) -> Dict:
         hierarchy: Dict = {}
-        with open(_HIERARCHY_PATH) as f:
-            for line in f:
+        with _HIERARCHY_PATH.open("r", encoding="utf-8") as hierarchy_file:
+            for line in hierarchy_file:
                 data = json.loads(line)
                 hierarchy[data["skill_id"]] = {
                     "canonical_name": data["canonical_name"],
@@ -60,18 +119,32 @@ class SkillUnlockService:
                 }
         return hierarchy
 
+    def normalize_source_skill_id(self, source_skill_id: str | None) -> str | None:
+        """Expose legacy-to-canonical normalization to collaborating code."""
+        return normalize_source_skill_id(source_skill_id)
+
     def _resolve_global_id(self, source_skill_id: str) -> Optional[str]:
         """Return the GlobalSkill UUID for a given source_skill_id, with cache."""
-        if source_skill_id not in self._global_id_cache:
-            row = (
-                self.db.query(GlobalSkill.id)
-                .filter(GlobalSkill.source_skill_id == source_skill_id)
-                .first()
-            )
-            if row is None:
+        canonical_source_skill_id = self.normalize_source_skill_id(source_skill_id)
+        if canonical_source_skill_id is None:
+            return None
+
+        if canonical_source_skill_id not in self._global_id_cache:
+            for lookup_skill_id in _source_skill_lookup_candidates(
+                canonical_source_skill_id
+            ):
+                row = (
+                    self.db.query(GlobalSkill.id)
+                    .filter(GlobalSkill.source_skill_id == lookup_skill_id)
+                    .first()
+                )
+                if row is not None:
+                    self._global_id_cache[canonical_source_skill_id] = row[0]
+                    break
+            else:
                 return None
-            self._global_id_cache[source_skill_id] = row[0]
-        return self._global_id_cache[source_skill_id]
+
+        return self._global_id_cache[canonical_source_skill_id]
 
     # ------------------------------------------------------------------
     # State helpers
@@ -84,7 +157,11 @@ class SkillUnlockService:
         Return existing UserSkillState, or create a default one.
         Returns None if the source_skill_id has no matching GlobalSkill in the DB.
         """
-        global_id = self._resolve_global_id(source_skill_id)
+        canonical_source_skill_id = self.normalize_source_skill_id(source_skill_id)
+        if canonical_source_skill_id is None:
+            return None
+
+        global_id = self._resolve_global_id(canonical_source_skill_id)
         if global_id is None:
             return None
 
@@ -99,7 +176,7 @@ class SkillUnlockService:
         if state is not None:
             return state
 
-        skill_info = self.hierarchy.get(source_skill_id)
+        skill_info = self.hierarchy.get(canonical_source_skill_id)
         is_l1 = skill_info is not None and skill_info["hierarchy_level"] == 1
         now = datetime.now(timezone.utc)
         state = UserSkillState(
@@ -176,7 +253,11 @@ class SkillUnlockService:
         - L1 skills are always unlocked.
         - L2+ require at least one parent skill to have reached level >= 20 (Rank D).
         """
-        skill_info = self.hierarchy.get(source_skill_id)
+        canonical_source_skill_id = self.normalize_source_skill_id(source_skill_id)
+        if canonical_source_skill_id is None:
+            return False
+
+        skill_info = self.hierarchy.get(canonical_source_skill_id)
         if not skill_info:
             return False
         if skill_info["hierarchy_level"] == 1:
@@ -217,18 +298,24 @@ class SkillUnlockService:
             unlocked_hidden              → unlocked_hidden  (activation requires XP/entry event)
             activated                    → activated
         """
-        skill_info = self.hierarchy.get(source_skill_id)
+        canonical_source_skill_id = self.normalize_source_skill_id(source_skill_id)
+        if canonical_source_skill_id is None:
+            return SkillState.LOCKED
+
+        skill_info = self.hierarchy.get(canonical_source_skill_id)
         if not skill_info:
             return SkillState.LOCKED
 
         if skill_info["hierarchy_level"] == 1:
             return SkillState.ACTIVATED
 
-        state = self.get_or_create_skill_state(user_id, source_skill_id)
+        state = self.get_or_create_skill_state(user_id, canonical_source_skill_id)
         if state is None:
             return SkillState.LOCKED
 
-        can_unlock = self.check_unlock_requirements(user_id, source_skill_id)
+        can_unlock = self.check_unlock_requirements(
+            user_id, canonical_source_skill_id
+        )
 
         if state.state == SkillState.LOCKED:
             return SkillState.UNLOCKED_HIDDEN if can_unlock else SkillState.LOCKED
@@ -254,7 +341,14 @@ class SkillUnlockService:
         Returns None if the skill has no matching GlobalSkill row.
         No-ops if the skill is already in new_state.
         """
-        state = self.get_or_create_skill_state(user_id, source_skill_id)
+        canonical_source_skill_id = self.normalize_source_skill_id(source_skill_id)
+        canonical_parent_skill_id = self.normalize_source_skill_id(
+            unlock_parent_skill_id
+        )
+        if canonical_source_skill_id is None:
+            return None
+
+        state = self.get_or_create_skill_state(user_id, canonical_source_skill_id)
         if state is None or state.state == new_state:
             return state
 
@@ -267,8 +361,8 @@ class SkillUnlockService:
             state.discovery_source = source
         elif new_state == SkillState.UNLOCKED_HIDDEN and not state.unlocked_at:
             state.unlocked_at = now
-            if unlock_parent_skill_id:
-                state.unlock_parent_skill_id = unlock_parent_skill_id
+            if canonical_parent_skill_id:
+                state.unlock_parent_skill_id = canonical_parent_skill_id
         elif new_state == SkillState.ACTIVATED and not state.activated_at:
             state.activated_at = now
 
@@ -277,7 +371,7 @@ class SkillUnlockService:
         if (
             old_state == SkillState.LOCKED
             and new_state in (SkillState.DISCOVERED, SkillState.UNLOCKED_HIDDEN)
-            and self.hierarchy.get(source_skill_id, {}).get("hierarchy_level", 0) > 1
+            and self.hierarchy.get(canonical_source_skill_id, {}).get("hierarchy_level", 0) > 1
             and self._default_blocked_preference(user_id, force_refresh=True)
         ):
             state.user_blocked = True
@@ -293,17 +387,30 @@ class SkillUnlockService:
         self, user_id: str, source_skill_id: str, source: str
     ) -> None:
         """Transition a LOCKED skill to DISCOVERED (e.g. referenced in a quest/entry)."""
-        state = self.get_or_create_skill_state(user_id, source_skill_id)
+        canonical_source_skill_id = self.normalize_source_skill_id(source_skill_id)
+        if canonical_source_skill_id is None:
+            return
+
+        state = self.get_or_create_skill_state(user_id, canonical_source_skill_id)
         if state and state.state == SkillState.LOCKED:
             self.transition_state(
-                user_id, source_skill_id, SkillState.DISCOVERED, source=source
+                user_id,
+                canonical_source_skill_id,
+                SkillState.DISCOVERED,
+                source=source,
             )
 
     def activate_skill(self, user_id: str, source_skill_id: str) -> None:
         """Activate an UNLOCKED_HIDDEN skill (e.g. first XP gain or related entry)."""
-        state = self.get_or_create_skill_state(user_id, source_skill_id)
+        canonical_source_skill_id = self.normalize_source_skill_id(source_skill_id)
+        if canonical_source_skill_id is None:
+            return
+
+        state = self.get_or_create_skill_state(user_id, canonical_source_skill_id)
         if state and state.state == SkillState.UNLOCKED_HIDDEN:
-            self.transition_state(user_id, source_skill_id, SkillState.ACTIVATED)
+            self.transition_state(
+                user_id, canonical_source_skill_id, SkillState.ACTIVATED
+            )
 
     # ------------------------------------------------------------------
     # Batch evaluation
@@ -339,12 +446,18 @@ class SkillUnlockService:
 
     def get_unlock_info(self, user_id: str, source_skill_id: str) -> Dict:
         """Return a detailed breakdown of unlock status for one skill."""
-        skill_info = self.hierarchy.get(source_skill_id)
+        canonical_source_skill_id = self.normalize_source_skill_id(source_skill_id)
+        if canonical_source_skill_id is None:
+            return {}
+
+        skill_info = self.hierarchy.get(canonical_source_skill_id)
         if not skill_info:
             return {}
 
-        state = self.get_or_create_skill_state(user_id, source_skill_id)
-        can_unlock = self.check_unlock_requirements(user_id, source_skill_id)
+        state = self.get_or_create_skill_state(user_id, canonical_source_skill_id)
+        can_unlock = self.check_unlock_requirements(
+            user_id, canonical_source_skill_id
+        )
 
         parent_progress: List[Dict] = []
         for parent_source_id in skill_info.get("parent_skill_ids", []):
@@ -373,7 +486,7 @@ class SkillUnlockService:
             )
 
         return {
-            "skill_id": source_skill_id,
+            "skill_id": canonical_source_skill_id,
             "canonical_name": skill_info["canonical_name"],
             "hierarchy_level": skill_info["hierarchy_level"],
             "current_state": state.state if state else SkillState.LOCKED,

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "recovery_id": "3c45966b-9bb9-4b2e-b3cd-f38af04f55a1",
+  "entry_id": "8821892b-85e2-4421-ac35-2aef6fc26aa1",
+  "user_id": "1cf4f2e7-ccce-42d4-9f57-85ab00c6ab66",
+  "idempotency_key": "bbf1bba8-c176-48a5-9f72-784e87476143",
+  "error": "Anomaly computation failed for entry 8821892b-85e2-4421-ac35-2aef6fc26aa1: (sqlite3.OperationalError) database is locked\n[SQL: INSERT INTO anomaly_scores (user_id, entry_id, score, troll_multiplier, detection_factors, calculated_at) VALUES (?, ?, ?, ?, ?, ?)]\n[parameters: ('1cf4f2e7-ccce-42d4-9f57-85ab00c6ab66', '8821892b-85e2-4421-ac35-2aef6fc26aa1', 0.0, 1.0, '{\"algorithm_version\":\"9.2.0\",\"stopwords_version\":\"stopwords_enfr_v1\",\"marker_set_version\":\"anomaly_markers_v1\",\"token_count\":5,\"recent_window_n\":0,\"s ... (63 characters truncated) ... milar_created_at_ms\":null,\"most_similar_sim\":null,\"score_unclamped\":0.0,\"score\":0.0,\"troll_multiplier\":1.0,\"components\":[],\"factors_truncated\":false}', '2026-03-18 09:14:04.798000')]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)",
+  "error_code": "STEP_08B_ANOMALY_DETECTION",
+  "pipeline_version": "week3-v2",
+  "failed_at": "2026-03-18T09:15:56.518574+00:00",
+  "status": "pending",
+  "retry_count": 0,
+  "last_retry_at": null,
+  "recovered_at": null
+}

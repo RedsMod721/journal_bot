@@ -299,9 +299,13 @@ def get_skill_unlock_info(
     not the user Skill UUID.
     """
     unlock_service = SkillUnlockService(db)
-    info = unlock_service.get_unlock_info(user_id, skill_id)
+    canonical_skill_id = unlock_service.normalize_source_skill_id(skill_id) or skill_id
+    info = unlock_service.get_unlock_info(user_id, canonical_skill_id)
     if not info:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id!r} not found in hierarchy.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Skill {canonical_skill_id!r} not found in hierarchy.",
+        )
     return UnlockInfoResponse(**info)
 
 
@@ -318,13 +322,20 @@ def toggle_skill_blocking(
     skill_id is the source_skill_id. Fails if the user's Skill record is at Lv20+.
     """
     unlock_service = SkillUnlockService(db)
+    canonical_skill_id = unlock_service.normalize_source_skill_id(skill_id)
 
-    if skill_id not in unlock_service.hierarchy:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id!r} not found in hierarchy.")
+    if canonical_skill_id is None or canonical_skill_id not in unlock_service.hierarchy:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Skill {skill_id!r} not found in hierarchy.",
+        )
 
-    global_id = unlock_service._resolve_global_id(skill_id)
+    global_id = unlock_service._resolve_global_id(canonical_skill_id)
     if global_id is None:
-        raise HTTPException(status_code=404, detail=f"Skill {skill_id!r} has no global KB entry.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Skill {canonical_skill_id!r} has no global KB entry.",
+        )
 
     skill = (
         db.query(Skill)
@@ -337,15 +348,18 @@ def toggle_skill_blocking(
             detail="Cannot block/unblock a skill at Level 20 or higher.",
         )
 
-    state = unlock_service.get_or_create_skill_state(user_id, skill_id)
+    state = unlock_service.get_or_create_skill_state(user_id, canonical_skill_id)
     if state is None:
-        raise HTTPException(status_code=404, detail=f"Could not resolve state for skill {skill_id!r}.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Could not resolve state for skill {canonical_skill_id!r}.",
+        )
 
     state.user_blocked = request.blocked
     db.commit()
 
     return {
-        "skill_id": skill_id,
+        "skill_id": canonical_skill_id,
         "user_blocked": state.user_blocked,
         "message": f"Skill {'blocked' if request.blocked else 'unblocked'} successfully.",
     }

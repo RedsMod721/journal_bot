@@ -777,6 +777,86 @@ class TestXPDistribution:
         assert child_state.unlock_parent_skill_id == parent_id
 
 
+class TestAdventureAliasCompatibility:
+    def test_canonical_adventure_root_resolves_legacy_global_skill_row(
+        self,
+        db_session: Session,
+        seeded_global_skills: dict[str, str],
+        test_user: User,
+    ):
+        global_id = seeded_global_skills["skill_adventure_adventure"]
+        canonical_row = (
+            db_session.query(GlobalSkill)
+            .filter(GlobalSkill.id == global_id)
+            .one()
+        )
+        db_session.delete(canonical_row)
+        db_session.commit()
+
+        db_session.add(
+            GlobalSkill(
+                id=global_id,
+                source_skill_id="skill_physical_adventure",
+                canonical_name="Adventure",
+                hierarchy_level=1,
+                parent_skill_ids_json="[]",
+            )
+        )
+        db_session.commit()
+
+        service = SkillUnlockService(db_session)
+        state = service.get_or_create_skill_state(
+            test_user.id, "skill_adventure_adventure"
+        )
+
+        assert state is not None
+        assert state.state == SkillState.ACTIVATED
+        assert service._resolve_global_id("skill_adventure_adventure") == global_id
+
+    def test_apply_xp_distribution_normalizes_legacy_adventure_source_ids(
+        self,
+        db_session: Session,
+        seeded_global_skills: dict[str, str],
+        test_user: User,
+    ):
+        global_id = seeded_global_skills["skill_adventure_adventure"]
+        canonical_row = (
+            db_session.query(GlobalSkill)
+            .filter(GlobalSkill.id == global_id)
+            .one()
+        )
+        db_session.delete(canonical_row)
+        db_session.commit()
+
+        db_session.add(
+            GlobalSkill(
+                id=global_id,
+                source_skill_id="skill_physical_adventure",
+                canonical_name="Adventure",
+                hierarchy_level=1,
+                parent_skill_ids_json="[]",
+            )
+        )
+        db_session.commit()
+
+        service = XPDistributionService(db_session)
+        result = service.apply_xp_distribution(
+            test_user.id,
+            {"skill_physical_adventure": 500},
+        )
+
+        assert "skill_adventure_adventure" in result
+        assert "skill_physical_adventure" not in result
+        assert result["skill_adventure_adventure"]["xp_gained"] == 500
+
+        skill = (
+            db_session.query(Skill)
+            .filter(Skill.user_id == test_user.id, Skill.global_skill_id == global_id)
+            .one()
+        )
+        assert skill.xp == 500
+
+
 # Coverage bridge:
 # When only hierarchy test files are selected, pytest-cov still enforces global
 # src/* thresholds from pytest.ini. Re-export these focused unit suites so the

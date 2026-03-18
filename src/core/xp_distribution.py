@@ -82,21 +82,28 @@ class XPDistributionService:
         Returns:
             Mapping of source_skill_id → XP amount to award.
         """
-        if base_xp <= 0:
+        canonical_source_skill_id = self.unlock_service.normalize_source_skill_id(
+            source_skill_id
+        )
+        if base_xp <= 0 or canonical_source_skill_id is None:
             return {}
 
-        state = self.unlock_service.get_or_create_skill_state(user_id, source_skill_id)
+        state = self.unlock_service.get_or_create_skill_state(
+            user_id, canonical_source_skill_id
+        )
 
         # Rules 1 & 3: redirect
         if state is None or state.user_blocked or state.state in (
             SkillState.LOCKED,
             SkillState.DISCOVERED,
         ):
-            return self._redirect_xp(user_id, source_skill_id, base_xp)
+            return self._redirect_xp(user_id, canonical_source_skill_id, base_xp)
 
         # Rule 2: full XP + spillage
-        distribution: Dict[str, int] = {source_skill_id: base_xp}
-        spillage = self._calculate_spillage(user_id, source_skill_id, base_xp)
+        distribution: Dict[str, int] = {canonical_source_skill_id: base_xp}
+        spillage = self._calculate_spillage(
+            user_id, canonical_source_skill_id, base_xp
+        )
         for sid, xp in spillage.items():
             distribution[sid] = distribution.get(sid, 0) + xp
 
@@ -120,18 +127,24 @@ class XPDistributionService:
         if xp_amount <= 0:
             return {}
 
+        canonical_source_skill_id = self.unlock_service.normalize_source_skill_id(
+            source_skill_id
+        )
+        if canonical_source_skill_id is None:
+            return {}
+
         if visited is None:
             visited = set()
 
-        if source_skill_id in visited:
+        if canonical_source_skill_id in visited:
             return {}
         # Keep cycle detection path-local. A shared mutable "visited" set across
         # sibling recursion branches can incorrectly suppress valid alternate
         # routes and silently drop XP.
         path_visited = set(visited)
-        path_visited.add(source_skill_id)
+        path_visited.add(canonical_source_skill_id)
 
-        skill_info = self.unlock_service.hierarchy.get(source_skill_id)
+        skill_info = self.unlock_service.hierarchy.get(canonical_source_skill_id)
         if not skill_info:
             return {}
 
@@ -185,8 +198,16 @@ class XPDistributionService:
           - If the ancestor is locked/discovered/blocked (Rule 2b):
               halve the spillage and redirect the halved amount upward.
         """
+        canonical_source_skill_id = self.unlock_service.normalize_source_skill_id(
+            source_skill_id
+        )
+        if canonical_source_skill_id is None:
+            return {}
+
         spillage: Dict[str, int] = {}
-        ancestors_by_level = self._get_ancestors_by_level(source_skill_id, max_levels=4)
+        ancestors_by_level = self._get_ancestors_by_level(
+            canonical_source_skill_id, max_levels=4
+        )
 
         for level_diff, ancestor_ids in enumerate(ancestors_by_level, start=1):
             spillage_pct = _SPILLAGE_PCTS[level_diff - 1]
@@ -223,9 +244,15 @@ class XPDistributionService:
         Result: [[L-1 parents], [L-2 grandparents], ...]
         Cycle-safe; stops early when no more ancestors exist.
         """
+        canonical_source_skill_id = self.unlock_service.normalize_source_skill_id(
+            source_skill_id
+        )
+        if canonical_source_skill_id is None:
+            return []
+
         ancestors_by_level: List[List[str]] = []
-        current_frontier = [source_skill_id]
-        visited: Set[str] = {source_skill_id}
+        current_frontier = [canonical_source_skill_id]
+        visited: Set[str] = {canonical_source_skill_id}
 
         for _ in range(max_levels):
             next_frontier: List[str] = []
@@ -265,12 +292,22 @@ class XPDistributionService:
         Returns:
             {source_skill_id: {old_xp, new_xp, old_level, new_level, xp_gained}}
         """
-        results: Dict[str, Dict] = {}
-
+        normalized_distribution: Dict[str, int] = {}
         for source_skill_id, xp_amount in distribution.items():
             if xp_amount <= 0:
                 continue
+            canonical_source_skill_id = self.unlock_service.normalize_source_skill_id(
+                source_skill_id
+            )
+            if canonical_source_skill_id is None:
+                continue
+            normalized_distribution[canonical_source_skill_id] = (
+                normalized_distribution.get(canonical_source_skill_id, 0) + xp_amount
+            )
 
+        results: Dict[str, Dict] = {}
+
+        for source_skill_id, xp_amount in normalized_distribution.items():
             skill = self._get_or_create_skill(user_id, source_skill_id)
             if skill is None:
                 continue
@@ -318,7 +355,13 @@ class XPDistributionService:
         Return the Skill row for this user + source_skill_id, creating it if
         absent.  Returns None if the source_skill_id is not in the global KB.
         """
-        global_id = self.unlock_service._resolve_global_id(source_skill_id)
+        canonical_source_skill_id = self.unlock_service.normalize_source_skill_id(
+            source_skill_id
+        )
+        if canonical_source_skill_id is None:
+            return None
+
+        global_id = self.unlock_service._resolve_global_id(canonical_source_skill_id)
         if global_id is None:
             return None
 
@@ -331,11 +374,11 @@ class XPDistributionService:
             return skill
 
         # Create a new Skill row
-        skill_info = self.unlock_service.hierarchy.get(source_skill_id)
+        skill_info = self.unlock_service.hierarchy.get(canonical_source_skill_id)
         canonical = (
             skill_info["canonical_name"]
             if skill_info
-            else source_skill_id
+            else canonical_source_skill_id
         )
         skill = Skill(
             user_id=user_id,
@@ -357,8 +400,16 @@ class XPDistributionService:
         After a parent crosses Lv20, evaluate every direct child in the
         hierarchy and persist any pending state transitions.
         """
+        canonical_parent_source_skill_id = self.unlock_service.normalize_source_skill_id(
+            parent_source_skill_id
+        )
+        if canonical_parent_source_skill_id is None:
+            return
+
         for skill_id, skill_info in self.unlock_service.hierarchy.items():
-            if parent_source_skill_id not in skill_info.get("parent_skill_ids", []):
+            if canonical_parent_source_skill_id not in skill_info.get(
+                "parent_skill_ids", []
+            ):
                 continue
 
             state = self.unlock_service.get_or_create_skill_state(user_id, skill_id)
@@ -371,5 +422,5 @@ class XPDistributionService:
                     user_id,
                     skill_id,
                     target,
-                    unlock_parent_skill_id=parent_source_skill_id,
+                    unlock_parent_skill_id=canonical_parent_source_skill_id,
                 )

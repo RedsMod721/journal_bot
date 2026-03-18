@@ -39,6 +39,24 @@ from src.core.xp_distribution import XPDistributionService
 logger = logging.getLogger(__name__)
 
 
+def _normalize_skill_xp_awards(
+    unlock_service: SkillUnlockService,
+    skill_xp_awards: Dict[str, int],
+) -> Dict[str, int]:
+    """Collapse legacy and canonical ids into a single canonical XP award map."""
+    normalized_awards: Dict[str, int] = {}
+    for source_skill_id, xp_amount in skill_xp_awards.items():
+        canonical_source_skill_id = unlock_service.normalize_source_skill_id(
+            source_skill_id
+        )
+        if canonical_source_skill_id is None:
+            continue
+        normalized_awards[canonical_source_skill_id] = (
+            normalized_awards.get(canonical_source_skill_id, 0) + xp_amount
+        )
+    return normalized_awards
+
+
 def process_journal_entry_with_hierarchy(
     user_id: str,
     entry_id: str,
@@ -72,6 +90,7 @@ def process_journal_entry_with_hierarchy(
     """
     unlock_service = SkillUnlockService(db)
     xp_service = XPDistributionService(db)
+    skill_xp_awards = _normalize_skill_xp_awards(unlock_service, skill_xp_awards)
 
     discoveries: List[Dict] = []
     merged_distribution: Dict[str, int] = {}

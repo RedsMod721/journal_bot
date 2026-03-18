@@ -28,7 +28,10 @@ const NODE_TYPES: NodeTypes = { skillNode: SkillTreeNode };
 type L1SkillFilter = "all" | string;
 
 function getL1FilterColor(l1SkillId: string): string {
-  if (l1SkillId === "skill_physical_adventure") {
+  if (
+    l1SkillId === "skill_physical_adventure" ||
+    l1SkillId === "skill_adventure_adventure"
+  ) {
     return TREE_CATEGORY_STYLES.adventure.bg;
   }
   const category = getCategoryFromSkillId(l1SkillId) ?? "professional";

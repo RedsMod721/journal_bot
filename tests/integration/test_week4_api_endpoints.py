@@ -360,6 +360,63 @@ def test_skills_hierarchy_endpoint_returns_lv0_for_zero_xp(
     assert all(node["next_level_xp"] > 0 for node in lv0_nodes)
 
 
+def test_skills_hierarchy_endpoint_maps_legacy_adventure_rows_to_canonical_nodes(
+    client: TestClient,
+    db_session: Session,
+):
+    user_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    db_session.add(
+        User(
+            id=user_id,
+            username="legacy_adventure_user",
+            email="legacy_adventure@example.com",
+            password_hash="hash",
+            home_country="US",
+        )
+    )
+    db_session.add(
+        GlobalSkill(
+            id="abababab-abab-abab-abab-abababababab",
+            source_skill_id="skill_physical_adventure",
+            canonical_name="Adventure",
+            category="Physical",
+            hierarchy_level=1,
+            parent_skill_ids_json="[]",
+        )
+    )
+    db_session.add(
+        Skill(
+            id="cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd",
+            user_id=user_id,
+            name="Adventure",
+            canonical_name="adventure",
+            global_skill_id="abababab-abab-abab-abab-abababababab",
+            xp=930,
+            level=3,
+        )
+    )
+    db_session.add(
+        UserSkillState(
+            user_id=user_id,
+            skill_id="abababab-abab-abab-abab-abababababab",
+            state="activated",
+        )
+    )
+    db_session.commit()
+
+    response = client.get("/api/skills/hierarchy", params={"user_id": user_id})
+    assert response.status_code == 200
+    nodes = response.json()
+
+    adventure = next(
+        node for node in nodes if node["skill_id"] == "skill_adventure_adventure"
+    )
+    assert adventure["canonical_name"] == "Adventure"
+    assert adventure["state"] == "activated"
+    assert adventure["total_xp"] == 930
+    assert adventure["current_level"] > 0
+
+
 def test_skill_states_endpoint_uses_lv0_for_missing_skill_rows(
     client: TestClient, db_session: Session, seeded_user_id: str
 ):

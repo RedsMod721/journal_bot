@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "recovery_id": "b40eef79-61b1-4d8f-8c0d-e79ba10aee63",
+  "entry_id": "55383f61-dfda-44ae-b035-80399f123739",
+  "user_id": "1cf4f2e7-ccce-42d4-9f57-85ab00c6ab66",
+  "idempotency_key": "03b3a0a3-f734-440e-b0f0-6b63bc57ac2a",
+  "error": "Anomaly computation failed for entry 55383f61-dfda-44ae-b035-80399f123739: (sqlite3.OperationalError) database is locked\n[SQL: INSERT INTO anomaly_scores (user_id, entry_id, score, troll_multiplier, detection_factors, calculated_at) VALUES (?, ?, ?, ?, ?, ?)]\n[parameters: ('1cf4f2e7-ccce-42d4-9f57-85ab00c6ab66', '55383f61-dfda-44ae-b035-80399f123739', 3.0, 1.657267, '{\"algorithm_version\":\"9.2.0\",\"stopwords_version\":\"stopwords_enfr_v1\",\"marker_set_version\":\"anomaly_markers_v1\",\"token_count\":26,\"recent_window_n\":20, ... (519 characters truncated) ... points\":0.0,\"raw\":0.0},{\"key\":\"boilerplate_penalty\",\"points\":0.0,\"raw\":26},{\"key\":\"farming_penalty\",\"points\":0.0,\"raw\":0}],\"factors_truncated\":false}', '2026-03-18 09:07:12.131000')]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)",
+  "error_code": "STEP_08B_ANOMALY_DETECTION",
+  "pipeline_version": "week3-v2",
+  "failed_at": "2026-03-18T09:09:08.050757+00:00",
+  "status": "pending",
+  "retry_count": 0,
+  "last_retry_at": null,
+  "recovered_at": null
+}
