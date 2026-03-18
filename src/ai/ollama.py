@@ -212,13 +212,19 @@ class OllamaClient:
             }
 
     def generate_json(
-        self, prompt: str, *, system: str | None = None
+        self,
+        prompt: str,
+        *,
+        system: str | None = None,
+        temperature: float | None = None,
     ) -> dict[str, Any]:
         """Synchronous JSON generation via /api/generate.
 
         Args:
-            prompt: User-facing prompt text.
-            system: Optional system prompt.
+            prompt:      User-facing prompt text.
+            system:      Optional system prompt.
+            temperature: Sampling temperature (0.0–1.0).  Passed as
+                         ``options.temperature`` in the Ollama request body.
 
         Returns:
             Dict with keys: raw (full Ollama payload), response (text).
@@ -232,6 +238,8 @@ class OllamaClient:
         }
         if system:
             body["system"] = system
+        if temperature is not None:
+            body["options"] = {"temperature": temperature}
         with httpx.Client(timeout=self.timeout) as client:
             resp = client.post(f"{self.base_url}/api/generate", json=body)
             resp.raise_for_status()

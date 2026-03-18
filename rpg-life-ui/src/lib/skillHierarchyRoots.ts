@@ -17,15 +17,16 @@ export interface L1SkillResolver {
 }
 
 const KNOWN_L1_LABELS: Record<string, string> = {
+  skill_adventure_adventure: "Adventure",
   skill_creative_creativity: "Creativity",
   skill_mental_mental_wellbeing: "Mental Wellbeing",
-  skill_physical_adventure: "Adventure",
   skill_physical_physical_health: "Physical Health",
   skill_professional_professional_growth: "Professional Growth",
   skill_social_relationships: "Relationships",
 };
 
 const FALLBACK_L1_BY_PREFIX: Record<string, string> = {
+  adventure: "skill_adventure_adventure",
   creative: "skill_creative_creativity",
   mental: "skill_mental_mental_wellbeing",
   physical: "skill_physical_physical_health",

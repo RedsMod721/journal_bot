@@ -24,6 +24,50 @@ $env:CARGO_HTTP_CHECK_REVOKE = "false"
 
 Set-Location $uiRoot
 
+function Stop-PortProcess {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$TargetPort
+    )
+
+    $pids = @()
+
+    try {
+        if (Get-Command lsof -ErrorAction SilentlyContinue) {
+            $rawPids = & lsof -ti TCP:$TargetPort -sTCP:LISTEN 2>$null
+            if ($rawPids) {
+                $pids = $rawPids | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_ } | Select-Object -Unique
+            }
+        }
+    }
+    catch {
+        Write-Warning "Failed to inspect port $TargetPort with lsof: $($_.Exception.Message)"
+    }
+
+    $pids = @($pids)
+    if ($pids.Count -eq 0) {
+        return
+    }
+
+    foreach ($pidValue in $pids) {
+        try {
+            $process = Get-Process -Id ([int]$pidValue) -ErrorAction SilentlyContinue
+            if ($process) {
+                Write-Host "Stopping process '$($process.ProcessName)' (PID $pidValue) on port $TargetPort" -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "Stopping PID $pidValue on port $TargetPort" -ForegroundColor Yellow
+            }
+            Stop-Process -Id ([int]$pidValue) -Force -ErrorAction Stop
+        }
+        catch {
+            Write-Warning "Unable to stop PID $pidValue on port ${TargetPort}: $($_.Exception.Message)"
+        }
+    }
+}
+
+Stop-PortProcess -TargetPort $Port
+
 if ($Mode -eq "web") {
     Write-Host "Starting Vite dev server on http://127.0.0.1:$Port" -ForegroundColor Cyan
     npm run dev -- --host 127.0.0.1 --port $Port --strictPort

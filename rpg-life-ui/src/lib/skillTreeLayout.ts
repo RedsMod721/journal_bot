@@ -4,7 +4,10 @@ import type {
   SkillHierarchyNode,
   SkillTreeNodeData,
 } from "@/types/skillHierarchy";
-import { getCategoryFromSkillId } from "@/types/skillHierarchy";
+import {
+  getCategoryFromSkillId,
+  normalizeSkillTreeCategory,
+} from "@/types/skillHierarchy";
 import {
   buildL1SkillResolver,
   type L1SkillResolver,
@@ -114,7 +117,10 @@ export function buildSkillTreeGraph(
 
   const nodes: Node<SkillTreeNodeData>[] = visible.map((skill) => {
     const pos = g.node(skill.skill_id) ?? { x: 0, y: 0 };
-    const category = getCategoryFromSkillId(skill.skill_id) ?? "professional";
+    const category =
+      normalizeSkillTreeCategory(skill.category) ??
+      getCategoryFromSkillId(skill.skill_id) ??
+      "professional";
     const l1SkillIds = l1SkillResolver.getL1SkillIds(skill.skill_id);
     const l1SkillLabels = l1SkillIds
       .map((l1SkillId) => l1SkillResolver.getL1SkillLabel(l1SkillId) ?? l1SkillId)

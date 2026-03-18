@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "recovery_id": "ab850b71-f156-44c1-9c81-44b57ccde1d1",
+  "entry_id": "fed4eb0e-5f65-43a9-aa0b-6cf275f56f60",
+  "user_id": "d291b889-b966-43a5-aaca-6d0c50c873aa",
+  "idempotency_key": "57f2cfd4-3fc8-4766-b17a-72fa224b0bab",
+  "error": "This Session's transaction has been rolled back due to a previous exception during flush. To begin a new transaction with this Session, first issue Session.rollback(). Original exception was: (sqlite3.OperationalError) database is locked\n[SQL: UPDATE themes SET xp=?, updated_at=? WHERE themes.id = ?]\n[parameters: [(1057, '2026-03-17 20:10:35.079528', '07d1fc80-a9b9-4374-a6f3-d03882064c96'), (897, '2026-03-17 20:10:35.079532', '155d870b-ee39-4d8f-8267-d34b8bd2bb70'), (331, '2026-03-17 20:10:35.079532', '5c2e03db-2294-4db6-af8b-e1a04ddd8037'), (769, '2026-03-17 20:10:35.079532', '7b6475c4-a44c-4aab-b3de-b6e5785c10be')]]\n(Background on this error at: https://sqlalche.me/e/20/e3q8) (Background on this error at: https://sqlalche.me/e/20/7s2a)",
+  "error_code": "SETUP_EXCEPTION",
+  "pipeline_version": "week3-v2",
+  "failed_at": "2026-03-17T20:10:41.564541+00:00",
+  "status": "pending",
+  "retry_count": 0,
+  "last_retry_at": null,
+  "recovered_at": null
+}

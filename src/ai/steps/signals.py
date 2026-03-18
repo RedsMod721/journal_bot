@@ -22,6 +22,7 @@ To add a new task-type branch, add an ``elif`` block to ``_classify_task_type``.
 
 from __future__ import annotations
 
+import concurrent.futures
 import difflib
 import json
 import logging
@@ -196,14 +197,17 @@ _GLOBAL_SKILL_OVERLAP_STOPWORDS: frozenset[str] = frozenset(
     }
 )
 
-_PROMPT_DETECT_SIGNALS = """\
+_PROMPT_DETECT_SKILLS = """\
+# JOURNAL ENTRY
+
+{canonical_text}
+
 # Mission
 
 You are a world class personal-journal analysis specialist with 20 years of \
-experience identifying skills, themes, activities, emotions, and energy signals \
-from unstructured journal entries. Your task is to analyse the provided journal \
-entry and produce a complete structured signal detection. Use a precise, factual, \
-neutral tone.
+experience identifying skills from unstructured journal entries. Your task is to \
+analyse the provided journal entry and detect which skills the user practised. \
+Use a precise, factual, neutral tone.
 
 # INSTRUCTIONS AND STEPS
 
@@ -214,14 +218,9 @@ clear evidence the user practised or engaged with that skill. Assign a weight \
 3. For each skill in DISCOVERABLE SKILLS FROM KNOWLEDGE BASE, decide whether the \
 entry clearly demonstrates engagement with that skill. If so, add it to \
 "discovered_skills". These are skills the user does not yet track.
-4. For each of the 12 life themes, decide if the entry is meaningfully related.
-5. List every activity the user performed or mentions performing.
-6. List every emotion explicitly or implicitly expressed.
-7. Estimate energy level (1 = completely drained, 10 = full energy).
-8. Classify the dominant task type.
-9. Use the keyword detection hints as soft guidance — do not be limited by them.
-10. Use the prior context snippets as additional evidence where relevant.
-11. Rate your overall certainty in the detection from 0.0 to 1.0.
+4. Use the keyword detection hints as soft guidance — do not be limited by them.
+5. Use the prior context snippets as additional evidence where relevant.
+6. Rate your overall certainty in the detection from 0.0 to 1.0.
 
 # FORMAT OF ELEMENTS
 
@@ -235,11 +234,6 @@ Return a JSON object with this exact structure:
     {{"name": "<canonical_name from DISCOVERABLE SKILLS>", "weight": <float 0.0-1.0>}},
     ...
   ],
-  "themes": ["<theme name from list>", ...],
-  "activities": ["<activity description>", ...],
-  "emotions": ["<emotion>", ...],
-  "energy_level": <integer 1-10>,
-  "task_type": "<one of: analytical, creative, physical, social, intellectual>",
   "certainty": <float 0.0-1.0>
 }}
 
@@ -260,16 +254,28 @@ or discovered_skill.
 - Every "name" in "user_skills" MUST closely match a name from USER SKILL ROSTER.
 - Every "name" in "discovered_skills" MUST closely match a canonical_name from \
 DISCOVERABLE SKILLS FROM KNOWLEDGE BASE.
-- If no skills/themes/activities/emotions are detected, return empty arrays.
+- If no skills are detected, return empty arrays.
 - Use "discovered_skills" for new KB skills; use "user_skills" for existing roster skills.
 - CRITICAL: Only include a skill in "user_skills" if it was DIRECTLY and explicitly \
-practiced in this specific entry. Do NOT infer skills by analogy or association \
-(e.g. for a philosophy/reading entry, NEVER include Physical Health, Cardio Endurance, \
-Meditation, Strength Training, or any skill not explicitly referenced in the text).
+practiced in this specific entry. Do NOT infer skills by analogy or association.
+- CRITICAL — Physical skills (Physical Health, Cardio Endurance, Strength Training, \
+Running, or any exercise/fitness skill): ONLY include if the entry explicitly describes \
+a physical activity such as gym, running, pushups, cycling, swimming, hiking, sports, \
+or physical labour. Time duration alone (e.g. "4h of coding", "3h studying", "socialised \
+for 4h") does NOT qualify. Socialising, meetings, reading, coding, studying, and \
+philosophy NEVER qualify for physical skills, regardless of duration.
+- CRITICAL — Meditation: ONLY include if the entry explicitly uses words like \
+"meditated", "meditation", "mindfulness", "breathing exercise", or similar. Focused \
+work, coding, writing, or attending meetings does NOT count as Meditation.
+- CRITICAL — Leisure, Restorative Leisure, Work Recovery, Unwinding: ONLY include \
+if the user explicitly describes resting, relaxing, or unwinding (e.g. "I relaxed", \
+"took a break", "watched TV to unwind"). Coding, professional work, studying, and \
+meetings NEVER qualify as leisure or restorative activities.
 - An empty "user_skills" array is correct and expected when the entry does not \
 explicitly mention practicing any skill from your roster.
 - When "discovered_skills" contains a precise match for the entry's main activity, \
-prefer it and leave "user_skills" empty if roster skills are not explicitly practiced.
+prefer it and leave "user_skills" empty if roster skills are not explicitly practiced.\
+
 
 # EXAMPLES
 
@@ -289,6 +295,22 @@ Correct output:
   "user_skills": [{{"name": "Meditation", "weight": 0.5}}, {{"name": "Strength Training", "weight": 0.5}}]
   "discovered_skills": []   ← both activities already covered by roster skills
 
+Example 3 — time duration does NOT trigger physical skills:
+Journal entry: "I socialised with colleagues for 4h"
+Roster: [Physical Health, Mental Wellbeing, Cardio Endurance]
+KB candidates include: [Restorative Leisure, Sleep, Physical Health]
+Correct output:
+  "user_skills": [{{"name": "Mental Wellbeing", "weight": 0.8}}]
+  "discovered_skills": []   ← "4h" duration does NOT make this physical; no exercise mentioned
+
+Example 4 — coding is NOT meditation or leisure:
+Journal entry: "I practiced python for 2h"
+Roster: [Meditation, Physical Health, Restorative Leisure, Programming]
+KB candidates include: [Python, Restorative Leisure, Meditation]
+Correct output:
+  "user_skills": [{{"name": "Programming", "weight": 1.0}}]
+  "discovered_skills": []   ← no meditation, no physical activity, no explicit leisure
+
 # USER SKILL ROSTER
 # (skills you already track — include in "user_skills" if genuinely involved)
 
@@ -300,9 +322,69 @@ clearly demonstrates engagement)
 
 {global_skill_candidates}
 
-# CANONICAL THEME NAMES
+# KEYWORD DETECTION HINTS (rule-based pre-pass, use as soft guidance)
 
-{theme_names}
+{keyword_hints}
+
+# PRIOR CONTEXT SNIPPETS (from knowledge base)
+
+{rag_context}
+
+# JOURNAL ENTRY
+
+{canonical_text}
+"""
+
+_PROMPT_DETECT_CONTEXT = """\
+# JOURNAL ENTRY
+
+{canonical_text}
+
+# Mission
+
+You are a world class personal-journal analysis specialist with 20 years of \
+experience identifying activities, emotions, energy signals, and task types from \
+unstructured journal entries. Your task is to analyse the provided journal entry \
+and extract these contextual signals. Use a precise, factual, neutral tone.
+
+# INSTRUCTIONS AND STEPS
+
+1. Read the journal entry carefully.
+2. List every activity the user performed or mentions performing.
+3. List every emotion explicitly or implicitly expressed.
+4. Estimate energy level (1 = completely drained, 10 = full energy).
+5. Classify the dominant task type.
+6. Use the keyword detection hints as soft guidance — do not be limited by them.
+7. Use the prior context snippets as additional evidence where relevant.
+8. Rate your overall certainty in the detection from 0.0 to 1.0.
+
+# FORMAT OF ELEMENTS
+
+Return a JSON object with this exact structure:
+{{
+  "activities": ["<activity description>", ...],
+  "emotions": ["<emotion>", ...],
+  "energy_level": <integer 1-10>,
+  "task_type": "<one of: analytical, creative, physical, social, intellectual>",
+  "certainty": <float 0.0-1.0>
+}}
+
+# RULES
+
+- Return ONLY valid JSON. No markdown, no explanation.
+- If no activities/emotions are detected, return empty arrays.
+- "task_type" must be exactly one of: analytical, creative, physical, social, intellectual.
+- "energy_level" must be an integer between 1 and 10.
+
+# USER SKILL ROSTER
+# (for context — helps understand the user's domain and likely activities)
+
+{skill_roster}
+
+# DISCOVERABLE SKILLS FROM KNOWLEDGE BASE
+# (for context only)
+
+{global_skill_candidates}
 
 # KEYWORD DETECTION HINTS (rule-based pre-pass, use as soft guidance)
 
@@ -493,6 +575,52 @@ def _search_global_skills(
     return candidates[:top_k]
 
 
+_PHYSICAL_CATEGORIES: frozenset[str] = frozenset({"Physical", "physical"})
+
+# Global skill names whose presence in the candidate list is misleading for
+# non-physical entries (e.g. "Sleep" surfacing for reading entries).
+_PHYSICAL_NOISE_NAMES: frozenset[str] = frozenset(
+    {
+        "sleep",
+        "sleep consistency",
+        "sleep quality",
+        "restorative sleep",
+        "napping",
+        "rest",
+    }
+)
+
+
+def _filter_global_candidates_for_non_physical(
+    candidates: list,
+    detected_activities: list[str],
+) -> list:
+    """Remove Physical-category and sleep/rest global skill candidates when the
+    entry contains no physical activities.
+
+    This prevents the LLM from being primed to match the user's physical skills
+    (e.g. Physical Health, Cardio Endurance) when it sees sleep/fitness candidates
+    in the knowledge-base window for purely cognitive or social entries.
+    """
+    has_physical_activity = bool(
+        set(detected_activities) & _PHYSICAL_ACTIVITY_KEYS
+    )
+    if has_physical_activity:
+        return candidates
+
+    # Also allow physical candidates when the entry itself contains clear physical
+    # tokens (handles entries like "I built a cabin" where activity key is "build").
+    # The caller already ran rule_based_result; we just check the activity list.
+    filtered = []
+    for gs in candidates:
+        category = (gs.category or "").strip()
+        name_lower = (gs.canonical_name or "").lower()
+        if category in _PHYSICAL_CATEGORIES and name_lower in _PHYSICAL_NOISE_NAMES:
+            continue
+        filtered.append(gs)
+    return filtered
+
+
 def _load_skill_descriptions(skills: list, db: Session) -> dict[str, str]:
     """Return ``{skill.name: description}`` for skills linked to a GlobalSkill."""
     global_ids = {s.global_skill_id for s in skills if s.global_skill_id}
@@ -610,117 +738,33 @@ def _normalize_weights(skill_weights: dict[str, float]) -> dict[str, float]:
     return {k: v / total for k, v in skill_weights.items()}
 
 
-def _rule_based_as_llm_output(
-    rule_based: dict,
-    llm_inputs_snapshot: dict,
-    llm_prompt: str = "",
-    llm_raw_output: str = "",
-    llm_failure_reason: str = "",
-) -> dict[str, Any]:
-    """Wrap a rule-based result in the extended shape returned by ``_llm_detect_signals``."""
-    skill_names = rule_based.get("detected_skills", [])
-    n = len(skill_names)
-    return {
-        "detected_skills": skill_names,
-        "skills_weights": {s: (1.0 / n if n else 0.0) for s in skill_names},
-        "detected_global_skills": [],
-        "global_skills_weights": {},
-        "detected_themes": [],
-        "detected_activities": rule_based.get("detected_activities", []),
-        "dominant_emotions": rule_based.get("dominant_emotions", []),
-        "energy_level": rule_based.get("energy_level", 5),
-        "task_type": rule_based.get("task_type", "analytical"),
-        "certainty": 0.0,
-        "llm_inputs_snapshot": llm_inputs_snapshot,
-        "llm_prompt": llm_prompt,
-        "llm_raw_output": llm_raw_output,
-        "llm_failure_reason": llm_failure_reason,
-    }
 
-
-def _llm_detect_signals(
+def _llm_call_skills(
     *,
-    canonical_text: str,
-    skills: list,  # list[Skill]
+    base_prompt: str,
+    roster_by_lower: dict[str, str],
+    global_candidates_by_lower: dict[str, Any],
+    global_all_by_normalized_name: dict[str, Any],
+    roster_section: str,
+    global_section: str,
     rule_based_result: dict,
-    rag_hits: list[dict],
-    ollama: Any,
     user_id: str,
-    db: Session,
-    qdrant: Any = None,
+    ollama: Any,
 ) -> dict[str, Any]:
-    """Call Ollama to detect all signals; validate with up to 3 retries.
+    """Call Ollama to detect skills only; validate with up to 3 retries.
 
-    Enriches the LLM context with:
-    - User skill descriptions (from linked GlobalSkill entries)
-    - Top-K globally discovered skills most relevant to the entry (GlobalSkill KB search)
-
-    Returns a dict with all step-output keys including ``detected_global_skills``
-    (list of source_skill_ids for skills the user doesn't have yet).
+    Returns a dict with keys: detected_skills, skills_weights,
+    detected_global_skills, global_skills_weights, certainty,
+    llm_prompt, llm_raw_output, llm_failure_reason.
     """
     _MAX_ATTEMPTS = 3
-    roster_by_lower: dict[str, str] = {s.name.lower(): s.name for s in skills}
-
-    # -- Load descriptions for existing user skills --
-    descriptions = _load_skill_descriptions(skills, db)
-
-    # -- Search GlobalSkill KB for discovery candidates --
-    global_candidates: list[GlobalSkill] = _search_global_skills(
-        canonical_text, db, qdrant=qdrant
-    )
-    global_candidates_by_lower: dict[str, GlobalSkill] = {
-        (gs.canonical_name or "").lower(): gs for gs in global_candidates
-    }
-    all_globals_for_exact_lookup: list[GlobalSkill] = (
-        db.query(GlobalSkill)
-        .filter(
-            GlobalSkill.canonical_name.isnot(None),
-            GlobalSkill.source_skill_id.isnot(None),
-        )
-        .all()
-    )
-    global_all_by_normalized_name: dict[str, GlobalSkill] = {
-        _normalize_lookup_label(str(gs.canonical_name)): gs
-        for gs in all_globals_for_exact_lookup
-        if gs.canonical_name
-    }
-    logger.debug(
-        "[pipeline:signals] user=%s global_candidates=%s",
-        user_id,
-        [gs.canonical_name for gs in global_candidates],
-    )
-
-    # -- Build prompt sections (computed once; reused across retries) --
-    roster_section = _build_roster_lines(skills, descriptions)
-    global_section = _build_global_candidates_lines(global_candidates)
-    formatted_hints = _format_hints(rule_based_result)
-    formatted_rag = _format_rag(rag_hits)
-
-    llm_inputs_snapshot: dict[str, Any] = {
-        "skill_roster": [s.name for s in skills],
-        "skill_descriptions_loaded": list(descriptions.keys()),
-        "global_candidates": [gs.canonical_name for gs in global_candidates],
-        "global_candidate_count": len(global_candidates),
-        "theme_names": sorted(_CANONICAL_THEMES),
-        "keyword_hints": formatted_hints,
-        "rag_snippets": formatted_rag,
-        "rag_hit_count": len(rag_hits or []),
-    }
-
     user_skill_invalid_feedback = ""
     global_skill_invalid_feedback = ""
     best_attempt_result: dict[str, Any] | None = None
     best_attempt_score: tuple[int, int, float] = (-1, -1, -1.0)
 
     for attempt in range(1, _MAX_ATTEMPTS + 1):
-        prompt = _PROMPT_DETECT_SIGNALS.format(
-            skill_roster=roster_section,
-            global_skill_candidates=global_section,
-            theme_names=", ".join(sorted(_CANONICAL_THEMES)),
-            keyword_hints=formatted_hints,
-            rag_context=formatted_rag,
-            canonical_text=canonical_text,
-        )
+        prompt = base_prompt
         correction_parts = []
         if user_skill_invalid_feedback:
             correction_parts.append(f"USER SKILLS CORRECTION:\n{user_skill_invalid_feedback}")
@@ -730,21 +774,20 @@ def _llm_detect_signals(
             prompt += "\n\n# CORRECTION NOTE\n" + "\n\n".join(correction_parts)
 
         logger.debug(
-            "[pipeline:signals] user=%s attempt=%d roster_lines=%d global_lines=%d",
+            "[pipeline:signals:skills] user=%s attempt=%d",
             user_id,
             attempt,
-            len(skills),
-            len(global_candidates),
         )
 
-        # --- LLM call ---
         raw_response = ""
         try:
-            raw_response = ollama.generate_json(prompt)["response"]
+            # Skills detection is a classification task — lower temperature reduces
+            # non-determinism without losing recall.
+            raw_response = ollama.generate_json(prompt, temperature=0.15)["response"]
             parsed = json.loads(raw_response)
         except Exception as exc:
             logger.warning(
-                "[pipeline:signals] user=%s LLM attempt=%d/%d call/parse failure: %s",
+                "[pipeline:signals:skills] user=%s attempt=%d/%d call/parse failure: %s",
                 user_id,
                 attempt,
                 _MAX_ATTEMPTS,
@@ -753,24 +796,23 @@ def _llm_detect_signals(
             if attempt == _MAX_ATTEMPTS:
                 if best_attempt_result is not None:
                     logger.warning(
-                        "[pipeline:signals] user=%s returning best partial LLM result "
+                        "[pipeline:signals:skills] user=%s returning best partial result "
                         "after final call/parse failure",
                         user_id,
                     )
                     return best_attempt_result
-                logger.warning(
-                    "[pipeline:signals] user=%s all %d LLM attempts failed; "
-                    "returning rule-based fallback",
-                    user_id,
-                    _MAX_ATTEMPTS,
-                )
-                return _rule_based_as_llm_output(
-                    rule_based_result,
-                    llm_inputs_snapshot,
-                    llm_prompt=prompt,
-                    llm_raw_output=raw_response,
-                    llm_failure_reason=str(exc),
-                )
+                skill_names = rule_based_result.get("detected_skills", [])
+                n = len(skill_names)
+                return {
+                    "detected_skills": skill_names,
+                    "skills_weights": {s: (1.0 / n if n else 0.0) for s in skill_names},
+                    "detected_global_skills": [],
+                    "global_skills_weights": {},
+                    "certainty": 0.0,
+                    "llm_prompt": prompt,
+                    "llm_raw_output": raw_response,
+                    "llm_failure_reason": str(exc),
+                }
             user_skill_invalid_feedback = ""
             global_skill_invalid_feedback = (
                 "Your previous response was not valid JSON. "
@@ -830,23 +872,191 @@ def _llm_detect_signals(
             else:
                 unrecognized_global.append(name)
 
-        # --- Validate themes (filter only — no retry) ---
-        returned_themes = parsed.get("themes", [])
-        if not isinstance(returned_themes, list):
-            returned_themes = []
-        valid_themes = [
-            t for t in returned_themes if isinstance(t, str) and t in _CANONICAL_THEMES
-        ]
-        invalid_themes = [t for t in returned_themes if t not in _CANONICAL_THEMES]
-        if invalid_themes:
+        raw_certainty = parsed.get("certainty", 0.5)
+        try:
+            certainty = max(0.0, min(1.0, float(raw_certainty)))
+        except (TypeError, ValueError):
+            certainty = 0.5
+
+        # --- Deduplicate and normalize weights ---
+        deduped_user = list(dict.fromkeys(valid_user_names))
+        deduped_user_weights = {s: raw_user_weights.get(s, 1.0) for s in deduped_user}
+        normalized_user = (
+            _normalize_weights(deduped_user_weights) if deduped_user_weights else {}
+        )
+
+        deduped_global = list(dict.fromkeys(valid_global_ids))
+        deduped_global_weights = {
+            sid: raw_global_weights.get(sid, 1.0) for sid in deduped_global
+        }
+        normalized_global = (
+            _normalize_weights(deduped_global_weights) if deduped_global_weights else {}
+        )
+
+        current_result = {
+            "detected_skills": sorted(set(deduped_user)),
+            "skills_weights": normalized_user,
+            "detected_global_skills": sorted(set(deduped_global)),
+            "global_skills_weights": normalized_global,
+            "certainty": certainty,
+            "llm_prompt": prompt,
+            "llm_raw_output": raw_response,
+            "llm_failure_reason": "",
+        }
+        current_score = (
+            len(deduped_user) + len(deduped_global),
+            len(deduped_global),
+            certainty,
+        )
+        if current_score > best_attempt_score:
+            best_attempt_result = current_result
+            best_attempt_score = current_score
+
+        # --- Handle unrecognized names → build retry feedback ---
+        needs_retry = False
+        user_skill_invalid_feedback = ""
+        global_skill_invalid_feedback = ""
+
+        if unrecognized_user:
             logger.warning(
-                "[pipeline:signals] user=%s attempt=%d filtered invalid theme names: %s",
+                "[pipeline:signals:skills] user=%s attempt=%d/%d "
+                "unrecognized user skill names: %s",
                 user_id,
                 attempt,
-                invalid_themes,
+                _MAX_ATTEMPTS,
+                unrecognized_user,
+            )
+            if attempt < _MAX_ATTEMPTS:
+                user_skill_invalid_feedback = (
+                    f"The following names in 'user_skills' were not found in the roster: "
+                    f"{unrecognized_user}.\n"
+                    f"Valid roster:\n{roster_section}"
+                )
+                needs_retry = True
+
+        if unrecognized_global:
+            logger.warning(
+                "[pipeline:signals:skills] user=%s attempt=%d/%d "
+                "unrecognized discovered skill names: %s",
+                user_id,
+                attempt,
+                _MAX_ATTEMPTS,
+                unrecognized_global,
+            )
+            if attempt < _MAX_ATTEMPTS:
+                global_skill_invalid_feedback = (
+                    f"The following names in 'discovered_skills' were not found in the "
+                    f"knowledge base candidates: {unrecognized_global}.\n"
+                    f"Valid candidates:\n{global_section}"
+                )
+                needs_retry = True
+
+        if needs_retry:
+            continue
+
+        if unrecognized_user or unrecognized_global:
+            if best_attempt_result is not None and best_attempt_score > current_score:
+                logger.warning(
+                    "[pipeline:signals:skills] user=%s max retries reached; returning best "
+                    "prior partial result instead of worse final attempt",
+                    user_id,
+                )
+                return best_attempt_result
+            logger.warning(
+                "[pipeline:signals:skills] user=%s max retries reached; "
+                "keeping %d valid user skills, %d valid global skills; "
+                "discarding user=%s global=%s",
+                user_id,
+                len(valid_user_names),
+                len(valid_global_ids),
+                unrecognized_user,
+                unrecognized_global,
             )
 
-        # --- Other signals (clamp / validate, fall back to rule-based value) ---
+        logger.info(
+            "[pipeline:signals:skills] user=%s attempt=%d "
+            "user_skills=%s global_skills=%s certainty=%.2f",
+            user_id,
+            attempt,
+            deduped_user,
+            deduped_global,
+            certainty,
+        )
+        return current_result
+
+    # Unreachable — the loop always returns or continues.
+    skill_names = rule_based_result.get("detected_skills", [])
+    n = len(skill_names)
+    return {
+        "detected_skills": skill_names,
+        "skills_weights": {s: (1.0 / n if n else 0.0) for s in skill_names},
+        "detected_global_skills": [],
+        "global_skills_weights": {},
+        "certainty": 0.0,
+        "llm_prompt": base_prompt,
+        "llm_raw_output": "",
+        "llm_failure_reason": "max retries exceeded",
+    }
+
+
+def _llm_call_context(
+    *,
+    base_prompt: str,
+    rule_based_result: dict,
+    user_id: str,
+    ollama: Any,
+) -> dict[str, Any]:
+    """Call Ollama to detect context signals only; validate with up to 3 retries.
+
+    Returns a dict with keys: detected_activities, dominant_emotions,
+    energy_level, task_type, certainty, llm_prompt, llm_raw_output, llm_failure_reason.
+    """
+    _MAX_ATTEMPTS = 3
+    parse_error_feedback = ""
+    best_attempt_result: dict[str, Any] | None = None
+
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        prompt = base_prompt
+        if parse_error_feedback:
+            prompt += f"\n\n# CORRECTION NOTE\n{parse_error_feedback}"
+
+        logger.debug(
+            "[pipeline:signals:context] user=%s attempt=%d",
+            user_id,
+            attempt,
+        )
+
+        raw_response = ""
+        try:
+            raw_response = ollama.generate_json(prompt, temperature=0.35)["response"]
+            parsed = json.loads(raw_response)
+        except Exception as exc:
+            logger.warning(
+                "[pipeline:signals:context] user=%s attempt=%d/%d call/parse failure: %s",
+                user_id,
+                attempt,
+                _MAX_ATTEMPTS,
+                exc,
+            )
+            if attempt == _MAX_ATTEMPTS:
+                if best_attempt_result is not None:
+                    return best_attempt_result
+                return {
+                    "detected_activities": rule_based_result.get("detected_activities", []),
+                    "dominant_emotions": rule_based_result.get("dominant_emotions", []),
+                    "energy_level": rule_based_result.get("energy_level", 5),
+                    "task_type": rule_based_result.get("task_type", "analytical"),
+                    "certainty": 0.0,
+                    "llm_prompt": prompt,
+                    "llm_raw_output": raw_response,
+                    "llm_failure_reason": str(exc),
+                }
+            parse_error_feedback = (
+                "Your previous response was not valid JSON. "
+                "Return ONLY a JSON object with no markdown."
+            )
+            continue
+
         activities = parsed.get("activities", [])
         if not isinstance(activities, list):
             activities = []
@@ -878,127 +1088,187 @@ def _llm_detect_signals(
         except (TypeError, ValueError):
             certainty = 0.5
 
-        # --- Deduplicate and normalize weights ---
-        deduped_user = list(dict.fromkeys(valid_user_names))
-        deduped_user_weights = {s: raw_user_weights.get(s, 1.0) for s in deduped_user}
-        normalized_user = (
-            _normalize_weights(deduped_user_weights) if deduped_user_weights else {}
-        )
-
-        deduped_global = list(dict.fromkeys(valid_global_ids))
-        deduped_global_weights = {
-            sid: raw_global_weights.get(sid, 1.0) for sid in deduped_global
-        }
-        normalized_global = (
-            _normalize_weights(deduped_global_weights) if deduped_global_weights else {}
-        )
-
         current_result = {
-            "detected_skills": sorted(set(deduped_user)),
-            "skills_weights": normalized_user,
-            "detected_global_skills": sorted(set(deduped_global)),
-            "global_skills_weights": normalized_global,
-            "detected_themes": sorted(set(valid_themes)),
             "detected_activities": activities,
             "dominant_emotions": emotions,
             "energy_level": energy,
             "task_type": task_type,
             "certainty": certainty,
-            "llm_inputs_snapshot": llm_inputs_snapshot,
             "llm_prompt": prompt,
             "llm_raw_output": raw_response,
             "llm_failure_reason": "",
         }
-        current_score = (
-            len(deduped_user) + len(deduped_global),
-            len(deduped_global),
-            certainty,
-        )
-        if current_score > best_attempt_score:
-            best_attempt_result = current_result
-            best_attempt_score = current_score
-
-        # --- Handle unrecognized names → build retry feedback ---
-        needs_retry = False
-        user_skill_invalid_feedback = ""
-        global_skill_invalid_feedback = ""
-
-        if unrecognized_user:
-            logger.warning(
-                "[pipeline:signals] user=%s attempt=%d/%d "
-                "unrecognized user skill names: %s",
-                user_id,
-                attempt,
-                _MAX_ATTEMPTS,
-                unrecognized_user,
-            )
-            if attempt < _MAX_ATTEMPTS:
-                user_skill_invalid_feedback = (
-                    f"The following names in 'user_skills' were not found in the roster: "
-                    f"{unrecognized_user}.\n"
-                    f"Valid roster:\n{roster_section}"
-                )
-                needs_retry = True
-
-        if unrecognized_global:
-            logger.warning(
-                "[pipeline:signals] user=%s attempt=%d/%d "
-                "unrecognized discovered skill names: %s",
-                user_id,
-                attempt,
-                _MAX_ATTEMPTS,
-                unrecognized_global,
-            )
-            if attempt < _MAX_ATTEMPTS:
-                global_skill_invalid_feedback = (
-                    f"The following names in 'discovered_skills' were not found in the "
-                    f"knowledge base candidates: {unrecognized_global}.\n"
-                    f"Valid candidates:\n{global_section}"
-                )
-                needs_retry = True
-
-        if needs_retry:
-            continue
-
-        if unrecognized_user or unrecognized_global:
-            if best_attempt_result is not None and best_attempt_score > current_score:
-                logger.warning(
-                    "[pipeline:signals] user=%s max retries reached; returning best "
-                    "prior partial result instead of worse final attempt",
-                    user_id,
-                )
-                return best_attempt_result
-            logger.warning(
-                "[pipeline:signals] user=%s max retries reached; "
-                "keeping %d valid user skills, %d valid global skills; "
-                "discarding user=%s global=%s",
-                user_id,
-                len(valid_user_names),
-                len(valid_global_ids),
-                unrecognized_user,
-                unrecognized_global,
-            )
+        best_attempt_result = current_result
 
         logger.info(
-            "[pipeline:signals] user=%s LLM attempt=%d "
-            "user_skills=%s global_skills=%s themes=%s "
+            "[pipeline:signals:context] user=%s attempt=%d "
             "activities=%s emotions=%s energy=%s task=%s certainty=%.2f",
             user_id,
             attempt,
-            deduped_user,
-            deduped_global,
-            valid_themes,
             activities,
             emotions,
             energy,
             task_type,
             certainty,
         )
-
         return current_result
 
     # Unreachable — the loop always returns or continues.
-    return _rule_based_as_llm_output(rule_based_result, llm_inputs_snapshot)
+    return {
+        "detected_activities": rule_based_result.get("detected_activities", []),
+        "dominant_emotions": rule_based_result.get("dominant_emotions", []),
+        "energy_level": rule_based_result.get("energy_level", 5),
+        "task_type": rule_based_result.get("task_type", "analytical"),
+        "certainty": 0.0,
+        "llm_prompt": base_prompt,
+        "llm_raw_output": "",
+        "llm_failure_reason": "max retries exceeded",
+    }
+
+
+def _llm_detect_signals(
+    *,
+    canonical_text: str,
+    skills: list,  # list[Skill]
+    rule_based_result: dict,
+    rag_hits: list[dict],
+    ollama: Any,
+    user_id: str,
+    db: Session,
+    qdrant: Any = None,
+) -> dict[str, Any]:
+    """Call Ollama to detect all signals via two parallel focused LLM calls.
+
+    Runs two calls in parallel:
+    - Skills call: detects user_skills + discovered_skills
+    - Context call: detects activities, emotions, energy_level, task_type
+
+    Themes are not LLM-extracted; detected_themes is always [].
+
+    All DB reads happen before threads are spawned (SQLAlchemy sessions are not
+    thread-safe). Both prompts receive identical context sections for consistency.
+    """
+    roster_by_lower: dict[str, str] = {s.name.lower(): s.name for s in skills}
+
+    # -- Load descriptions for existing user skills (DB read — before threads) --
+    descriptions = _load_skill_descriptions(skills, db)
+
+    # -- Search GlobalSkill KB for discovery candidates (DB read — before threads) --
+    global_candidates: list[GlobalSkill] = _search_global_skills(
+        canonical_text, db, qdrant=qdrant
+    )
+    global_candidates = _filter_global_candidates_for_non_physical(
+        global_candidates, rule_based_result["detected_activities"]
+    )
+    global_candidates_by_lower: dict[str, GlobalSkill] = {
+        (gs.canonical_name or "").lower(): gs for gs in global_candidates
+    }
+    all_globals_for_exact_lookup: list[GlobalSkill] = (
+        db.query(GlobalSkill)
+        .filter(
+            GlobalSkill.canonical_name.isnot(None),
+            GlobalSkill.source_skill_id.isnot(None),
+        )
+        .all()
+    )
+    global_all_by_normalized_name: dict[str, GlobalSkill] = {
+        _normalize_lookup_label(str(gs.canonical_name)): gs
+        for gs in all_globals_for_exact_lookup
+        if gs.canonical_name
+    }
+    logger.debug(
+        "[pipeline:signals] user=%s global_candidates=%s",
+        user_id,
+        [gs.canonical_name for gs in global_candidates],
+    )
+
+    # -- Build shared prompt sections (computed once; identical for both prompts) --
+    roster_section = _build_roster_lines(skills, descriptions)
+    global_section = _build_global_candidates_lines(global_candidates)
+    formatted_hints = _format_hints(rule_based_result)
+    formatted_rag = _format_rag(rag_hits)
+
+    llm_inputs_snapshot: dict[str, Any] = {
+        "skill_roster": [s.name for s in skills],
+        "skill_descriptions_loaded": list(descriptions.keys()),
+        "global_candidates": [gs.canonical_name for gs in global_candidates],
+        "global_candidate_count": len(global_candidates),
+        "keyword_hints": formatted_hints,
+        "rag_snippets": formatted_rag,
+        "rag_hit_count": len(rag_hits or []),
+    }
+
+    # -- Build both prompts (identical context, different extraction focus) --
+    shared_sections = dict(
+        skill_roster=roster_section,
+        global_skill_candidates=global_section,
+        keyword_hints=formatted_hints,
+        rag_context=formatted_rag,
+        canonical_text=canonical_text,
+    )
+    skills_prompt = _PROMPT_DETECT_SKILLS.format(**shared_sections)
+    context_prompt = _PROMPT_DETECT_CONTEXT.format(**shared_sections)
+
+    # -- Run both LLM calls in parallel (threads do HTTP I/O only, no DB access) --
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        skills_future = executor.submit(
+            _llm_call_skills,
+            base_prompt=skills_prompt,
+            roster_by_lower=roster_by_lower,
+            global_candidates_by_lower=global_candidates_by_lower,
+            global_all_by_normalized_name=global_all_by_normalized_name,
+            roster_section=roster_section,
+            global_section=global_section,
+            rule_based_result=rule_based_result,
+            user_id=user_id,
+            ollama=ollama,
+        )
+        context_future = executor.submit(
+            _llm_call_context,
+            base_prompt=context_prompt,
+            rule_based_result=rule_based_result,
+            user_id=user_id,
+            ollama=ollama,
+        )
+        skills_result = skills_future.result()
+        context_result = context_future.result()
+
+    # -- Merge results --
+    combined_certainty = (skills_result["certainty"] + context_result["certainty"]) / 2.0
+    failure_reason = (
+        skills_result["llm_failure_reason"] or context_result["llm_failure_reason"]
+    )
+
+    logger.info(
+        "[pipeline:signals] user=%s LLM "
+        "user_skills=%s global_skills=%s "
+        "activities=%s emotions=%s energy=%s task=%s certainty=%.2f",
+        user_id,
+        skills_result["detected_skills"],
+        skills_result["detected_global_skills"],
+        context_result["detected_activities"],
+        context_result["dominant_emotions"],
+        context_result["energy_level"],
+        context_result["task_type"],
+        combined_certainty,
+    )
+
+    return {
+        "detected_skills": skills_result["detected_skills"],
+        "skills_weights": skills_result["skills_weights"],
+        "detected_global_skills": skills_result["detected_global_skills"],
+        "global_skills_weights": skills_result["global_skills_weights"],
+        "detected_themes": [],
+        "detected_activities": context_result["detected_activities"],
+        "dominant_emotions": context_result["dominant_emotions"],
+        "energy_level": context_result["energy_level"],
+        "task_type": context_result["task_type"],
+        "certainty": combined_certainty,
+        "llm_inputs_snapshot": llm_inputs_snapshot,
+        "llm_prompt": skills_result["llm_prompt"],
+        "llm_raw_output": skills_result["llm_raw_output"],
+        "llm_failure_reason": failure_reason,
+    }
 
 
 # ---------------------------------------------------------------------------

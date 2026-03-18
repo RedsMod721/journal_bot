@@ -44,6 +44,7 @@ export function SkillTreeView({ skills }: SkillTreeViewProps) {
           canonical_name: s.canonical_name,
           hierarchy_level: s.hierarchy_level,
           parent_skill_ids: s.parent_skill_ids,
+          category: s.category,
           state: s.state,
           user_blocked: s.user_blocked,
         })),

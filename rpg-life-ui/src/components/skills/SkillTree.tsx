@@ -29,7 +29,7 @@ type L1SkillFilter = "all" | string;
 
 function getL1FilterColor(l1SkillId: string): string {
   if (l1SkillId === "skill_physical_adventure") {
-    return "#f97316";
+    return TREE_CATEGORY_STYLES.adventure.bg;
   }
   const category = getCategoryFromSkillId(l1SkillId) ?? "professional";
   return TREE_CATEGORY_STYLES[category].bg;

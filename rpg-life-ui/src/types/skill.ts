@@ -36,6 +36,7 @@ export interface Skill {
 }
 
 export type SkillCategory =
+  | "Adventure"
   | "Physical"
   | "Mental"
   | "Professional"
@@ -45,6 +46,7 @@ export type SkillCategory =
   | "Growth";
 
 export const SKILL_CATEGORY_COLORS: Record<SkillCategory, string> = {
+  Adventure: "bg-orange-500/10 text-orange-500 border-orange-500/20",
   Physical: "bg-red-500/10 text-red-500 border-red-500/20",
   Mental: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   Professional: "bg-purple-500/10 text-purple-500 border-purple-500/20",

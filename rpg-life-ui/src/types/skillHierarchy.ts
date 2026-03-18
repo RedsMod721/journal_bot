@@ -1,6 +1,7 @@
 import type { SkillState } from "@/types/skill";
 
 export type SkillTreeCategory =
+  | "adventure"
   | "creative"
   | "mental"
   | "physical"
@@ -12,6 +13,7 @@ export interface SkillHierarchyNode {
   canonical_name: string;
   hierarchy_level: number;
   parent_skill_ids: string[];
+  category?: string;
   state?: SkillState;
   user_blocked?: boolean;
 }
@@ -37,6 +39,13 @@ export const TREE_CATEGORY_STYLES: Record<
   SkillTreeCategory,
   { bg: string; border: string; text: string; dimBg: string; dimBorder: string }
 > = {
+  adventure: {
+    bg: "#f97316",
+    border: "#c2410c",
+    text: "#fff",
+    dimBg: "#431407",
+    dimBorder: "#9a3412",
+  },
   creative: {
     bg: "#db2777",
     border: "#9d174d",
@@ -75,6 +84,7 @@ export const TREE_CATEGORY_STYLES: Record<
 };
 
 export const CATEGORY_LABELS: Record<SkillTreeCategory, string> = {
+  adventure: "Adventure",
   creative: "Creative",
   mental: "Mental",
   physical: "Physical",
@@ -82,11 +92,29 @@ export const CATEGORY_LABELS: Record<SkillTreeCategory, string> = {
   social: "Social",
 };
 
+export function normalizeSkillTreeCategory(
+  category: string | null | undefined
+): SkillTreeCategory | null {
+  const value = (category ?? "").trim().toLowerCase();
+  if (
+    value === "adventure" ||
+    value === "creative" ||
+    value === "mental" ||
+    value === "physical" ||
+    value === "professional" ||
+    value === "social"
+  ) {
+    return value as SkillTreeCategory;
+  }
+  return null;
+}
+
 export function getCategoryFromSkillId(
   skillId: string
 ): SkillTreeCategory | null {
   const prefix = skillId.replace(/^skill_/, "").split("_")[0];
   if (
+    prefix === "adventure" ||
     prefix === "creative" ||
     prefix === "mental" ||
     prefix === "physical" ||
